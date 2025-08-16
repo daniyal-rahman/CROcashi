@@ -1,21 +1,30 @@
-<<<<<<< HEAD
 # src/ncfd/db/models.py
 from __future__ import annotations
 from datetime import datetime, date
 from typing import Optional, List
 
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import String, Boolean, Date, DateTime, BigInteger, ForeignKey, Index, UniqueConstraint
+from sqlalchemy import String, Boolean, Date, DateTime, ForeignKey, Index, UniqueConstraint, Integer
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 
 
 class Base(DeclarativeBase):
+    """SQLAlchemy declarative base for ncfd models."""
     pass
+
+
+# --- Reference tables -------------------------------------------------------
+
 
 class Company(Base):
     __tablename__ = "companies"
+
     company_id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str | None] = mapped_column(String, default=None)
+    name: Mapped[Optional[str]] = mapped_column(String, default=None)
+
+
+# --- Core clinical-trial entities ------------------------------------------
+
 
 class Trial(Base):
     __tablename__ = "trials"
@@ -23,7 +32,10 @@ class Trial(Base):
     trial_id: Mapped[int] = mapped_column(primary_key=True)
     nct_id: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     sponsor_text: Mapped[Optional[str]] = mapped_column(String, default=None)
-    sponsor_company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.company_id"), default=None)
+    sponsor_company_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("companies.company_id"),
+        default=None,
+    )
     phase: Mapped[Optional[str]] = mapped_column(String, default=None)
     indication: Mapped[Optional[str]] = mapped_column(String, default=None)
     is_pivotal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -36,116 +48,46 @@ class Trial(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     current_sha256: Mapped[Optional[str]] = mapped_column(String(64), default=None)
 
-    versions: Mapped[List["TrialVersion"]] = relationship(back_populates="trial", cascade="all, delete-orphan")
+    versions: Mapped[List["TrialVersion"]] = relationship(
+        back_populates="trial",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         Index("idx_trials_status", "status"),
         Index("idx_trials_is_pivotal", "is_pivotal"),
         Index("idx_trials_last_update", "last_update_posted_date"),
-=======
-"""Database models for core trial data."""
-
-from __future__ import annotations
-
-from datetime import datetime
-
-from sqlalchemy import (
-    ARRAY,
-    Boolean,
-    CheckConstraint,
-    Column,
-    Date,
-    DateTime,
-    Float,
-    ForeignKey,
-    Integer,
-    String,
-    Text,
-    UniqueConstraint,
-    Index,
-)
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import declarative_base
-
-
-Base = declarative_base()
-
-
-# --- Reference tables -------------------------------------------------------
-
-
-class Company(Base):
-    """Public company issuing a security."""
-
-    __tablename__ = "companies"
-
-    company_id = Column(Integer, primary_key=True)
-    name = Column(Text, nullable=False)
-    ticker = Column(String(10))
-    cik = Column(String(10))
-
-
-class Asset(Base):
-    """Therapeutic asset tracked across trials."""
-
-    __tablename__ = "assets"
-
-    asset_id = Column(Integer, primary_key=True)
-    names_jsonb = Column(JSONB)
-    modality = Column(Text)
-    target = Column(Text)
-    moa = Column(Text)
-
-
-class Trial(Base):
-    """Normalized clinical trial record."""
-
-    __tablename__ = "trials"
-
-    trial_id = Column(Integer, primary_key=True)
-    nct_id = Column(Text, nullable=False, unique=True)
-    sponsor_text = Column(Text)
-    sponsor_company_id = Column(Integer, ForeignKey("companies.company_id"))
-    phase = Column(Text)
-    indication = Column(Text)
-    is_pivotal = Column(Boolean, nullable=False, default=False)
-    primary_endpoint_text = Column(Text)
-    est_primary_completion_date = Column(Date)
-    status = Column(Text)
-    first_posted_date = Column(Date)
-    last_update_posted_date = Column(Date)
-    intervention_types = Column(ARRAY(Text))
-    last_seen_at = Column(
-        DateTime(timezone=True), nullable=False, default=datetime.utcnow
-    )
-    current_sha256 = Column(String(64))
-
-    __table_args__ = (
-        CheckConstraint("nct_id ~ '^NCT[0-9]{8}$'", name="chk_nct"),
->>>>>>> origin/main
     )
 
 
 class TrialVersion(Base):
-<<<<<<< HEAD
     __tablename__ = "trial_versions"
 
     trial_version_id: Mapped[int] = mapped_column(primary_key=True)
-    trial_id: Mapped[int] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"), index=True)
-    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False, index=True)
+    trial_id: Mapped[int] = mapped_column(
+        ForeignKey("trials.trial_id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        nullable=False,
+        index=True,
+    )
     last_update_posted_date: Mapped[Optional[date]] = mapped_column(Date, default=None)
 
     raw_jsonb: Mapped[dict] = mapped_column(JSONB, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
 
     primary_endpoint_text: Mapped[Optional[str]] = mapped_column(String, default=None)
-    sample_size: Mapped[Optional[int]] = mapped_column(default=None)
+    sample_size: Mapped[Optional[int]] = mapped_column(Integer, default=None)
     analysis_plan_text: Mapped[Optional[str]] = mapped_column(String, default=None)
     changes_jsonb: Mapped[Optional[dict]] = mapped_column(JSONB, default=None)
 
     changed_primary_endpoint: Mapped[Optional[bool]] = mapped_column(Boolean, default=None)
     changed_sample_size: Mapped[Optional[bool]] = mapped_column(Boolean, default=None)
-    sample_size_delta: Mapped[Optional[int]] = mapped_column(default=None)
+    sample_size_delta: Mapped[Optional[int]] = mapped_column(Integer, default=None)
     changed_analysis_plan: Mapped[Optional[bool]] = mapped_column(Boolean, default=None)
 
     trial: Mapped[Trial] = relationship(back_populates="versions")
@@ -153,7 +95,12 @@ class TrialVersion(Base):
     __table_args__ = (
         UniqueConstraint("trial_id", "sha256", name="uq_trial_version_hash"),
         Index("idx_trial_versions_trial_time", "trial_id", "captured_at"),
-        Index("idx_trial_versions_changed", "changed_primary_endpoint", "changed_sample_size", "changed_analysis_plan"),
+        Index(
+            "idx_trial_versions_changed",
+            "changed_primary_endpoint",
+            "changed_sample_size",
+            "changed_analysis_plan",
+        ),
         Index("idx_trial_versions_updated", "last_update_posted_date"),
     )
 
@@ -161,7 +108,10 @@ class TrialVersion(Base):
 class CtgovHistoryVersion(Base):
     __tablename__ = "ctgov_history_versions"
 
-    trial_id: Mapped[int] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"), primary_key=True)
+    trial_id: Mapped[int] = mapped_column(
+        ForeignKey("trials.trial_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
     version_rank: Mapped[int] = mapped_column(primary_key=True)
     submitted_date: Mapped[Optional[date]] = mapped_column(Date, default=None)
     url: Mapped[Optional[str]] = mapped_column(String, default=None)
@@ -180,216 +130,14 @@ class IngestRun(Base):
 
     run_id: Mapped[int] = mapped_column(primary_key=True)
     source: Mapped[str] = mapped_column(String, nullable=False)
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        nullable=False,
+    )
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), default=None)
     since_date: Mapped[Optional[date]] = mapped_column(Date, default=None)
     until_date: Mapped[Optional[date]] = mapped_column(Date, default=None)
-    total_returned: Mapped[Optional[int]] = mapped_column(default=None)
-    total_processed: Mapped[Optional[int]] = mapped_column(default=None)
+    total_returned: Mapped[Optional[int]] = mapped_column(Integer, default=None)
+    total_processed: Mapped[Optional[int]] = mapped_column(Integer, default=None)
     notes: Mapped[Optional[str]] = mapped_column(String, default=None)
-=======
-    """Forward-captured snapshot of a trial record."""
-
-    __tablename__ = "trial_versions"
-
-    trial_version_id = Column(Integer, primary_key=True)
-    trial_id = Column(Integer, ForeignKey("trials.trial_id", ondelete="CASCADE"), nullable=False)
-    captured_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
-    last_update_posted_date = Column(Date)
-    raw_jsonb = Column(JSONB, nullable=False)
-    sha256 = Column(String(64), nullable=False)
-    primary_endpoint_text = Column(Text)
-    sample_size = Column(Integer)
-    analysis_plan_text = Column(Text)
-    changes_jsonb = Column(JSONB)
-
-    __table_args__ = (
-        UniqueConstraint("trial_id", "sha256", name="uq_trial_versions_trial_sha"),
-        Index("idx_trial_versions_trial_time", "trial_id", "captured_at"),
-        Index("idx_trial_versions_hash", "sha256"),
-    )
-
-
-class CTGovHistoryVersion(Base):
-    """Metadata scraped from the ClinicalTrials.gov Record History page."""
-
-    __tablename__ = "ctgov_history_versions"
-
-    trial_id = Column(Integer, ForeignKey("trials.trial_id", ondelete="CASCADE"), primary_key=True)
-    version_rank = Column(Integer, primary_key=True)
-    submitted_date = Column(Date)
-    url = Column(Text)
-
-
-class CTGovIngestState(Base):
-    """Singleton table tracking cursor position for CT.gov ingestion."""
-
-    __tablename__ = "ctgov_ingest_state"
-
-    id = Column(Boolean, primary_key=True, default=True)
-    cursor_last_update_posted = Column(Date)
-    last_run_at = Column(DateTime(timezone=True))
-
-
-class IngestRun(Base):
-    """Audit log for ingestion runs."""
-
-    __tablename__ = "ingest_runs"
-
-    run_id = Column(Integer, primary_key=True)
-    source = Column(Text, nullable=False)
-    started_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
-    finished_at = Column(DateTime(timezone=True))
-    since_date = Column(Date)
-    until_date = Column(Date)
-    total_returned = Column(Integer)
-    total_processed = Column(Integer)
-    notes = Column(Text)
-
-
-class Study(Base):
-    """External document providing evidence about a trial."""
-
-    __tablename__ = "studies"
-
-    study_id = Column(Integer, primary_key=True)
-    trial_id = Column(Integer, ForeignKey("trials.trial_id", ondelete="CASCADE"), nullable=False)
-    asset_id = Column(Integer, ForeignKey("assets.asset_id"))
-    doc_type = Column(Text)  # e.g. PR, Abstract, Paper
-    citation = Column(Text)
-    year = Column(Integer)
-    url = Column(Text)
-    oa_status = Column(Text)
-    extracted_jsonb = Column(JSONB)
-    notes_md = Column(Text)
-    coverage_level = Column(Integer)
-
-
-class Signal(Base):
-    """Primitive signal extracted from a study."""
-
-    __tablename__ = "signals"
-
-    trial_id = Column(Integer, ForeignKey("trials.trial_id", ondelete="CASCADE"), primary_key=True)
-    s_id = Column(Text, primary_key=True)
-    value = Column(Float)
-    severity = Column(Text)
-    evidence_span = Column(Text)
-    source_study_id = Column(Integer, ForeignKey("studies.study_id"))
-
-
-class Gate(Base):
-    """Composite gate built from multiple signals."""
-
-    __tablename__ = "gates"
-
-    trial_id = Column(Integer, ForeignKey("trials.trial_id", ondelete="CASCADE"), primary_key=True)
-    g_id = Column(Text, primary_key=True)
-    fired_bool = Column(Boolean, nullable=False)
-    supporting_s_ids = Column(ARRAY(Text))
-    lr_used = Column(Float)
-    rationale_text = Column(Text)
-
-
-class Score(Base):
-    """Posterior failure probability for a trial."""
-
-    __tablename__ = "scores"
-
-    trial_id = Column(Integer, ForeignKey("trials.trial_id", ondelete="CASCADE"), primary_key=True)
-    run_id = Column(Integer, primary_key=True)
-    prior_pi = Column(Float)
-    logit_prior = Column(Float)
-    sum_log_lr = Column(Float)
-    logit_post = Column(Float)
-    p_fail = Column(Float)
-
-
-class AssetOwnership(Base):
-    """Ownership periods of an asset by a company."""
-
-    __tablename__ = "asset_ownership"
-
-    asset_id = Column(Integer, ForeignKey("assets.asset_id", ondelete="CASCADE"), primary_key=True)
-    company_id = Column(Integer, ForeignKey("companies.company_id", ondelete="CASCADE"), primary_key=True)
-    start_date = Column(Date, primary_key=True)
-    end_date = Column(Date)
-    source = Column(Text)
-    evidence_url = Column(Text)
-
-
-class Patent(Base):
-    """Patent associated with an asset."""
-
-    __tablename__ = "patents"
-
-    patent_id = Column(Integer, primary_key=True)
-    asset_id = Column(Integer, ForeignKey("assets.asset_id", ondelete="CASCADE"))
-    family_id = Column(Text)
-    jurisdiction = Column(Text)
-    number = Column(Text)
-    earliest_priority_date = Column(Date)
-    assignees = Column(ARRAY(Text))
-    inventors = Column(ARRAY(Text))
-    status = Column(Text)
-
-
-class PatentAssignment(Base):
-    """Assignment record for a patent."""
-
-    __tablename__ = "patent_assignments"
-
-    assignment_id = Column(Integer, primary_key=True)
-    patent_id = Column(Integer, ForeignKey("patents.patent_id", ondelete="CASCADE"), nullable=False)
-    assignor = Column(Text)
-    assignee = Column(Text)
-    exec_date = Column(Date)
-    type = Column(Text)
-    source_url = Column(Text)
-
-
-class Label(Base):
-    """Outcome label for a trial readout."""
-
-    __tablename__ = "labels"
-
-    trial_id = Column(Integer, ForeignKey("trials.trial_id", ondelete="CASCADE"), primary_key=True)
-    event_date = Column(Date, primary_key=True)
-    primary_outcome_success_bool = Column(Boolean)
-    price_move_5d = Column(Float)
-    label_source_url = Column(Text)
-
-
-class Catalyst(Base):
-    """Important upcoming trial catalyst windows."""
-
-    __tablename__ = "catalysts"
-
-    trial_id = Column(Integer, ForeignKey("trials.trial_id", ondelete="CASCADE"), primary_key=True)
-    window_start = Column(Date, primary_key=True)
-    window_end = Column(Date)
-    certainty = Column(Float)
-    sources = Column(ARRAY(Text))
-
-
-__all__ = [
-    "Base",
-    "Company",
-    "Asset",
-    "Trial",
-    "TrialVersion",
-    "CTGovHistoryVersion",
-    "CTGovIngestState",
-    "IngestRun",
-    "Study",
-    "Signal",
-    "Gate",
-    "Score",
-    "AssetOwnership",
-    "Patent",
-    "PatentAssignment",
-    "Label",
-    "Catalyst",
-]
-
->>>>>>> origin/main
