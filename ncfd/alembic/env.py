@@ -8,12 +8,26 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+<<<<<<< HEAD
 # --- add src/ to sys.path and import your models' Base
 THIS_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.abspath(os.path.join(THIS_DIR, ".."))   # .../ncfd
 SRC_ROOT = os.path.join(PROJECT_ROOT, "src")                   # .../ncfd/src
 if SRC_ROOT not in sys.path:
     sys.path.insert(0, SRC_ROOT)
+=======
+import sys
+from pathlib import Path
+
+# Ensure the ``src`` directory is on the path so that models can be imported.
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.append(str(BASE_DIR / "src"))
+
+from ncfd.db.models import Base  # noqa: E402
+
+# target metadata for autogeneration
+target_metadata = Base.metadata
+>>>>>>> origin/main
 
 from ncfd.db.models import Base  # <-- make sure models.py defines Base and tables
 target_metadata = Base.metadata
