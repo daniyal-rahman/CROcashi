@@ -28,8 +28,30 @@ if not config.get_main_option("sqlalchemy.url"):
     else:
         raise RuntimeError("Set sqlalchemy.url in alembic.ini or DATABASE_URL")
 
+def _resolve_db_url():
+    # 1) Prefer real env var (works with `DATABASE_URL=... alembic upgrade head`)
+    env_url = os.getenv("DATABASE_URL")
+    if env_url:
+        return env_url
+
+    # 2) Fall back to alembic.ini value
+    ini_url = config.get_main_option("sqlalchemy.url")
+
+    # If ini value looks like ${SOME_ENV}, try to expand it
+    if ini_url and ini_url.startswith("${") and ini_url.endswith("}"):
+        env_name = ini_url[2:-1]
+        return os.getenv(env_name)
+
+    return ini_url
+
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
+    url = _resolve_db_url()
+    if not url:
+        raise RuntimeError("DATABASE_URL is not set and sqlalchemy.url is empty")
+
+    section = config.get_section(config.config_ini_section) or {}
+    section["sqlalchemy.url"] = url
+
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -41,9 +63,17 @@ def run_migrations_offline() -> None:
     with context.begin_transaction():
         context.run_migrations()
 
+
 def run_migrations_online() -> None:
+    url = _resolve_db_url()
+    if not url:
+        raise RuntimeError("DATABASE_URL is not set and sqlalchemy.url is empty")
+
+    section = config.get_section(config.config_ini_section) or {}
+    section["sqlalchemy.url"] = url
+
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

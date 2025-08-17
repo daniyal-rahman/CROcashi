@@ -46,8 +46,8 @@ def main():
         count += 1
         if f.last_update_posted_date and (max_seen is None or f.last_update_posted_date > max_seen):
             max_seen = f.last_update_posted_date
-        if count >= page_size:  # keep it polite for smoke runs; remove if you want full paging
-            break
+        # if count >= page_size:  # keep it polite for smoke runs; remove if you want full paging
+        #     break
 
     save_cursor(max_seen)
     print(f"\nOK: printed {count} studies; cursor now {max_seen.isoformat() if max_seen else 'unset'}")
