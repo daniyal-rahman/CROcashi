@@ -1,0 +1,37 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ncfd_db
+    restart: unless-stopped
+    env_file:
+      - .env        # lives next to this file
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      # Use 5433 on host to avoid clashing with any local Postgres
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -h 127.0.0.1"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  # Optional lightweight DB UI (comment out if you don’t want it)
+  adminer:
+    image: adminer:4
+    container_name: ncfd_adminer
+    restart: unless-stopped
+    ports:
+      - "8082:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pg_data:
