@@ -1,26 +1,21 @@
-# src/ncfd/mapping/deterministic.py
+# ncfd/src/ncfd/mapping/deterministic.py
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Iterable, Optional, Sequence, Set, Dict
+from typing import Iterable, Optional, Set, Dict
 import re
 
 from sqlalchemy import text, bindparam
 from sqlalchemy.orm import Session
 
-try:
-    from ncfd.mapping.normalize import norm_name
-except Exception:
-    _SUFFIXES = r"(inc|corp|co|plc|ltd|limited|holdings|holding|therapeutics|pharmaceuticals|biopharma|biosciences|biotech)"
-    def norm_name(s: str) -> str:
-        s = (s or "").lower()
-        s = re.sub(r"[^a-z0-9\. ]+", " ", s)
-        s = re.sub(rf"\b{_SUFFIXES}\b\.?", " ", s)
-        s = re.sub(r"\s+", " ", s).strip()
-        return s
+from ncfd.mapping.normalize import norm_name
 
-DOMAIN_RE = re.compile(r"\b((?:[a-z0-9-]+\.)+[a-z]{2,})(?:/|$)", re.IGNORECASE)
+# Tolerate closing punctuation after a domain
+DOMAIN_RE = re.compile(
+    r"\b((?:[a-z0-9-]+\.)+[a-z]{2,})(?=[/\s\)\]\}\.,;:'\"!?]|$)",
+    re.IGNORECASE,
+)
 
-DEFAULT_ALIAS_TYPES: Set[str] = {"aka","dba","former_name","short","subsidiary","brand"}
+DEFAULT_ALIAS_TYPES: Set[str] = {"aka", "dba", "former_name", "short", "subsidiary", "brand"}
 DOMAIN_ALIAS_TYPE = "domain"
 
 @dataclass(frozen=True)
@@ -52,7 +47,7 @@ def resolve_company(
     sponsor_norm = norm_name(sponsor_text)
     dom = _extract_domain_candidate(sponsor_text)
 
-    # 1) Exact alias_norm for allowed types (PREFERRED)
+    # 1) Exact alias_norm for allowed types (high-precision)
     if allowed_alias_types:
         q = (
             text("""
@@ -78,12 +73,13 @@ def resolve_company(
 
     # 3) Domain matches (alias_type='domain' or companies.website_domain)
     if dom:
+        # alias table (use alias column only; strip leading www.)
         rows = session.execute(
             text("""
                 SELECT DISTINCT company_id
                   FROM company_aliases
                  WHERE alias_type = :t
-                   AND lower(alias) = :dom
+                   AND lower(regexp_replace(alias, '^www\\.', '')) = :dom
             """),
             {"t": DOMAIN_ALIAS_TYPE, "dom": dom},
         ).fetchall()
@@ -91,8 +87,13 @@ def resolve_company(
             return Resolution(rows[0][0], "domain_exact",
                               {"domain": dom, "raw": sponsor_text})
 
+        # companies.website_domain fallback
         rows = session.execute(
-            text("SELECT company_id FROM companies WHERE lower(website_domain) = :dom"),
+            text("""
+                SELECT company_id
+                  FROM companies
+                 WHERE lower(regexp_replace(COALESCE(website_domain, ''), '^www\\.', '')) = :dom
+            """),
             {"dom": dom},
         ).fetchall()
         if len(rows) == 1:

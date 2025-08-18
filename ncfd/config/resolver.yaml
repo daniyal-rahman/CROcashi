@@ -1,0 +1,25 @@
+model:
+  intercept: -5.0
+  weights:
+    jw_primary: 2.8
+    token_set_ratio: 2.4
+    common_token_frac: 1.2
+    acronym_exact: 1.9
+    domain_root_match: 3.6
+    email_domain_match: 4.0
+    geo_country_match: 0.3
+    industry_biopharma: 0.6
+    alias_overlap_score: 2.2
+    parent_sub_hint: 1.7
+    length_diff_penalty: 0.7
+    banned_geo_penalty: -3.0
+    academic_keyword_penalty: -1.2
+    ticker_string_hit: 3.0
+    top2_margin: 1.0
+
+thresholds:
+  tau_accept: 0.995
+  review_low: 0.970
+  # review_low: 0.05
+  min_top2_margin: 0.10
+  require_unique_winner: true
