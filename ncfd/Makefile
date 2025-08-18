@@ -88,6 +88,42 @@ migrate_down_one:
 alembic:
 	POSTGRES_DSN=${POSTGRES_DSN} alembic $(ARGS)
 
+run-id:
+	python -c "from ncfd.utils.run_id import make_run_id; print(make_run_id())"
+
+resolve-one:
+	 PYTHONPATH=ncfd/src python -m ncfd.mapping.cli resolve-one "$(SPONSOR)" --cfg config/resolver.yaml --k 25
+
+resolve-batch:
+	 PYTHONPATH=ncfd/src python -m ncfd.mapping.cli resolve-batch --cfg config/resolver.yaml --limit 25
+
+resolve-one-persist:
+	PYTHONPATH=ncfd/src python -m ncfd.mapping.cli resolve-one "$(SPONSOR)" --cfg config/resolver.yaml --k 25 --persist --nct $(NCT) --run-id $(RUN_ID)
+
+review-list:
+	@PYTHONPATH=ncfd/src python -m ncfd.mapping.cli review-list
+
+review-show:
+	@PYTHONPATH=ncfd/src python -m ncfd.mapping.cli review-show $(RQ)
+
+review-accept:
+	@PYTHONPATH=ncfd/src python -m ncfd.mapping.cli review-accept $(RQ) --apply-trial
+
+review-reject:
+	@PYTHONPATH=ncfd/src python -m ncfd.mapping.cli review-reject $(RQ)
+
+batch-dry:
+	PYTHONPATH=ncfd/src python -m ncfd.mapping.cli resolve-batch --limit $(N) --cfg config/resolver.yaml
+
+batch-persist:
+	PYTHONPATH=ncfd/src python -m ncfd.mapping.cli resolve-batch --limit $(N) --cfg config/resolver.yaml --persist --run-id $(RUN_ID) --apply-trial
+
+subs-build:
+	PYTHONPATH=ncfd/src python -m ncfd.ingest.subsidiaries build-subs --since $(SINCE) --limit $(LIM)
+
+subs-dry:
+	PYTHONPATH=ncfd/src python -m ncfd.ingest.subsidiaries build-subs --since $(SINCE) --limit $(LIM) --dry-run
+
 run_all:
 	make db_migrate
 	make ingest_ctgov
