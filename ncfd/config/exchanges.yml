@@ -1,0 +1,29 @@
+exchanges:
+  - code: NASDAQ
+    mic: XNAS
+    name: Nasdaq Stock Market
+    country: US
+    is_allowed: true
+  - code: NYSE
+    mic: XNYS
+    name: New York Stock Exchange
+    country: US
+    is_allowed: true
+  - code: NYSE American
+    mic: XASE
+    name: NYSE American
+    country: US
+    is_allowed: true
+  - code: OTCQX
+    mic: OTCQ
+    name: OTC Markets OTCQX
+    country: US
+    is_allowed: true
+  - code: OTCQB
+    mic: OTCQB
+    name: OTC Markets OTCQB
+    country: US
+    is_allowed: true
+
+# guardrail — these will never be allowed even if present in the file
+disallowed_countries: [CN, HK]
