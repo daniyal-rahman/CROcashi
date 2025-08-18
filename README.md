@@ -18,3 +18,8 @@ echo "$DATABASE_URL"    # expect: postgresql+psycopg://ncfd:ncfd@127.0.0.1:5433/
 alembic history --indicate-current
 alembic heads -v
 
+
+
+
+set -a; source .env; set +a
+
