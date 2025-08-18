@@ -80,13 +80,13 @@ db_psql:
 
 # --- Alembic helpers ---
 migrate_up:
-	DATABASE_URL=${DATABASE_URL} alembic upgrade head
+	POSTGRES_DSN=${POSTGRES_DSN} alembic upgrade head
 
 migrate_down_one:
-	DATABASE_URL=${DATABASE_URL} alembic downgrade -1
+	POSTGRES_DSN=${POSTGRES_DSN} alembic downgrade -1
 
 alembic:
-	DATABASE_URL=${DATABASE_URL} alembic $(ARGS)
+	POSTGRES_DSN=${POSTGRES_DSN} alembic $(ARGS)
 
 run_all:
 	make db_migrate
