@@ -1,1 +1,69 @@
+# --- OS / editors ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# --- Python build/caches ---
+__pycache__/
+*.py[cod]
+*$py.class
+.eggs/
+*.egg-info/
+dist/
+build/
+pip-wheel-metadata/
+
+# --- Virtual envs ---
+.venv/
+venv/
+ENV/
+
+# --- Testing / lint / typecheck ---
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.dmypy.json
+.pyre/
+.ruff_cache/
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+
+# --- Local env / secrets ---
 .env
+.env.*
+!.env.example
+!.env.template
+
+# --- Logs / state ---
+logs/
+*.log
+.state/
+
+# --- Data & artifacts (keep tree clean; un-ignore placeholders if you add them) ---
+data/
+!data/.gitkeep
+!data/sec/.gitkeep
+!data/duckdb/.gitkeep
+
+# Common data file types (if outside ./data/)
+*.duckdb
+*.sqlite3
+*.db
+*.parquet
+*.feather
+*.csv.gz
+
+# --- Docker local volumes (if you ever bind-mount these) ---
+pgdata/
+db_data/
+
+# --- Config overrides (keep canonical configs tracked) ---
+ncfd/config/*.local.*
+ncfd/config/private/
