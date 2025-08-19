@@ -32,7 +32,10 @@ def upgrade() -> None:
         """
         INSERT INTO resolver_ignore_sponsor (pattern, reason) VALUES
         ('NCI', 'government'),
+        ('National Cancer Institute', 'government'),
         ('NIH', 'government'),
+        ('National Institutes of Health', 'government'),
+        ('National Institute of Health', 'government'),
         ('VA', 'government'),
         ('Department of Veterans Affairs', 'government'),
         ('Department of Defense', 'government'),
