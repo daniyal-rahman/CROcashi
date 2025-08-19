@@ -118,11 +118,30 @@ batch-dry:
 batch-persist:
 	PYTHONPATH=ncfd/src python -m ncfd.mapping.cli resolve-batch --limit $(N) --cfg config/resolver.yaml --persist --run-id $(RUN_ID) --apply-trial
 
-subs-build:
-	PYTHONPATH=ncfd/src python -m ncfd.ingest.subsidiaries build-subs --since $(SINCE) --limit $(LIM)
+# Subsidiaries (Ex-21)
+SINCE ?= 2018-01-01
+LIM   ?= 200
+
+subs-inspect:
+	@PYTHONPATH=ncfd/src python -m ncfd.ingest.subsidiaries inspect
 
 subs-dry:
-	PYTHONPATH=ncfd/src python -m ncfd.ingest.subsidiaries build-subs --since $(SINCE) --limit $(LIM) --dry-run
+	@PYTHONPATH=ncfd/src python -m ncfd.ingest.subsidiaries dry --since $(SINCE) --limit $(LIM)
+
+subs-load:
+	@PYTHONPATH=ncfd/src python -m ncfd.ingest.subsidiaries load --since $(SINCE) --limit $(LIM)
+
+# keep old name working if you had it
+subs-build: subs-load
+
+# backward-compat alias
+subs-build: subs-load
+
+subs-link:
+	python -m ncfd.ingest.subs_link dry --limit $${LIM:-50}
+
+subs-link-load:
+	python -m ncfd.ingest.subs_link load
 
 run_all:
 	make db_migrate

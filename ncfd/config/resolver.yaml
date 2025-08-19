@@ -18,8 +18,7 @@ model:
     top2_margin: 1.0
 
 thresholds:
-  tau_accept: 0.995
-  review_low: 0.970
-  # review_low: 0.05
-  min_top2_margin: 0.10
+  tau_accept: 0.90        # was 0.995
+  review_low: 0.60        # was 0.97
+  min_top2_margin: 0.05   # was 0.10
   require_unique_winner: true

@@ -15,7 +15,7 @@ DOMAIN_RE = re.compile(
     re.IGNORECASE,
 )
 
-DEFAULT_ALIAS_TYPES: Set[str] = {"aka", "dba", "former_name", "short", "subsidiary", "brand"}
+DEFAULT_ALIAS_TYPES: Set[str] = {"aka", "dba", "former_name", "short", "subsidiary", "brand", "legal"}
 DOMAIN_ALIAS_TYPE = "domain"
 
 @dataclass(frozen=True)
