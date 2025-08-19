@@ -170,7 +170,7 @@ while true; do
 
   case "${cmd:-}" in
     q) break ;;
-    s) psql "$PSQL_DSN" -v rq="$RQ_ID" -c "UPDATE resolver_review_queue SET created_at = now() WHERE rq_id = :rq;" >/dev/null ;;
+    s) psql "$PSQL_DSN" -c "UPDATE resolver_review_queue SET created_at = now() WHERE rq_id = $RQ_ID;" >/dev/null ;;
     r) reject_item "$RQ_ID" ;;
     a)
       CID="$(top_cid "$RUN_ID" "$NCT_ID")"
