@@ -135,10 +135,10 @@ accept_item() {
   read -r RUN_ID NCT_ID SPONSOR <<<"$(meta_of "$rq_id")"
 
   # Update trial + remove from queue
-  psql "$PSQL_DSN" -v cid="$company_id" -v nct="$NCT_ID" -v rq="$rq_id" -c "
+  psql "$PSQL_DSN" -c "
     BEGIN;
-      UPDATE trials SET sponsor_company_id = :cid WHERE nct_id = :'nct';
-      DELETE FROM resolver_review_queue WHERE rq_id = :rq;
+      UPDATE trials SET sponsor_company_id = $company_id WHERE nct_id = '$NCT_ID';
+      DELETE FROM resolver_review_queue WHERE rq_id = $rq_id;
     COMMIT;
   " >/dev/null
 }
