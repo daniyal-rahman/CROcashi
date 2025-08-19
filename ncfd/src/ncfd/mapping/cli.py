@@ -21,12 +21,21 @@ from ncfd.mapping.probabilistic import (
     extract_domains,
 )
 from ncfd.mapping.blocks import load_trial_party, derive_context  # 1.2 context hooks
-from ncfd.mapping.deterministic import resolve_company as det_resolve
+# from ncfd.mapping.deterministic import resolve_company as det_resolve
 from ncfd.mapping.persist import (
     persist_decision,
     persist_candidate_features,
     enqueue_review,
 )
+from ncfd.mapping.det_short import det_short_circuit
+
+
+from ncfd.mapping.det import det_resolve as det_rules_resolve, DetDecision
+from ncfd.mapping.deterministic import resolve_company as det_exact_resolve
+from inspect import getsourcefile
+# existing imports ...
+from ncfd.mapping.det import det_resolve          # <-- add this
+from ncfd.mapping.deterministic import resolve_company  # if you’re using the exact/domain step
 
 app = typer.Typer(add_completion=False)
 console = Console()
@@ -321,16 +330,43 @@ def resolve_nct(
         if not row:
             console.print(f"[red]nct_id not found: {nct_id}[/red]")
             raise typer.Exit(1)
+
         trial_id, sponsor_text = int(row[0]), (row[1] or "")
 
-        # Build 1.2 context
+        # Build context (domains, drug codes) from CT.gov snapshot
         tp = load_trial_party(s, trial_id, nct_id, sponsor_text)
         ctx = derive_context(tp)
 
-        # deterministic first (Phase-2 resolver)
-        det = None
+        console.print(f"[dim]debug: skip_det={skip_det} sponsor_text={sponsor_text!r}[/dim]")
+        det = det_resolve(s, sponsor_text)
+        console.print(f"[dim]debug: det={det}[/dim]")
+
+        from sqlalchemy import text as _t
+        cnt = s.execute(_t("SELECT count(*) FROM resolver_det_rules")).scalar()
+        if not cnt:
+            console.print("[yellow]No deterministic rules found; running probabilistic only.[/yellow]")
+
+        # -------------------------- Deterministic path --------------------------
+        det: Optional[DetDecision] = None
         if not skip_det and sponsor_text:
-            det = det_resolve(s, sponsor_text)
+            # DEBUG: confirm what we're calling and that DB has rules
+            console.print(f"[dim]det_exact_resolve from: {getsourcefile(det_exact_resolve)}[/dim]")
+            console.print(f"[dim]det_rules_resolve from: {getsourcefile(det_rules_resolve)}[/dim]")
+            rules_count = s.execute(text("SELECT count(*) FROM resolver_det_rules")).scalar()
+            console.print(f"[dim]resolver_det_rules count: {rules_count}[/dim]")
+
+            # 1) exact/alias/domain deterministic
+            exact = det_exact_resolve(s, sponsor_text)
+            if exact:
+                det = DetDecision(company_id=exact.company_id,
+                                  method=f"det_exact:{exact.method}",
+                                  evidence=exact.evidence)
+            else:
+                # 2) regex-rule deterministic
+                det = det_rules_resolve(s, sponsor_text)
+
+        console.print(f"[dim]debug: skip_det={skip_det} sponsor_text={sponsor_text!r} det={det}[/dim]")
+
         if det:
             _print_deterministic(det, sponsor_text)
             if persist:
@@ -351,7 +387,7 @@ def resolve_nct(
                         {"cid": det.company_id, "nct": nct_id},
                     )
             if json_out:
-                blob = {
+                console.print_json(json.dumps({
                     "mode": f"deterministic:{det.method}",
                     "company_id": det.company_id,
                     "p": 1.0,
@@ -362,11 +398,11 @@ def resolve_nct(
                     "run_id": run_id,
                     "nct_id": nct_id,
                     "context": {"domains": ctx.domains, "drug_codes": ctx.drug_codes},
-                }
-                console.print_json(json.dumps(blob, ensure_ascii=False))
+                }, ensure_ascii=False))
             return
+        # -----------------------------------------------------------------------
 
-        # probabilistic path
+        # -------------------------- Probabilistic path --------------------------
         sponsor_for_match = sponsor_text or (tp.texts[0] if tp.texts else "")
         if not sponsor_for_match:
             console.print("[yellow]No sponsor text found in trials or CT.gov; cannot resolve.[/yellow]")
@@ -405,6 +441,7 @@ def resolve_nct(
                 sponsor_text=sponsor_for_match,
                 scored_candidates=_serialize_scored(scored, topn=25),
             )
+
             if dec.mode == "accept":
                 persist_decision(
                     s,
@@ -422,6 +459,7 @@ def resolve_nct(
                         text("UPDATE trials SET sponsor_company_id=:cid WHERE nct_id=:nct"),
                         {"cid": dec.company_id, "nct": nct_id},
                     )
+
             elif dec.mode == "review":
                 enqueue_review(
                     s,
@@ -445,8 +483,9 @@ def resolve_nct(
                 "context": {"domains": ctx.domains, "drug_codes": ctx.drug_codes},
             }
             console.print_json(json.dumps(blob, ensure_ascii=False))
+        # -----------------------------------------------------------------------
 
-
+@app.command("resolve-batch")
 def resolve_batch(
     cfg_path: str = typer.Option("config/resolver.yaml", "--cfg"),
     limit: int = typer.Option(25, help="How many unresolved trials to sample"),
@@ -466,35 +505,34 @@ def resolve_batch(
     run_id = run_id or datetime.utcnow().strftime("resolver-%Y%m%dT%H%M%SZ")
 
     with get_session() as s:
-        # 1) Sample unresolved trials (skip ignored sponsors)
         rows = s.execute(
             text(
                 """
                 SELECT t.nct_id, t.sponsor_text
                   FROM trials t
-                  WHERE t.sponsor_text IS NOT NULL
-                    AND (t.sponsor_company_id IS NULL OR t.sponsor_company_id = 0)
-                    AND NOT EXISTS (
-                          SELECT 1
-                            FROM resolver_ignore_sponsor ig
-                           WHERE t.sponsor_text ~* ig.pattern
-                    )
-                  ORDER BY t.nct_id
-                  LIMIT :lim
+                 WHERE t.sponsor_text IS NOT NULL
+                   AND (t.sponsor_company_id IS NULL OR t.sponsor_company_id = 0)
+                   AND NOT EXISTS (
+                         SELECT 1
+                           FROM resolver_ignore_sponsor ig
+                          WHERE t.sponsor_text ~* ig.pattern
+                   )
+                 ORDER BY t.nct_id
+                 LIMIT :lim
                 """
             ),
             {"lim": limit},
         ).fetchall()
 
         for nct_id, sponsor_text in rows:
-            # deterministic (unless skipped)
+            # 1) Deterministic short-circuit (unless --skip-det)
             det = None
-            if not skip_det:
+            if not skip_det and sponsor_text:
                 det = det_resolve(s, sponsor_text)
 
-            if det:
+            if det and getattr(det, "company_id", None):
                 console.print(f"[green]{nct_id}[/green] :: det:{det.method} -> cid={det.company_id}")
-                if persist and run_id:
+                if persist:
                     persist_decision(
                         s,
                         run_id=run_id,
@@ -502,17 +540,32 @@ def resolve_batch(
                         sponsor_text=sponsor_text,
                         decision=det,
                         decided_by=decider,
+                        leader_features={},   # none for det
+                        leader_meta={},
                     )
                     if apply_trial:
                         s.execute(
                             text("UPDATE trials SET sponsor_company_id=:cid WHERE nct_id=:nct"),
                             {"cid": det.company_id, "nct": nct_id},
                         )
-                continue
+                continue  # skip probabilistic when det hit
 
-            # probabilistic
+            # 2) Probabilistic
             qnorm = norm_name(sponsor_text)
             cands = candidate_retrieval(s, qnorm, k=50)
+            if not cands:
+                console.print(f"[yellow]{nct_id}[/yellow] :: no candidates")
+                if persist and force_review_on_reject:
+                    enqueue_review(
+                        s,
+                        run_id=run_id,
+                        nct_id=nct_id,
+                        sponsor_text=sponsor_text,
+                        candidates=[],  # nothing to show
+                        reason="force_review",
+                    )
+                continue
+
             ctx = _make_context_for_prob(s, nct=None, sponsor_text=sponsor_text)
             scored = score_candidates(
                 cands,
@@ -528,8 +581,8 @@ def resolve_batch(
                 f"(cid={dec.company_id}, p={dec.p:.3f}, margin={dec.top2_margin:.3f})"
             )
 
-            if persist and run_id:
-                # belt & suspenders: skip if sponsor is ignored (protects old runs / future changes)
+            if persist:
+                # belt & suspenders: skip if sponsor is ignored
                 ignored = s.execute(
                     text("SELECT EXISTS (SELECT 1 FROM resolver_ignore_sponsor WHERE :s ~* pattern)"),
                     {"s": sponsor_text},
@@ -562,7 +615,6 @@ def resolve_batch(
                             text("UPDATE trials SET sponsor_company_id=:cid WHERE nct_id=:nct"),
                             {"cid": dec.company_id, "nct": nct_id},
                         )
-
                 elif dec.mode == "review" or force_review_on_reject:
                     enqueue_review(
                         s,
@@ -572,7 +624,6 @@ def resolve_batch(
                         candidates=_serialize_scored(scored, topn=25),
                         reason="prob_review" if dec.mode == "review" else "force_review",
                     )
-
 # --- Review queue utilities ---------------------------------------------------
 
 def _fetch_pending(session, limit: int = 20):
@@ -676,82 +727,65 @@ def review_show(rq_id: int = typer.Argument(...)):
 # Accept a review item (choose company_id; default = top candidate)
 @app.command("review-accept")
 def review_accept(
-    rq_id: int = typer.Argument(...),
-    company_id: Optional[int] = typer.Option(None, "--company-id", help="Override; default = top-p candidate"),
+    rq_id: int = typer.Argument(..., help="review_queue.rq_id to accept"),
+    company_id: int = typer.Option(..., "--company-id", "-c", help="Chosen company_id"),
+    apply_trial: bool = typer.Option(False, "--apply-trial/--no-apply-trial"),
     decider: str = typer.Option("human", "--decider"),
-    apply_trial: bool = typer.Option(False, "--apply-trial/--no-apply-trial", help="Update trials.sponsor_company_id"),
-    label: bool = typer.Option(True, "--label/--no-label", help="Write resolver_labels = is_match=true"),
 ):
+    """
+    Accept a review_queue item and write resolver_decisions (+update trials if requested).
+    """
+    from sqlalchemy import text as _t
+    from ncfd.mapping.persist import persist_decision
+
     with get_session() as s:
-        row = _fetch_review_item(s, rq_id)
+        row = s.execute(
+            _t("SELECT nct_id, sponsor_text, candidates FROM review_queue WHERE rq_id=:id"),
+            {"id": rq_id},
+        ).first()
         if not row:
             console.print(f"[red]No review item rq_id={rq_id}[/red]")
             raise typer.Exit(1)
 
-        cands = list(row.candidates_jsonb or [])
-        cands.sort(key=lambda x: x.get("p", 0.0), reverse=True)
-        if not cands:
-            console.print("[red]No candidates present.[/red]")
-            raise typer.Exit(1)
+        nct_id, sponsor_text, _cands = row
 
-        leader = cands[0]
-        chosen_cid = int(company_id or leader.get("company_id"))
-        chosen_p = float(leader.get("p", 0.0) if (company_id is None or chosen_cid == leader.get("company_id")) else 1.0)
-        leader_features = leader.get("features", {}) if (company_id is None or chosen_cid == leader.get("company_id")) else {}
+        # Minimal “accepted” payload for persist_decision (treated as probabilistic:accept)
+        dec = {
+            "mode": "accept",
+            "company_id": company_id,
+            "p": 1.0,
+            "top2_margin": 1.0,
+            "features": {},
+            "leader_meta": {"source": "review", "rq_id": rq_id},
+        }
 
-        # Persist decision (mark as human:accept)
-        class _HumanDecision:
-            def __init__(self, company_id, p, top2_margin, features):
-                self.company_id = company_id
-                self.p = p
-                self.top2_margin = 1.0
-                self.features = features
-                self.leader_meta = {}
+        run_id = datetime.utcnow().strftime("review-%Y%m%dT%H%M%SZ")
 
-        dec = _HumanDecision(chosen_cid, chosen_p, 1.0, leader_features)
         persist_decision(
             s,
-            run_id=row.run_id,
-            nct_id=row.nct_id,
-            sponsor_text=row.sponsor_text,
+            run_id=run_id,
+            nct_id=nct_id,
+            sponsor_text=sponsor_text,
             decision=dec,
-            leader_features=leader_features,
-            leader_meta={"source": "review_queue", "rq_id": rq_id},
             decided_by=decider,
-            notes_md=None,
+            leader_features=dec["features"],
+            leader_meta=dec["leader_meta"],
         )
 
-        # Mark queue as resolved
-        s.execute(text("UPDATE resolver_review_queue SET status='resolved', resolved_at=now() WHERE rq_id=:rq"), {"rq": rq_id})
-
-        # Optional: apply to trials
-        if apply_trial:
+        if apply_trial and company_id:
             s.execute(
-                text(
-                    """
-                    UPDATE trials
-                       SET sponsor_company_id = :cid
-                     WHERE nct_id = :nct
-                """
-                ),
-                {"cid": chosen_cid, "nct": row.nct_id},
+                _t("UPDATE trials SET sponsor_company_id=:cid WHERE nct_id=:nct"),
+                {"cid": company_id, "nct": nct_id},
             )
 
-        # Optional: label for training
-        if label:
-            s.execute(
-                text(
-                    """
-                    INSERT INTO resolver_labels
-                        (nct_id, sponsor_text_norm, company_id, is_match, source)
-                    VALUES
-                        (:nct, :s_norm, :cid, TRUE, 'human')
-                """
-                ),
-                {"nct": row.nct_id, "s_norm": norm_name(row.sponsor_text), "cid": chosen_cid},
-            )
+        # remove from queue
+        s.execute(_t("DELETE FROM review_queue WHERE rq_id=:id"), {"id": rq_id})
+        s.commit()
 
-        console.print(f"[green]Accepted[/green] rq_id={rq_id} -> company_id={chosen_cid}")
+        console.print(
+            f"[green]Accepted[/green] rq_id={rq_id} nct={nct_id} -> cid={company_id}"
+            + (" [dim](trials updated)[/dim]" if apply_trial else "")
+        )
 
 
 # Reject a review item (mark resolved; optional negative label)
