@@ -13,7 +13,7 @@ except Exception:
 
         _DSN = os.environ.get(
             "PSQL_DSN",
-            "postgresql+psycopg2://ncfd:ncfd@127.0.0.1:5433/ncfd",
+            "postgresql+psycopg2://ncfd:ncfd@127.0.0.1:/ncfd",
         )
         _engine = create_engine(_DSN, pool_pre_ping=True)
         _Session = sessionmaker(bind=_engine)

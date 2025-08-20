@@ -9,6 +9,7 @@ from sqlalchemy import text, bindparam
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import JSONB
 
+from ncfd.mapping.normalize import norm_name
 from ncfd.db.models import Company
 from ncfd.ingest.securities import upsert_security_active, ExchangeNotAllowed
 
@@ -86,6 +87,23 @@ def _get_or_create_company(session: Session, *, cik: int, name: str) -> tuple[in
     return int(c.company_id), True
 
 
+def ensure_legal_alias(session, company_id: int, company_name: str) -> None:
+    norm = norm_name(company_name or "")
+    session.execute(
+        text("""
+            INSERT INTO company_aliases (company_id, alias, alias_norm, alias_type)
+            SELECT :cid, :alias, :norm, 'legal'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM company_aliases
+                 WHERE company_id = :cid
+                   AND alias_norm = :norm
+                   AND alias_type = 'legal'
+            )
+        """),
+        {"cid": company_id, "alias": company_name, "norm": norm},
+    )
+
+
 # -----------------------------------------------------------------------------
 # Public ingest
 # -----------------------------------------------------------------------------
@@ -121,6 +139,8 @@ def ingest_sec_rows(
                 inserted_companies += 1
             else:
                 updated_companies += 1
+
+            ensure_legal_alias(session, cid, r.title)
 
             # Maintain an active listing for the ticker on the mapped exchange
             upsert_security_active(

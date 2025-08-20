@@ -1,0 +1,346 @@
+PY ?= python3.11
+VENV = .venv
+PIP = $(VENV)/bin/pip
+PYTHON = $(VENV)/bin/python
+
+.PHONY: setup fmt lint type test alembic_init \
+        db_up db_down db_nuke db_logs db_wait db_psql db_dump db_restore db_sql db_url \
+        migrate_up migrate_down_one alembic \
+        run-id resolve-one resolve-batch resolve-one-persist \
+        review-list review-show review-accept review-reject \
+        batch-dry batch-persist \
+        subs-inspect subs-dry subs-load subs-build subs-link subs-link-load \
+        review_fill run_all
+
+# --- Python / dev ---
+
+setup:
+	$(PY) -m venv $(VENV)
+	$(PIP) install -U pip
+	$(PIP) install -e .[dev]
+	$(VENV)/bin/pre-commit install
+	@echo "✅ venv ready. Activate with: source $(VENV)/bin/activate"
+reup:
+	 set -a; source .env; set +a
+
+fmt:
+	$(VENV)/bin/ruff check --fix .
+	$(VENV)/bin/black .
+
+lint:
+	$(VENV)/bin/ruff check .
+	$(VENV)/bin/black --check .
+
+type:
+	$(VENV)/bin/mypy ncfd/src
+
+test:
+	CONFIG_PROFILE=local $(VENV)/bin/pytest -q
+
+alembic_init:
+	@# one-time (if you haven't created migrations folder)
+	$(VENV)/bin/alembic init alembic
+
+# --- CT.gov ingest ---
+SINCE ?= 2000-01-01
+ingest_ctgov:
+	CONFIG_PROFILE=local $(PYTHON) scripts/ingest_ctgov.py --since $(SINCE)
+
+# --- Dockerized DB ---
+COMPOSE = docker compose
+DC_DIR  = .
+DB_SVC  = db
+DB_CONT ?= ncfd_db                    # container name from docker-compose.yml labels
+
+# Load .env into Make variables + export to subprocesses
+ifneq (,$(wildcard .env))
+include .env
+export $(shell awk -F= '/^[A-Za-z_][A-Za-z0-9_]*=/{print $$1}' .env)
+endif
+
+# Defaults if .env is missing
+POSTGRES_USER     ?= ncfd
+POSTGRES_PASSWORD ?= ncfd
+POSTGRES_DB       ?= ncfd
+POSTGRES_HOST     ?= 127.0.0.1
+POSTGRES_HOST_PORT     ?= 5433
+POSTGRES_DSN      ?= postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_HOST_PORT)/$(POSTGRES_DB)
+DATABASE_URL      ?= $(POSTGRES_DSN)
+
+db_url:
+	@echo "$(POSTGRES_DSN)"
+
+db_up:
+	$(COMPOSE) -f docker-compose.yml up -d $(DB_SVC)
+
+db_down:
+	$(COMPOSE) -f docker-compose.yml down --remove-orphans
+
+db_nuke:
+	$(COMPOSE) -f docker-compose.yml down -v
+
+db_logs:
+	$(COMPOSE) -f docker-compose.yml logs -f $(DB_SVC)
+
+db_wait:
+	@echo "Waiting for Postgres to be healthy..."
+	@for i in $$(seq 1 60); do \
+		STATUS=$$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' $(DB_CONT) 2>/dev/null); \
+		if [ "$$STATUS" = "healthy" ]; then \
+			echo "Postgres healthy ✅"; exit 0; \
+		fi; \
+		sleep 1; \
+	done; \
+	echo "Postgres failed to become healthy ❌"; docker ps; exit 1
+
+db_psql:
+	$(COMPOSE) exec $(DB_SVC) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
+
+db_dump:
+	@TS=$$(date -u +%Y%m%dT%H%M%SZ); \
+	$(COMPOSE) exec -T $(DB_SVC) pg_dump -U $(POSTGRES_USER) -d $(POSTGRES_DB) -Fc > /tmp/ncfd.$${TS}.dump; \
+	echo "Wrote /tmp/ncfd.$${TS}.dump"
+
+db_conninfo:
+	$(COMPOSE) -f docker-compose.yml exec -T $(DB_SVC) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c '\conninfo'
+
+db_ping:
+	$(COMPOSE) -f docker-compose.yml exec -T $(DB_SVC) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c 'SELECT 1;'
+
+alembic_up:
+	DATABASE_URL=$(make -s db_url) alembic upgrade head
+
+# Usage: make db_restore FILE=/path/to/ncfd.dump
+db_restore:
+ifndef FILE
+	$(error Provide FILE=/path/to/dump)
+endif
+	@docker cp $(FILE) $(DB_CONT):/tmp/restore.dump
+	@$(COMPOSE) exec -T $(DB_SVC) pg_restore -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c -v /tmp/restore.dump
+	@$(COMPOSE) exec -T $(DB_SVC) rm -f /tmp/restore.dump
+
+# Usage: make db_sql FILE=ncfd/src/ncfd/db/fill_review_queue.sql
+db_sql:
+ifndef FILE
+	$(error Provide FILE=path/to.sql)
+endif
+	@cat $(FILE) | $(COMPOSE) exec -T $(DB_SVC) psql -v ON_ERROR_STOP=1 -U $(POSTGRES_USER) -d $(POSTGRES_DB)
+
+# --- Alembic helpers (host runs Alembic; DB is Docker on :) ---
+
+migrate_up:
+	POSTGRES_DSN=$(POSTGRES_DSN) DATABASE_URL=$(DATABASE_URL) $(VENV)/bin/alembic upgrade head
+
+migrate_down_one:
+	POSTGRES_DSN=$(POSTGRES_DSN) DATABASE_URL=$(DATABASE_URL) $(VENV)/bin/alembic downgrade -1
+
+# pass ARGS="history" etc.
+alembic:
+	POSTGRES_DSN=$(POSTGRES_DSN) DATABASE_URL=$(DATABASE_URL) $(VENV)/bin/alembic $(ARGS)
+
+# --- Resolver CLI (single stable review_queue workflow) ---
+
+run-id:
+	$(PYTHON) - <<'PY'
+	from datetime import datetime
+	print(datetime.utcnow().strftime("resolver-%Y%m%dT%H%M%SZ"))
+	PY
+
+resolve-one:
+	PYTHONPATH=ncfd/src $(PYTHON) -m ncfd.mapping.cli resolve-one "$(SPONSOR)" --cfg config/resolver.yaml --k 25
+
+resolve-batch:
+	PYTHONPATH=ncfd/src $(PYTHON) -m ncfd.mapping.cli resolve-batch --cfg config/resolver.yaml --limit 25
+
+resolve-one-persist:
+	PYTHONPATH=ncfd/src $(PYTHON) -m ncfd.mapping.cli resolve-one "$(SPONSOR)" --cfg config/resolver.yaml --k 25 --persist --nct $(NCT) --run-id $(RUN_ID)
+
+review-list:
+	@PYTHONPATH=ncfd/src $(PYTHON) -m ncfd.mapping.cli review-list
+
+review-show:
+	@PYTHONPATH=ncfd/src $(PYTHON) -m ncfd.mapping.cli review-show $(RQ)
+
+# Usage: make review-accept RQ=123 CID=6968 [APPLY=1]
+review-accept:
+ifndef RQ
+	$(error Provide RQ=<rq_id> and CID=<company_id>)
+endif
+ifndef CID
+	$(error Provide CID=<company_id>)
+endif
+	@PYTHONPATH=ncfd/src $(PYTHON) -m ncfd.mapping.cli review-accept $(RQ) --company-id $(CID) $(if $(APPLY),--apply-trial,)
+
+# Usage: make review-reject RQ=123 [LABEL=1]
+review-reject:
+ifndef RQ
+	$(error Provide RQ=<rq_id>)
+endif
+	@PYTHONPATH=ncfd/src $(PYTHON) -m ncfd.mapping.cli review-reject $(RQ) $(if $(LABEL),--label,)
+
+batch-dry:
+	PYTHONPATH=ncfd/src $(PYTHON) -m ncfd.mapping.cli resolve-batch --limit $(N) --cfg config/resolver.yaml
+
+batch-persist:
+	PYTHONPATH=ncfd/src $(PYTHON) -m ncfd.mapping.cli resolve-batch --limit $(N) --cfg config/resolver.yaml --persist --run-id $(RUN_ID) --apply-trial
+
+# --- Review queue helpers ---
+# review_fill:
+# 	$(MAKE) db_sql FILE=ncfd/src/ncfd/db/fill_review_queue.sql
+
+# Subsidiaries (Ex-21)
+SINCE ?= 2018-01-01
+LIM   ?= 200
+
+subs-inspect:
+	@PYTHONPATH=ncfd/src $(PYTHON) -m ncfd.ingest.subsidiaries inspect
+
+subs-dry:
+	@PYTHONPATH=ncfd/src $(PYTHON) -m ncfd.ingest.subsidiaries dry --since $(SINCE) --limit $(LIM)
+
+subs-load:
+	@PYTHONPATH=ncfd/src $(PYTHON) -m ncfd.ingest.subsidiaries load --since $(SINCE) --limit $(LIM)
+
+# keep old name working if you had it
+subs-build: subs-load
+
+subs-link:
+	@PYTHONPATH=ncfd/src $(PYTHON) -m ncfd.ingest.subs_link dry --limit $(LIM)
+
+subs-link-load:
+	@PYTHONPATH=ncfd/src $(PYTHON) -m ncfd.ingest.subs_link load
+
+# --- Meta ---
+
+db_migrate:
+	POSTGRES_DSN=$(POSTGRES_DSN) DATABASE_URL=$(DATABASE_URL) $(VENV)/bin/alembic revision --autogenerate -m "auto"
+	$(MAKE) migrate_up
+
+run_all:
+	$(MAKE) db_up
+	$(MAKE) db_wait
+	$(MAKE) migrate_up
+	$(MAKE) ingest_ctgov
+
+# --- Postgres connection settings (host side) ---
+DB_HOST ?= 127.0.0.1
+DB_PORT ?= 5433
+DB_NAME ?= ncfd
+DB_USER ?= ncfd
+DB_PASS ?= ncfd
+
+# --- Docker/Compose ---
+COMPOSE ?= docker compose
+DB_SVC  ?= db
+DB_CTN  ?= ncfd_db
+
+# --- Inside-container port (only used by db.psql.c) ---
+DB_HOST_IN ?= 127.0.0.1
+DB_PORT_IN ?= 5432
+
+# Colorless, safe PGPASSWORD wrapper
+define PSQL_HOST
+PGPASSWORD=$(DB_PASS) psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME)
+endef
+
+define PSQL_CONT
+$(COMPOSE) exec $(DB_SVC) env PGPASSWORD=$(DB_PASS) psql -h $(DB_HOST_IN) -p $(DB_PORT_IN) -U $(DB_USER) -d $(DB_NAME)
+endef
+
+.PHONY: db.psql db.psql.c db.logs db.status db.dump db.dump.schema db.restore db.health db.env
+
+db.psql:        ## Open psql from HOST to the DB
+	$(PSQL_HOST)
+
+db.psql.c:      ## Open psql INSIDE the container (compose exec)
+	$(PSQL_CONT)
+
+db.logs:        ## Tail DB logs
+	$(COMPOSE) logs -f $(DB_SVC)
+
+db.status:      ## Show running containers and mapped ports
+	docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
+
+db.health:      ## Run pg_isready from HOST
+	PGPASSWORD=$(DB_PASS) pg_isready -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME) || true
+
+db.env:         ## Show DB env from container inspect
+	docker inspect $(DB_CTN) | grep -A0 -B0 '"Env"' -n; true
+
+db.dump.schema: ## Dump schema only to schema.sql
+	PGPASSWORD=$(DB_PASS) pg_dump -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME) -s > schema.sql
+
+db.dump:        ## Dump full DB to backup.sql
+	PGPASSWORD=$(DB_PASS) pg_dump -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME) > backup.sql
+
+db.restore:     ## Restore backup.sql into $(DB_NAME)_restore
+	PGPASSWORD=$(DB_PASS) createdb -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) $(DB_NAME)_restore
+	PGPASSWORD=$(DB_PASS) psql     -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME)_restore -f backup.sql
+
+# Use dockerized Postgres 16 client to avoid version mismatch
+PG_IMG ?= postgres:16-alpine
+NET    ?= ncfd_default   # compose network name (shown in `docker inspect`)
+
+db.dump.docker:           ## Full backup using dockerized pg_dump -> backup.sql
+	docker run --rm --network $(NET) -e PGPASSWORD=$(DB_PASS) $(PG_IMG) \
+	  pg_dump -h $(DB_SVC) -U $(DB_USER) -d $(DB_NAME) > backup.sql
+
+db.dump.schema.docker:    ## Schema-only backup using dockerized pg_dump -> schema.sql
+	docker run --rm --network $(NET) -e PGPASSWORD=$(DB_PASS) $(PG_IMG) \
+	  pg_dump -h $(DB_SVC) -U $(DB_USER) -d $(DB_NAME) -s > schema.sql
+
+db.restore.docker:        ## Restore backup.sql using dockerized psql into $(DB_NAME)_restore
+	docker run --rm --network $(NET) -e PGPASSWORD=$(DB_PASS) $(PG_IMG) \
+	  createdb -h $(DB_SVC) -U $(DB_USER) $(DB_NAME)_restore || true
+	docker run --rm --network $(NET) -e PGPASSWORD=$(DB_PASS) -i $(PG_IMG) \
+	  psql -h $(DB_SVC) -U $(DB_USER) -d $(DB_NAME)_restore < backup.sql
+
+# --- Deterministic bootstrap + verification ---
+
+.PHONY: db.reset db.client.docker db.verify
+
+# End-to-end reset: down -v, up, wait, migrate
+db.reset:           ## Nuke volumes, start Postgres, wait, run migrations
+	$(MAKE) db_nuke
+	$(MAKE) db_up
+	$(MAKE) db_wait
+	$(MAKE) migrate_up
+
+# Use dockerized Postgres 16 psql against the host-mapped port (avoids version mismatch)
+db.client.docker:   ## Interactive psql (dockerized pg16) to host DB
+	docker run --rm -it --network host -e PGPASSWORD=$(DB_PASS) $(PG_IMG) \
+	  psql -h 127.0.0.1 -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME)
+
+# Self-check: extensions, tables, indexes, constraints, basic R/W
+db.verify:          ## Run sanity checks to ensure DB is healthy and schema is complete
+	@echo "== pg_isready =="
+	@PGPASSWORD=$(DB_PASS) pg_isready -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME) || true
+	@echo "\n== server version / current DB =="
+	@$(MAKE) db.psql -s -e <<< "SELECT version(); SELECT current_database();"
+	@echo "\n== required extensions =="
+	@$(MAKE) db.psql -s -e <<< "CREATE EXTENSION IF NOT EXISTS pg_trgm; SELECT extname FROM pg_extension ORDER BY 1;"
+	@echo "\n== expected tables present (13) =="
+	@$(MAKE) db.psql -s -e <<< "SELECT count(*) AS table_count FROM information_schema.tables WHERE table_schema='public';"
+	@echo "\n== critical tables exist =="
+	@$(MAKE) db.psql -s -e <<< "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('companies','securities','review_queue','resolver_decisions','trials','trial_versions','ingest_runs') ORDER BY 1;"
+	@echo "\n== key indexes/constraints spot-check =="
+	@$(MAKE) db.psql -s -e <<< "\d review_queue"
+	@$(MAKE) db.psql -s -e <<< "\d resolver_decisions"
+	@echo "\n== basic write/read smoke test (transaction rolled back) =="
+	@$(PSQL_HOST) -v ON_ERROR_STOP=1 \
+		-c "BEGIN;" \
+		-c "INSERT INTO companies(name,name_norm,cik) VALUES ('_smoke_','_smoke_',9999999) ON CONFLICT (cik) DO NOTHING;" \
+		-c "SELECT company_id, name FROM companies WHERE cik=9999999;" \
+		-c "ROLLBACK;"
+	@$(PSQL_HOST) -At -c "SELECT count(*) FROM companies WHERE cik=9999999;" | sed 's/^/smoke_count_should_be_zero=/'
+
+
+db.verify.file:
+	@$(MAKE) db_sql FILE=scripts/db_verify.sql
+
+.PHONY: review_fill
+review_fill: ## Populate review_queue from trials (no-decisions)
+	@RUN_ID=$$(date -u +review-%Y%m%dT%H%M%SZ); \
+	echo "RUN_ID=$$RUN_ID"; \
+	cat scripts/review_fill.sql | $(COMPOSE) exec -T $(DB_SVC) \
+	psql -v ON_ERROR_STOP=1 -U $(POSTGRES_USER) -d $(POSTGRES_DB) -v RUN_ID="$$RUN_ID"

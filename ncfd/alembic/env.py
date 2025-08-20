@@ -27,6 +27,11 @@ if not config.get_main_option("sqlalchemy.url"):
         config.set_main_option("sqlalchemy.url", db_url)
     else:
         raise RuntimeError("Set sqlalchemy.url in alembic.ini or DATABASE_URL")
+import os
+db_url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_DSN")
+if db_url:
+    config.set_main_option("sqlalchemy.url", db_url)
+
 
 def _resolve_db_url():
     # 1) Prefer real env var (works with `DATABASE_URL=... alembic upgrade head`)

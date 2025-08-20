@@ -9,6 +9,7 @@ Thumbs.db
 # --- Python build/caches ---
 __pycache__/
 *.py[cod]
+*.pyo
 *$py.class
 .eggs/
 *.egg-info/

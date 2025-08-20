@@ -52,7 +52,7 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("'{}'::jsonb"),
         ),
-        sa.Column("decided_by", sa.Text(), nullable=False),  # auto | human | llm
+        sa.Column("decided_by", sa.Text(), nullable=False, server_default=sa.text("'auto'")),  # auto | human | llm
         sa.Column("decided_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.Column("notes_md", sa.Text(), nullable=True),
     )
@@ -148,4 +148,26 @@ def upgrade() -> None:
         sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")),
     )
     op.create_index("ix_labels_key", "resolver_labels", ["nct_id", "sponsor_text_norm"], unique=False)
-    op.create
+
+
+def downgrade() -> None:
+    # Drop in reverse dependency order
+    op.drop_index("ix_labels_key", table_name="resolver_labels")
+    op.drop_table("resolver_labels")
+
+    op.drop_index("uq_review_queue_pending_key", table_name="resolver_review_queue")
+    op.execute("DROP INDEX IF EXISTS ix_review_queue_sponsor_norm_trgm")
+    op.execute("DROP INDEX IF EXISTS ix_review_queue_candidates_gin")
+    op.drop_index("ix_review_queue_run", table_name="resolver_review_queue")
+    op.drop_index("ix_review_queue_status", table_name="resolver_review_queue")
+    op.drop_table("resolver_review_queue")
+
+    op.drop_index("ix_resolver_decisions_run_type", table_name="resolver_decisions")
+    op.drop_constraint("ck_resolver_decisions_p_bounds", "resolver_decisions", type_="check")
+    op.drop_constraint("ck_resolver_decisions_decided_by", "resolver_decisions", type_="check")
+    op.execute("DROP INDEX IF EXISTS ix_resolver_decisions_features_gin")
+    op.execute("DROP INDEX IF EXISTS ix_resolver_decisions_sponsor_norm_trgm")
+    op.drop_index("ix_resolver_decisions_nct", table_name="resolver_decisions")
+    op.drop_index("ix_resolver_decisions_company", table_name="resolver_decisions")
+    op.drop_constraint("uq_resolver_decision_key", "resolver_decisions", type_="unique")
+    op.drop_table("resolver_decisions")

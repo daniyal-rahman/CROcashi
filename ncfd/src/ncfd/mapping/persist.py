@@ -221,54 +221,74 @@ def persist_decision(
     # commit handled by caller
 
 
+from typing import Any, Dict, Iterable, List
+import sqlalchemy as sa
+from sqlalchemy import text, bindparam
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.exc import IntegrityError
+
+def _norm(s: str | None) -> str:
+    """lower + collapse whitespace; mirrors the SQL backfill we used."""
+    if not s:
+        return ""
+    return " ".join(s.split()).lower()
+
 def enqueue_review(
-    session: Session,
+    session: sa.orm.Session,
     *,
     run_id: str,
     nct_id: str,
     sponsor_text: str,
     candidates: Iterable[Any],
-    reason: str = "prob_review",  # e.g., prob_review|force_review|no_match
+    reason: str = "prob_review",
 ) -> None:
     """
-    Insert a pending item into review_queue with candidates JSONB (array).
+    Insert a *pending* item into review_queue.
 
-    review_queue schema used here:
-      rq_id BIGSERIAL PK,
-      run_id TEXT,
-      nct_id TEXT,
-      sponsor_text TEXT,
-      candidates JSONB,       <-- array of objects
-      reason TEXT,
-      created_at TIMESTAMPTZ DEFAULT now()
-
-    Each candidate may be a Scored dataclass or a dict with keys:
-      company_id, p, features, meta (and meta.name if present).
+    review_queue columns used:
+      run_id, nct_id, sponsor_text, sponsor_text_norm, candidates(JSONB), reason, status='pending'
+    Partial-unique guard in DB: (run_id, nct_id, sponsor_text_norm) WHERE status='pending'
     """
+    # --- serialize candidates ---
     serial: List[Dict[str, Any]] = []
     for item in candidates:
         cid, p, feats, meta = _coerce_scored(item)
-        entry: Dict[str, Any] = {"company_id": cid, "p": p, "features": feats, "meta": meta}
-        # convenience: bubble name up if present
+        row: Dict[str, Any] = {"company_id": cid, "p": p, "features": feats, "meta": meta}
         if "name" in meta:
-            entry["name"] = meta["name"]
-        serial.append(entry)
-
+            row["name"] = meta["name"]
+        serial.append(row)
     serial.sort(key=lambda x: x.get("p", 0.0), reverse=True)
 
+    s_norm = _norm(sponsor_text)
+
+    # --- insert, but skip if a pending duplicate already exists ---
     sql = text("""
-        INSERT INTO review_queue (run_id, nct_id, sponsor_text, candidates, reason)
-        VALUES (:run_id, :nct_id, :s_text, :cands, :reason)
+        INSERT INTO review_queue
+            (run_id, nct_id, sponsor_text, sponsor_text_norm, candidates, reason, status)
+        SELECT
+            :run_id, :nct_id, :s_text, :s_norm, :cands, :reason, 'pending'
+        WHERE NOT EXISTS (
+            SELECT 1 FROM review_queue
+            WHERE status = 'pending'
+              AND run_id = :run_id
+              AND nct_id = :nct_id
+              AND sponsor_text_norm = :s_norm
+        )
     """).bindparams(bindparam("cands", type_=JSONB))
 
-    session.execute(
-        sql,
-        {
-            "run_id": run_id,
-            "nct_id": nct_id,
-            "s_text": sponsor_text,
-            "cands": serial,  # Python list/dicts; SQLAlchemy handles JSONB
-            "reason": reason,
-        },
-    )
+    params = {
+        "run_id": run_id,
+        "nct_id": nct_id,
+        "s_text": sponsor_text,
+        "s_norm": s_norm,
+        "cands": serial,
+        "reason": reason,
+    }
+
+    try:
+        session.execute(sql, params)
+    except IntegrityError:
+        # Race with the partial-unique index: safe to ignore for idempotency
+        session.rollback()
+        return
     # commit handled by caller

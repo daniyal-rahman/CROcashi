@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+: "${DB_HOST:=127.0.0.1}"
+: "${DB_PORT:=5433}"
+: "${DB_NAME:=ncfd}"
+: "${DB_USER:=ncfd}"
+: "${DB_PASS:=ncfd}"
+
+PGPASSWORD="$DB_PASS" exec psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" "$@"
