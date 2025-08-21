@@ -1,0 +1,424 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ncfd/schema/study_card.schema.json",
+  "title": "Study Card",
+  "type": "object",
+  "required": ["doc", "trial", "primary_endpoints", "populations", "arms", "results", "coverage_level"],
+  "properties": {
+    "doc": {
+      "type": "object",
+      "required": ["doc_type", "title", "year", "url", "source_id"],
+      "properties": {
+        "doc_type": {
+          "enum": ["PR", "Abstract", "Paper", "Registry", "FDA"]
+        },
+        "title": {
+          "type": "string"
+        },
+        "year": {
+          "type": "integer"
+        },
+        "url": {
+          "type": "string"
+        },
+        "source_id": {
+          "type": "string"
+        },
+        "oa_status": {
+          "type": "string"
+        },
+        "citation": {
+          "type": "string"
+        }
+      }
+    },
+    "trial": {
+      "type": "object",
+      "required": ["nct_id", "phase", "indication", "is_pivotal"],
+      "properties": {
+        "nct_id": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "indication": {
+          "type": "string"
+        },
+        "is_pivotal": {
+          "type": "boolean"
+        },
+        "sponsor_company_id": {
+          "type": ["integer", "null"]
+        },
+        "sponsor_text": {
+          "type": ["string", "null"]
+        },
+        "est_primary_completion_date": {
+          "type": ["string", "null"]
+        },
+        "status": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "primary_endpoints": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "timepoint": {
+            "type": ["string", "null"]
+          },
+          "definition": {
+            "type": ["string", "null"]
+          },
+          "evidence": {
+            "$ref": "#/$defs/EvidenceArray"
+          }
+        }
+      }
+    },
+    "secondary_endpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "timepoint": {
+            "type": ["string", "null"]
+          },
+          "evidence": {
+            "$ref": "#/$defs/EvidenceArray"
+          }
+        }
+      }
+    },
+    "populations": {
+      "type": "object",
+      "required": ["itt", "pp"],
+      "properties": {
+        "itt": {
+          "type": "object",
+          "properties": {
+            "defined": {
+              "type": "boolean"
+            },
+            "text": {
+              "type": ["string", "null"]
+            },
+            "evidence": {
+              "$ref": "#/$defs/EvidenceArray"
+            }
+          }
+        },
+        "pp": {
+          "type": "object",
+          "properties": {
+            "defined": {
+              "type": "boolean"
+            },
+            "text": {
+              "type": ["string", "null"]
+            },
+            "evidence": {
+              "$ref": "#/$defs/EvidenceArray"
+            }
+          }
+        },
+        "analysis_primary_on": {
+          "enum": ["ITT", "PP", "mITT", null]
+        },
+        "dropouts_overall_pct": {
+          "type": ["number", "null"]
+        },
+        "missing_data_imputation": {
+          "type": ["string", "null"]
+        },
+        "evidence": {
+          "$ref": "#/$defs/EvidenceArray"
+        }
+      }
+    },
+    "arms": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["label", "n"],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "n": {
+            "type": "integer"
+          },
+          "dose": {
+            "type": ["string", "null"]
+          },
+          "evidence": {
+            "$ref": "#/$defs/EvidenceArray"
+          }
+        }
+      }
+    },
+    "sample_size": {
+      "type": "object",
+      "required": ["total_n"],
+      "properties": {
+        "total_n": {
+          "type": "integer"
+        },
+        "evidence": {
+          "$ref": "#/$defs/EvidenceArray"
+        }
+      }
+    },
+    "results": {
+      "type": "object",
+      "required": ["primary"],
+      "properties": {
+        "primary": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ResultItem"
+          }
+        },
+        "secondary": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResultItem"
+          }
+        },
+        "interim_looks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "number": {
+                "type": ["integer", "null"]
+              },
+              "alpha_spent": {
+                "type": ["number", "null"]
+              },
+              "stopping_reason": {
+                "type": ["string", "null"]
+              },
+              "evidence": {
+                "$ref": "#/$defs/EvidenceArray"
+              }
+            }
+          }
+        },
+        "subgroups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "effect_size": {
+                "$ref": "#/$defs/EffectSize"
+              },
+              "p_value": {
+                "type": ["number", "null"]
+              },
+              "multiplicity_adjusted": {
+                "type": ["boolean", "null"]
+              },
+              "evidence": {
+                "$ref": "#/$defs/EvidenceArray"
+              }
+            }
+          }
+        }
+      }
+    },
+    "protocol_changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string"
+          },
+          "when": {
+            "type": ["string", "null"]
+          },
+          "post_LPR": {
+            "type": ["boolean", "null"]
+          },
+          "evidence": {
+            "$ref": "#/$defs/EvidenceArray"
+          }
+        }
+      }
+    },
+    "contradictions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "enum": ["OS_vs_PFS", "primary_vs_subgroup", "other"]
+          },
+          "description": {
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/$defs/EvidenceArray"
+          }
+        }
+      }
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "enum": ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9"]
+          },
+          "evidence": {
+            "$ref": "#/$defs/EvidenceArray"
+          },
+          "rationale": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "coverage_level": {
+      "enum": ["high", "med", "low"]
+    },
+    "coverage_rationale": {
+      "type": "string"
+    },
+    "extraction_audit": {
+      "type": "object",
+      "properties": {
+        "missing_fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "EvidenceArray": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Evidence"
+      }
+    },
+    "Evidence": {
+      "type": "object",
+      "required": ["loc"],
+      "properties": {
+        "loc": {
+          "type": "object",
+          "required": ["scheme"],
+          "properties": {
+            "scheme": {
+              "enum": ["page_paragraph", "char_offsets"]
+            },
+            "page": {
+              "type": ["integer", "null"]
+            },
+            "paragraph": {
+              "type": ["integer", "null"]
+            },
+            "start": {
+              "type": ["integer", "null"]
+            },
+            "end": {
+              "type": ["integer", "null"]
+            }
+          }
+        },
+        "text_preview": {
+          "type": ["string", "null"],
+          "maxLength": 300
+        }
+      }
+    },
+    "EffectSize": {
+      "type": "object",
+      "properties": {
+        "metric": {
+          "enum": ["HR", "OR", "RR", "MD", "SMD", "Δmean", "Δ%", "ResponderDiff", "Other"]
+        },
+        "value": {
+          "type": ["number", "null"]
+        },
+        "ci_low": {
+          "type": ["number", "null"]
+        },
+        "ci_high": {
+          "type": ["number", "null"]
+        },
+        "ci_level": {
+          "type": ["number", "null"]
+        },
+        "timepoint": {
+          "type": ["string", "null"]
+        },
+        "direction_favors": {
+          "enum": ["treatment", "control", null]
+        },
+        "evidence": {
+          "$ref": "#/$defs/EvidenceArray"
+        }
+      }
+    },
+    "ResultItem": {
+      "type": "object",
+      "required": ["endpoint"],
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        },
+        "effect_size": {
+          "$ref": "#/$defs/EffectSize"
+        },
+        "p_value": {
+          "type": ["number", "null"]
+        },
+        "adjusted_p_value": {
+          "type": ["number", "null"]
+        },
+        "multiplicity_adjusted": {
+          "type": ["boolean", "null"]
+        },
+        "population": {
+          "enum": ["ITT", "PP", "mITT", null]
+        },
+        "success_declared": {
+          "type": ["boolean", "null"]
+        },
+        "evidence": {
+          "$ref": "#/$defs/EvidenceArray"
+        }
+      }
+    }
+  }
+}
