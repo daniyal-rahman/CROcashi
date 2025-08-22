@@ -2,8 +2,8 @@
 -- This script tests the pivotal study card validation trigger
 
 -- Seed trial as pivotal
-INSERT INTO trials (trial_id, nct_id, sponsor_text, phase, indication, is_pivotal, status)
-VALUES (9001, 'NCTDUMMY', 'Acme', '3', 'COPD', true, 'completed')
+INSERT INTO trials (trial_id, nct_id, sponsor_text, phase, indication, is_pivotal, status, last_seen_at)
+VALUES (9001, 'NCTDUMMY', 'Acme', '3', 'COPD', true, 'completed', NOW())
 ON CONFLICT (trial_id) DO NOTHING;
 
 -- Test 1: Failing insert - missing effect OR p-value
@@ -36,8 +36,8 @@ VALUES (7002, 9001, 'Abstract', 'Conf Abs', 2025, 'https://y', 'open',
 'high');
 
 -- Test 3: Non-pivotal trial - should not trigger validation
-INSERT INTO trials (trial_id, nct_id, sponsor_text, phase, indication, is_pivotal, status)
-VALUES (9002, 'NCTDUMMY2', 'Acme', '1', 'COPD', false, 'completed')
+INSERT INTO trials (trial_id, nct_id, sponsor_text, phase, indication, is_pivotal, status, last_seen_at)
+VALUES (9002, 'NCTDUMMY2', 'Acme', '1', 'COPD', false, 'completed', NOW())
 ON CONFLICT (trial_id) DO NOTHING;
 
 INSERT INTO studies (study_id, trial_id, doc_type, citation, year, url, oa_status, extracted_jsonb, coverage_level)

@@ -1,0 +1,234 @@
+# CROcashi Pipeline Configuration
+# This file contains configuration presets for different pipeline execution modes
+
+# Default company filtering criteria
+default_company_filter:
+  min_market_cap: 100_000_000  # $100M minimum
+  max_market_cap: null          # No upper limit
+  exchanges:
+    - NASDAQ
+    - NYSE
+    - NYSE American
+  exclude_countries:
+    - CN  # China
+    - HK  # Hong Kong
+  min_trial_count: 1
+  include_private: false
+
+# Conservative investment filter (large cap only)
+conservative_filter:
+  min_market_cap: 1_000_000_000  # $1B minimum
+  max_market_cap: null
+  exchanges:
+    - NASDAQ
+    - NYSE
+  exclude_countries:
+    - CN
+    - HK
+  min_trial_count: 2
+  include_private: false
+
+# Aggressive investment filter (small cap included)
+aggressive_filter:
+  min_market_cap: 50_000_000   # $50M minimum
+  max_market_cap: null
+  exchanges:
+    - NASDAQ
+    - NYSE
+    - NYSE American
+    - OTCQX
+  exclude_countries:
+    - CN
+    - HK
+  min_trial_count: 1
+  include_private: false
+
+# Research filter (academic and private companies)
+research_filter:
+  min_market_cap: 0
+  max_market_cap: null
+  exchanges: []  # No exchange restrictions
+  exclude_countries: []
+  min_trial_count: 1
+  include_private: true
+
+# Pipeline execution configuration
+pipeline_config:
+  # Document processing limits
+  max_documents_per_company: 100
+  max_total_documents: 1000
+  
+  # Batch processing
+  discovery_batch_size: 50
+  fetch_batch_size: 25
+  parse_batch_size: 25
+  link_batch_size: 25
+  
+  # Rate limiting
+  rate_limit_delay: 1.0  # seconds between requests
+  max_requests_per_minute: 60
+  
+  # Storage and processing
+  enable_storage: true
+  enable_parallel_processing: false
+  
+  # Error handling
+  max_retries: 3
+  retry_delay: 5.0
+  
+  # Logging
+  log_level: INFO
+  enable_structured_logging: true
+
+# Company domain discovery patterns
+company_domain_patterns:
+  # Common IR/PR paths to check
+  ir_paths:
+    - /investors
+    - /ir
+    - /investor-relations
+    - /investor-relations/news
+    - /investor-relations/press-releases
+  
+  pr_paths:
+    - /newsroom
+    - /news
+    - /press-releases
+    - /media
+    - /press
+    - /about/news
+    - /about/press
+  
+  # File extensions to prioritize
+  priority_extensions:
+    - .pdf
+    - .html
+    - .htm
+  
+  # Keywords that indicate news/PR content
+  news_keywords:
+    - news
+    - press
+    - release
+    - announcement
+    - update
+    - results
+    - trial
+    - clinical
+    - drug
+    - therapy
+
+# Asset extraction configuration
+asset_extraction:
+  # Confidence thresholds
+  confidence_thresholds:
+    exact_match: 1.0
+    regex_match: 0.95
+    fuzzy_match: 0.8
+    dictionary_match: 0.85
+  
+  # Entity types to extract
+  entity_types:
+    - asset_code
+    - inn_name
+    - generic_name
+    - nct_id
+    - doi
+    - pmid
+  
+  # Span capture settings
+  span_capture:
+    max_span_length: 1000
+    min_span_length: 3
+    overlap_threshold: 0.5
+
+# Conference abstract sources
+conference_sources:
+  aacr:
+    name: "American Association for Cancer Research"
+    base_urls:
+      - https://cancerres.aacrjournals.org
+      - https://aacrjournals.org
+    access_type: "open"
+    update_frequency: "monthly"
+  
+  asco:
+    name: "American Society of Clinical Oncology"
+    base_urls:
+      - https://ascopubs.org
+      - https://meetings.asco.org
+    access_type: "subscription"
+    update_frequency: "quarterly"
+  
+  esmo:
+    name: "European Society for Medical Oncology"
+    base_urls:
+      - https://www.esmo.org
+      - https://www.annalsofoncology.org
+    access_type: "mixed"
+    update_frequency: "quarterly"
+
+# LLM analysis hooks (future implementation)
+llm_analysis:
+  # Analysis types to perform
+  analysis_types:
+    - red_flag_detection
+    - risk_assessment
+    - trial_outcome_prediction
+    - competitive_analysis
+  
+  # Data preparation
+  data_preparation:
+    max_context_length: 4000
+    include_metadata: true
+    include_citations: true
+  
+  # Output formats
+  output_formats:
+    - json
+    - markdown
+    - html
+    - pdf
+
+# Dossier generation hooks (future implementation)
+dossier_generation:
+  # Dossier components
+  components:
+    - company_overview
+    - trial_summary
+    - asset_pipeline
+    - risk_assessment
+    - investment_recommendation
+  
+  # Template settings
+  templates:
+    default_template: "standard_dossier"
+    custom_templates: []
+    include_charts: true
+    include_tables: true
+  
+  # Output settings
+  output:
+    format: "pdf"
+    include_appendix: true
+    max_pages: 50
+
+# Monitoring and alerting
+monitoring:
+  # Performance thresholds
+  performance_thresholds:
+    max_execution_time: 3600  # 1 hour
+    max_memory_usage: 2048    # 2GB
+    max_cpu_usage: 80         # 80%
+  
+  # Alerting
+  alerts:
+    enable_email_alerts: false
+    enable_slack_alerts: false
+    enable_webhook_alerts: false
+  
+  # Metrics collection
+  metrics:
+    enable_prometheus: false
+    enable_grafana: false
+    metrics_retention_days: 30

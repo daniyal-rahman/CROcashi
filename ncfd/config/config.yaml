@@ -15,7 +15,7 @@ profile_defaults: &defaults
     path: ${DUCKDB_PATH}
 
   storage:
-    kind: s3            # s3|fs
+    kind: ${STORAGE_TYPE:-s3}            # s3|local
     s3:
       endpoint_url: ${S3_ENDPOINT_URL}
       region: ${S3_REGION}
@@ -23,8 +23,10 @@ profile_defaults: &defaults
       access_key: ${S3_ACCESS_KEY}
       secret_key: ${S3_SECRET_KEY}
       use_ssl: ${S3_USE_SSL}
-    fs:
-      root: ./data/raw
+    fs:  # Standardized key for local filesystem storage
+      root: ${LOCAL_STORAGE_ROOT:-./data/raw}
+      max_size_gb: ${LOCAL_STORAGE_MAX_GB:-10}
+      fallback_s3: ${LOCAL_STORAGE_FALLBACK_S3:-true}
 
   ingestion:
     ctgov:
@@ -54,6 +56,50 @@ profile_defaults: &defaults
     use_langextract: true
     max_pages: 50
     keep_spans: true
+
+  linking_heuristics:
+    # Feature flags for auto-promotion
+    auto_promote_enabled: false  # Disabled until precision validation
+    min_labeled_precision: 0.95  # Minimum 95% precision required
+    min_labeled_links: 50        # Minimum 50 labeled links required
+    
+    # Confidence thresholds (uncalibrated - use with caution)
+    confidence_thresholds:
+      auto_promote: 0.95        # Only used when auto_promote_enabled = true
+      high_confidence: 0.85     # For review prioritization
+      review_required: 0.70     # Below this needs human review
+    
+    # Heuristic-specific settings
+    heuristics:
+      hp1_nct_near_asset:
+        enabled: true
+        confidence: 1.00        # Highest confidence
+        description: "NCT ID within ±250 chars of asset mention"
+      
+      hp2_exact_intervention_match:
+        enabled: false           # Disabled - not implemented
+        confidence: 0.95        # Placeholder - not used
+        description: "Asset alias matches trial intervention name (requires CT.gov cache)"
+      
+      hp3_company_pr_bias:
+        enabled: true
+        confidence: 0.90        # Uncalibrated - needs validation
+        description: "Company-hosted PR with code + INN, no ambiguity"
+      
+      hp4_abstract_specificity:
+        enabled: true
+        confidence: 0.85        # Uncalibrated - needs validation
+        description: "Abstract title has asset + body has phase/indication"
+    
+    # Conflict resolution
+    conflict_resolution:
+      downgrade_amount: 0.20    # Downgrade confidence for conflicts
+      combo_patterns:           # Patterns that indicate combo therapy
+        - "combination"
+        - "in combination with"
+        - "plus"
+        - "arm a"
+        - "arm b"
 
   signals:
     p_value_cusp_range: [0.045, 0.050]

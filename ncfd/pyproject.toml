@@ -7,7 +7,7 @@ name = "ncfd"
 version = "0.1.0"
 description = "Near-Certain Failure Detector for US-listed biotech pivotal trials"
 readme = "README.md"
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.11,<3.13"
 license = {text = "MIT"}
 authors = [{ name = "Your Team" }]
 

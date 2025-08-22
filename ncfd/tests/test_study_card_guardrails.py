@@ -195,7 +195,7 @@ class TestStudyCardValidation(unittest.TestCase):
         self.assertEqual(len(evidence_issues), 0, "Card with evidence should have no issues")
         
         # Test card missing evidence spans
-        card_without_evidence = self._create_pr_card()
+        card_without_evidence = self._create_card_without_evidence()
         evidence_issues = validate_evidence_spans(card_without_evidence)
         self.assertGreater(len(evidence_issues), 0, "Card without evidence should have issues")
     
@@ -395,6 +395,70 @@ class TestStudyCardValidation(unittest.TestCase):
                     "Assumed ITT due to randomized 1:1 language."
                 ]
             }
+        }
+    
+    def _create_card_without_evidence(self):
+        """Create a study card without evidence spans for testing validation."""
+        return {
+            "doc": {
+                "doc_type": "PR",
+                "title": "Test PR without evidence",
+                "year": 2024,
+                "url": "https://test.com",
+                "source_id": "test_no_evidence"
+            },
+            "trial": {
+                "nct_id": "NCT99999999",
+                "phase": "3",
+                "indication": "Test Disease",
+                "is_pivotal": False
+            },
+            "primary_endpoints": [
+                {
+                    "name": "Test Endpoint"
+                    # No evidence spans
+                }
+            ],
+            "populations": {
+                "itt": {
+                    "defined": True,
+                    "text": "ITT"
+                    # No evidence spans
+                },
+                "pp": {
+                    "defined": False,
+                    "text": None,
+                    "evidence": []
+                },
+                "analysis_primary_on": "ITT"
+            },
+            "arms": [
+                {
+                    "label": "Treatment",
+                    "n": 100
+                    # No evidence spans
+                },
+                {
+                    "label": "Control",
+                    "n": 100
+                    # No evidence spans
+                }
+            ],
+            "sample_size": {
+                "total_n": 200
+                # No evidence spans
+            },
+            "results": {
+                "primary": [
+                    {
+                        "endpoint": "Test Endpoint",
+                        "p_value": 0.05
+                        # No evidence spans
+                    }
+                ]
+            },
+            "coverage_level": "low",
+            "coverage_rationale": "Missing evidence spans for numeric claims."
         }
     
     def _create_abstract_card(self):

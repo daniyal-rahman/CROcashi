@@ -1,0 +1,169 @@
+# Production Configuration for NCFD
+# This file contains production-specific settings
+
+profile_defaults: &prod_defaults
+  logging:
+    level: ${LOG_LEVEL:-INFO}
+    json: true
+    file: ${LOG_FILE:-/app/logs/ncfd.log}
+    max_size: ${LOG_MAX_SIZE:-100MB}
+    backup_count: ${LOG_BACKUP_COUNT:-5}
+    format: ${LOG_FORMAT:-json}
+
+  database:
+    dsn: ${POSTGRES_DSN}
+    pool_size: 20
+    pool_timeout_s: 60
+    pool_recycle: 3600
+    pool_pre_ping: true
+    max_overflow: 30
+    echo: false
+
+  redis:
+    host: ${REDIS_HOST:-redis}
+    port: ${REDIS_PORT:-6379}
+    password: ${REDIS_PASSWORD}
+    db: ${REDIS_DB:-0}
+    max_connections: 20
+    socket_timeout: 5
+    socket_connect_timeout: 5
+
+  duckdb:
+    path: ${DUCKDB_PATH}
+
+  storage:
+    kind: ${STORAGE_TYPE:-s3}
+    s3:
+      endpoint_url: ${S3_ENDPOINT_URL}
+      region: ${S3_REGION}
+      bucket: ${S3_BUCKET}
+      access_key: ${S3_ACCESS_KEY}
+      secret_key: ${S3_SECRET_KEY}
+      use_ssl: ${S3_USE_SSL}
+      max_pool_connections: 20
+      retries: 3
+    fs:
+      root: ${LOCAL_STORAGE_ROOT}
+      max_size_gb: ${LOCAL_STORAGE_MAX_GB:-100}
+      fallback_s3: ${LOCAL_STORAGE_FALLBACK_S3:-true}
+
+  ingestion:
+    ctgov:
+      base_url: https://clinicaltrials.gov/api/v2
+      backfill_start: "2000-01-01"
+      batch_size: ${BATCH_SIZE:-50}
+      sleep_ms: 100
+      capture_version_history: true
+      max_retries: 3
+      timeout: 30
+    sec:
+      rate_limit_per_min: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-1000}
+      user_agent: ${SEC_USER_AGENT}
+      max_retries: 3
+      timeout: 30
+    pubs:
+      unpaywall_email: ${UNPAYWALL_EMAIL}
+      openalex_email: ${OPENALEX_EMAIL}
+      max_retries: 3
+      timeout: 30
+    patents:
+      uspto_endpoint: https://developer.uspto.gov/ds-api
+      inpadoc_family: true
+      max_retries: 3
+      timeout: 30
+
+  entity_mapping:
+    exchanges_whitelist: ["NYSE","NASDAQ","NYSE American","OTCQX","OTCQB"]
+    name_match_threshold: 0.98
+    alias_boost: 0.02
+    domain_match_required: true
+    asset_backstop_enabled: true
+    max_workers: ${WORKER_PROCESSES:-4}
+
+  extraction:
+    use_langextract: true
+    max_pages: 50
+    keep_spans: true
+    max_workers: ${WORKER_PROCESSES:-4}
+    timeout: 300
+
+  linking_heuristics:
+    auto_promote_enabled: false
+    min_labeled_precision: 0.95
+    min_labeled_links: 50
+    confidence_thresholds:
+      auto_promote: 0.95
+      high_confidence: 0.85
+      review_required: 0.70
+    heuristics:
+      hp1_nct_near_asset:
+        enabled: true
+        confidence: 1.00
+        description: "NCT ID within ±250 chars of asset mention"
+      hp2_exact_intervention_match:
+        enabled: false
+        confidence: 0.95
+        description: "Asset alias matches trial intervention name"
+      hp3_company_pr_bias:
+        enabled: true
+        confidence: 0.90
+        description: "Company-hosted PR with code + INN, no ambiguity"
+      hp4_abstract_specificity:
+        enabled: true
+        confidence: 0.85
+        description: "Abstract title has asset + body has phase/indication"
+    conflict_resolution:
+      downgrade_amount: 0.20
+      combo_patterns:
+        - "combination"
+        - "in combination with"
+        - "plus"
+
+  monitoring:
+    enabled: true
+    metrics_interval: 30
+    health_check_interval: ${HEALTH_CHECK_INTERVAL:-30}
+    health_check_timeout: ${HEALTH_CHECK_TIMEOUT:-10}
+    health_check_retries: ${HEALTH_CHECK_RETRIES:-3}
+
+  alerting:
+    enabled: true
+    email:
+      enabled: ${ALERT_EMAIL_ENABLED:-true}
+      smtp_host: ${ALERT_EMAIL_SMTP_HOST}
+      smtp_port: ${ALERT_EMAIL_SMTP_PORT:-587}
+      username: ${ALERT_EMAIL_USERNAME}
+      password: ${ALERT_EMAIL_PASSWORD}
+      from: ${ALERT_EMAIL_FROM}
+      to: ${ALERT_EMAIL_TO}
+    slack:
+      webhook_url: ${SLACK_WEBHOOK_URL}
+      channel: ${SLACK_CHANNEL}
+
+  performance:
+    max_concurrent_trials: ${MAX_CONCURRENT_TRIALS:-100}
+    worker_processes: ${WORKER_PROCESSES:-4}
+    worker_threads: ${WORKER_THREADS:-2}
+    cache_enabled: ${CACHE_ENABLED:-true}
+    cache_backend: ${CACHE_BACKEND:-redis}
+    cache_ttl_default: ${CACHE_TTL_DEFAULT:-3600}
+    cache_ttl_signals: ${CACHE_TTL_SIGNALS:-1800}
+    cache_ttl_gates: ${CACHE_TTL_GATES:-1800}
+    cache_ttl_scores: ${CACHE_TTL_SCORES:-3600}
+
+  security:
+    secret_key: ${SECRET_KEY}
+    jwt_secret_key: ${JWT_SECRET_KEY}
+    encryption_key: ${ENCRYPTION_KEY}
+    rate_limit_enabled: ${RATE_LIMIT_ENABLED:-true}
+    rate_limit_requests_per_minute: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-1000}
+    rate_limit_burst_size: ${RATE_LIMIT_BURST_SIZE:-100}
+
+  backup:
+    enabled: ${BACKUP_ENABLED:-true}
+    schedule: ${BACKUP_SCHEDULE:-"0 2 * * *"}
+    retention_days: ${BACKUP_RETENTION_DAYS:-30}
+    s3_bucket: ${BACKUP_S3_BUCKET}
+
+# Production profile inherits from prod_defaults
+prod: *prod_defaults

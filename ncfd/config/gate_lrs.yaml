@@ -1,0 +1,54 @@
+version: 2025-08-21
+config_revision: "gate_lrs.yaml@2025-08-21"
+
+global:
+  # Multiplicative LR bounds applied per item before taking logs
+  lr_min: 0.25           # floor (winsorize)
+  lr_max: 10.0           # cap
+  # Logit clamps to avoid numeric blow-ups
+  logit_min: -8.0        # ~P=0.0003
+  logit_max:  8.0        # ~P=0.9997
+  # Prior clamp
+  prior_floor: 0.01
+  prior_ceil:  0.99
+
+gates:
+  G1:
+    name: "Alpha-Meltdown"
+    definition: "S1 & S2"
+    lr: 3.5
+    # Optional conditioned LRs if you want to refine by evidence quality, phase, etc.
+    by_severity:
+      high: 5.0
+      medium: 3.5
+      low: 2.0
+
+  G2:
+    name: "Analysis-Gaming"
+    definition: "S3 & S4"
+    lr: 3.0
+
+  G3:
+    name: "Plausibility"
+    definition: "S5 & (S7 | S6)"
+    lr: 4.2
+
+  G4:
+    name: "p-Hacking"
+    definition: "S8 & (S1 | S3)"
+    lr: 2.5
+
+primitives:
+  # Default approach: primitives contribute ~0 (set to 1.0). You can
+  # optionally give small nudges (1.05–1.15) if you later calibrate them.
+  default_lr: 1.0
+  overrides: {}  # e.g., {S8: 1.10}
+
+stop_rules:
+  # If any of these fire, set P_fail = max(P_fail, level) (monotone override)
+  endpoint_switched_after_LPR:
+    level: 0.97
+  pp_only_success_with_missing_itt_gt20:
+    level: 0.97
+  unblinded_subjective_primary_feasible_blinding:
+    level: 0.97

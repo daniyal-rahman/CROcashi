@@ -19,9 +19,8 @@ setup:
 	$(PIP) install -U pip
 	$(PIP) install -e .[dev]
 	$(VENV)/bin/pre-commit install
+	set -a; source .env; set +a
 	@echo "✅ venv ready. Activate with: source $(VENV)/bin/activate"
-reup:
-	 set -a; source .env; set +a
 
 fmt:
 	$(VENV)/bin/ruff check --fix .

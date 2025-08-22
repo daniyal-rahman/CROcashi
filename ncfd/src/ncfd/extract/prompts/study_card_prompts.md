@@ -22,12 +22,13 @@ Rules:
   or char_offsets: {"scheme":"char_offsets","start":<0-based>,"end":<exclusive>}
 - If conflicts, prefer PRIMARY endpoint and ITT unless PP is explicitly primary. Record uncertainty in extraction_audit and reduce coverage_level.
 - Compute coverage_level using the rubric provided and include coverage_rationale.
+- **CRITICAL**: Every numeric field in results.primary must have ≥1 evidence span.
 
 ---
 
 ## Task Body
 
-SCHEMA: (embed the minified JSON Schema)
+SCHEMA: {{SCHEMA_JSON}}
 
 INPUT:
 {
@@ -42,7 +43,8 @@ INSTRUCTIONS:
 - Set success_declared for primary endpoint only if text explicitly says met/not met.
 - Populate signals S1–S9 only when explicitly supported; include rationale and evidence.
 - Populate extraction_audit.missing_fields and .assumptions.
-- Output MUST validate.
+- **EVIDENCE REQUIREMENT**: Every numeric claim must have evidence spans.
+- Output MUST validate against schema.
 
 ---
 

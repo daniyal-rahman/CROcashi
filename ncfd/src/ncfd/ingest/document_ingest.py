@@ -24,6 +24,7 @@ from ncfd.extract.asset_extractor import (
     AssetMatch, extract_all_entities, find_nearby_assets,
     get_confidence_for_link_type
 )
+from ncfd.storage import StorageBackend, StorageError, create_storage_backend, create_unified_storage_manager
 
 logger = logging.getLogger(__name__)
 
@@ -31,16 +32,48 @@ logger = logging.getLogger(__name__)
 class DocumentIngester:
     """Handles document ingestion workflow for PR/IR and conference abstracts."""
     
-    def __init__(self, db_session: Session, storage_backend: Any = None):
+    def __init__(self, db_session: Session, storage_config: Dict[str, Any] = None):
         """
         Initialize the document ingester.
         
         Args:
             db_session: Database session
-            storage_backend: Storage backend for file uploads (S3, local filesystem)
+            storage_config: Storage configuration dictionary
         """
         self.db_session = db_session
-        self.storage_backend = storage_backend
+        self.storage_config = storage_config or {}
+        self.storage_backend = None
+        
+        # Initialize storage backend if config provided
+        if self.storage_config:
+            try:
+                # Try to create unified storage manager first
+                if 'fs' in self.storage_config and 's3' in self.storage_config:
+                    self.storage_backend = create_unified_storage_manager(self.storage_config)
+                    logger.info("Unified storage manager initialized with local and S3 backends")
+                else:
+                    # Fall back to single backend
+                    self.storage_backend = create_storage_backend(self.storage_config)
+                    
+                    # Set up fallback if using local storage
+                    if (self.storage_config.get('kind') == 'local' and 
+                        self.storage_config.get('fs', {}).get('fallback_s3', True)):
+                        try:
+                            # Create proper fallback config with S3 settings
+                            fallback_config = {
+                                'kind': 's3',
+                                's3': self.storage_config.get('s3', {})
+                            }
+                            fallback_backend = create_storage_backend(fallback_config)
+                            if hasattr(self.storage_backend, 'set_fallback_backend'):
+                                self.storage_backend.set_fallback_backend(fallback_backend)
+                        except Exception as e:
+                            logger.warning(f"Failed to configure S3 fallback: {e}")
+                            
+            except Exception as e:
+                logger.error(f"Failed to initialize storage backend: {e}")
+                self.storage_backend = None
+        
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'NCFD-Document-Ingester/1.0'
@@ -542,11 +575,25 @@ class DocumentIngester:
     def _upload_to_storage(self, content: bytes, sha256: str, url: str) -> str:
         """Upload content to storage backend."""
         if self.storage_backend:
-            # This would integrate with your S3 or filesystem storage
-            filename = f"{sha256}/{self._get_filename_from_url(url)}"
-            return f"storage://{filename}"
+            try:
+                filename = self._get_filename_from_url(url)
+                metadata = {
+                    'source_url': url,
+                    'uploaded_at': datetime.utcnow().isoformat(),
+                    'content_length': len(content)
+                }
+                
+                storage_uri = self.storage_backend.store(content, sha256, filename, metadata)
+                logger.info(f"Content stored: {storage_uri}")
+                return storage_uri
+                
+            except Exception as e:
+                logger.error(f"Storage upload failed: {e}")
+                # Fail hard instead of using dangerous /tmp fallback
+                raise StorageError(f"Storage upload failed: {e}")
         else:
-            return f"file:///tmp/{sha256}"
+            # No storage backend configured - fail hard
+            raise StorageError("No storage backend configured")
     
     def _get_filename_from_url(self, url: str) -> str:
         """Extract filename from URL."""
@@ -607,3 +654,311 @@ class DocumentIngester:
         self.db_session.add(alias)
         
         return asset
+
+    # Phase 4 Workflow Methods
+    
+    def run_discovery_job(self, company_domains: List[str] = None) -> List[Dict[str, Any]]:
+        """
+        Run the discovery job to find new documents.
+        
+        This implements the first step of the Phase 4 pipeline:
+        - Discover company PR/IR documents
+        - Discover conference abstracts
+        
+        Args:
+            company_domains: List of company domains to search
+            
+        Returns:
+            List of discovered document sources
+        """
+        logger.info("Starting discovery job")
+        
+        discovered_sources = []
+        
+        # Discover company PR/IR documents
+        if company_domains:
+            company_docs = self.discover_company_pr_ir(company_domains)
+            discovered_sources.extend(company_docs)
+            logger.info(f"Discovered {len(company_docs)} company documents")
+        
+        # Discover conference abstracts
+        conference_docs = self.discover_conference_abstracts()
+        discovered_sources.extend(conference_docs)
+        logger.info(f"Discovered {len(conference_docs)} conference sources")
+        
+        # Store discovery results for tracking
+        self._store_discovery_results(discovered_sources)
+        
+        logger.info(f"Discovery job completed: {len(discovered_sources)} sources found")
+        return discovered_sources
+    
+    def run_fetch_job(self, sources: List[Dict[str, Any]], max_docs: int = 100) -> List[Dict[str, Any]]:
+        """
+        Run the fetch job to download documents.
+        
+        This implements the second step of the Phase 4 pipeline:
+        - Download document content
+        - Compute metadata and hashes
+        - Upload to storage
+        
+        Args:
+            sources: List of document sources from discovery
+            max_docs: Maximum number of documents to fetch
+            
+        Returns:
+            List of fetched document data
+        """
+        logger.info(f"Starting fetch job for {len(sources)} sources")
+        
+        fetched_docs = []
+        failed_sources = []
+        
+        for i, source in enumerate(sources[:max_docs]):
+            try:
+                logger.info(f"Fetching {i+1}/{len(sources)}: {source['url']}")
+                
+                fetch_data = self.fetch_document(source['url'], source.get('source_type', 'unknown'))
+                if fetch_data:
+                    fetched_docs.append({
+                        'source': source,
+                        'fetch_data': fetch_data
+                    })
+                    logger.info(f"Successfully fetched: {source['url']}")
+                else:
+                    failed_sources.append(source)
+                    logger.warning(f"Failed to fetch: {source['url']}")
+                    
+            except Exception as e:
+                failed_sources.append(source)
+                logger.error(f"Error fetching {source['url']}: {e}")
+                continue
+        
+        # Store fetch results for tracking
+        self._store_fetch_results(fetched_docs, failed_sources)
+        
+        logger.info(f"Fetch job completed: {len(fetched_docs)} fetched, {len(failed_sources)} failed")
+        return fetched_docs
+    
+    def run_parse_job(self, fetched_docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Run the parse job to extract text and entities.
+        
+        This implements the third step of the Phase 4 pipeline:
+        - Parse document content
+        - Extract text, tables, and entities
+        - Store parsed data
+        
+        Args:
+            fetched_docs: List of fetched documents
+            
+        Returns:
+            List of parsed documents
+        """
+        logger.info(f"Starting parse job for {len(fetched_docs)} documents")
+        
+        parsed_docs = []
+        failed_parses = []
+        
+        for i, doc_data in enumerate(fetched_docs):
+            try:
+                source = doc_data['source']
+                fetch_data = doc_data['fetch_data']
+                
+                logger.info(f"Parsing {i+1}/{len(fetched_docs)}: {source['url']}")
+                
+                # Parse document content
+                parsed_data = self.parse_document(
+                    fetch_data['content'],
+                    fetch_data['content_type'],
+                    source['url']
+                )
+                
+                # Store document in database
+                doc = self.store_document(fetch_data, parsed_data, source)
+                
+                parsed_docs.append({
+                    'source': source,
+                    'fetch_data': fetch_data,
+                    'parsed_data': parsed_data,
+                    'document': doc
+                })
+                
+                logger.info(f"Successfully parsed: {source['url']} -> doc_id {doc.doc_id}")
+                
+            except Exception as e:
+                failed_parses.append(doc_data)
+                logger.error(f"Error parsing {source['url']}: {e}")
+                continue
+        
+        # Store parse results for tracking
+        self._store_parse_results(parsed_docs, failed_parses)
+        
+        logger.info(f"Parse job completed: {len(parsed_docs)} parsed, {len(failed_parses)} failed")
+        return parsed_docs
+    
+    def run_link_job(self, parsed_docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Run the link job to create document-entity links.
+        
+        This implements the fourth step of the Phase 4 pipeline:
+        - Extract entities from parsed documents
+        - Create links between documents and assets
+        - Apply linking heuristics (HP-1 through HP-4)
+        
+        Args:
+            parsed_docs: List of parsed documents
+            
+        Returns:
+            List of linked documents
+        """
+        logger.info(f"Starting link job for {len(parsed_docs)} documents")
+        
+        linked_docs = []
+        failed_links = []
+        
+        for i, doc_data in enumerate(parsed_docs):
+            try:
+                source = doc_data['source']
+                doc = doc_data['document']
+                parsed_data = doc_data['parsed_data']
+                
+                logger.info(f"Linking {i+1}/{len(parsed_docs)}: {source['url']} -> doc_id {doc.doc_id}")
+                
+                # Extract entities using asset extractor
+                entities = self._extract_entities_from_parsed_data(parsed_data, doc.doc_id)
+                
+                # Create document links
+                self.create_document_links(doc, entities)
+                
+                linked_docs.append({
+                    'source': source,
+                    'document': doc,
+                    'entities': entities
+                })
+                
+                logger.info(f"Successfully linked: {source['url']} -> {len(entities)} entities")
+                
+            except Exception as e:
+                failed_links.append(doc_data)
+                logger.error(f"Error linking {source['url']}: {e}")
+                continue
+        
+        # Store link results for tracking
+        self._store_link_results(linked_docs, failed_links)
+        
+        logger.info(f"Link job completed: {len(linked_docs)} linked, {len(failed_links)} failed")
+        return linked_docs
+    
+    def run_full_pipeline(self, company_domains: List[str] = None, max_docs: int = 100) -> Dict[str, Any]:
+        """
+        Run the complete Phase 4 pipeline.
+        
+        This orchestrates all four jobs:
+        1. Discovery: Find document sources
+        2. Fetch: Download documents
+        3. Parse: Extract text and entities
+        4. Link: Create document-entity links
+        
+        Args:
+            company_domains: List of company domains to search
+            max_docs: Maximum number of documents to process
+            
+        Returns:
+            Pipeline results summary
+        """
+        logger.info("Starting Phase 4 full pipeline")
+        
+        try:
+            # Step 1: Discovery
+            sources = self.run_discovery_job(company_domains)
+            
+            # Step 2: Fetch
+            fetched_docs = self.run_fetch_job(sources, max_docs)
+            
+            # Step 3: Parse
+            parsed_docs = self.run_parse_job(fetched_docs)
+            
+            # Step 4: Link
+            linked_docs = self.run_link_job(parsed_docs)
+            
+            # Compile results
+            results = {
+                'discovery': {
+                    'total_sources': len(sources),
+                    'company_docs': len([s for s in sources if s.get('source_type') in ['PR', 'IR']]),
+                    'conference_sources': len([s for s in sources if s.get('source_type') == 'Abstract'])
+                },
+                'fetch': {
+                    'total_fetched': len(fetched_docs),
+                    'failed_fetches': len(sources) - len(fetched_docs)
+                },
+                'parse': {
+                    'total_parsed': len(parsed_docs),
+                    'failed_parses': len(fetched_docs) - len(parsed_docs)
+                },
+                'link': {
+                    'total_linked': len(linked_docs),
+                    'failed_links': len(parsed_docs) - len(linked_docs)
+                }
+            }
+            
+            logger.info("Phase 4 full pipeline completed successfully")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Phase 4 pipeline failed: {e}")
+            raise
+    
+    # Helper methods for workflow tracking
+    
+    def _store_discovery_results(self, sources: List[Dict[str, Any]]) -> None:
+        """Store discovery results for tracking."""
+        # In production, this would store to a job tracking table
+        logger.info(f"Discovery results stored: {len(sources)} sources")
+    
+    def _store_fetch_results(self, fetched_docs: List[Dict[str, Any]], failed_sources: List[Dict[str, Any]]) -> None:
+        """Store fetch results for tracking."""
+        # In production, this would store to a job tracking table
+        logger.info(f"Fetch results stored: {len(fetched_docs)} fetched, {len(failed_sources)} failed")
+    
+    def _store_parse_results(self, parsed_docs: List[Dict[str, Any]], failed_parses: List[Dict[str, Any]]) -> None:
+        """Store parse results for tracking."""
+        # In production, this would store to a job tracking table
+        logger.info(f"Parse results stored: {len(parsed_docs)} parsed, {len(failed_parses)} failed")
+    
+    def _store_link_results(self, linked_docs: List[Dict[str, Any]], failed_links: List[Dict[str, Any]]) -> None:
+        """Store link results for tracking."""
+        # In production, this would store to a job tracking table
+        logger.info(f"Link results stored: {len(linked_docs)} linked, {len(failed_links)} failed")
+    
+    def _extract_entities_from_parsed_data(self, parsed_data: Dict[str, Any], doc_id: int) -> List[Dict[str, Any]]:
+        """Extract entities from parsed document data."""
+        from ncfd.extract.asset_extractor import extract_all_entities
+        
+        entities = []
+        
+        # Extract entities from each text page
+        for page_data in parsed_data.get('text_pages', []):
+            page_no = page_data.get('page_no', 1)
+            text = page_data.get('text', '')
+            
+            if text:
+                # Extract all entity types
+                asset_matches = extract_all_entities(text, page_no)
+                
+                # Convert to entity dictionaries
+                for match in asset_matches:
+                    entity = {
+                        'alias_type': match.alias_type,
+                        'value_text': match.value_text,
+                        'value_norm': match.value_norm,
+                        'page_no': match.page_no,
+                        'char_start': match.char_start,
+                        'char_end': match.char_end,
+                        'detector': match.detector,
+                        'confidence': match.confidence
+                    }
+                    entities.append(entity)
+        
+        logger.info(f"Extracted {len(entities)} entities from document {doc_id}")
+        return entities

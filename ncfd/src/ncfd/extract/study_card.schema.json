@@ -159,7 +159,9 @@
             "type": "string"
           },
           "n": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of participants in this arm"
           },
           "dose": {
             "type": ["string", "null"]
@@ -175,7 +177,21 @@
       "required": ["total_n"],
       "properties": {
         "total_n": {
-          "type": "integer"
+          "type": "integer",
+          "minimum": 1,
+          "description": "Total number of participants enrolled in the study"
+        },
+        "power": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Statistical power (0.0 to 1.0, where 0.8+ is typically considered adequate)"
+        },
+        "alpha": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Significance level (typically 0.05 for 5% significance)"
         },
         "evidence": {
           "$ref": "#/$defs/EvidenceArray"
@@ -339,19 +355,37 @@
           "required": ["scheme"],
           "properties": {
             "scheme": {
-              "enum": ["page_paragraph", "char_offsets"]
+              "enum": ["page_paragraph", "char_offsets", "line_number", "section_heading"],
+              "description": "Location scheme: page_paragraph (page + paragraph), char_offsets (character start/end), line_number (line-based), section_heading (section-based)"
             },
             "page": {
-              "type": ["integer", "null"]
+              "type": ["integer", "null"],
+              "minimum": 1,
+              "description": "Page number (1-indexed)"
             },
             "paragraph": {
-              "type": ["integer", "null"]
+              "type": ["integer", "null"],
+              "minimum": 1,
+              "description": "Paragraph number within page (1-indexed)"
             },
             "start": {
-              "type": ["integer", "null"]
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "description": "Character start position (0-indexed)"
             },
             "end": {
-              "type": ["integer", "null"]
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "description": "Character end position (0-indexed, exclusive)"
+            },
+            "line": {
+              "type": ["integer", "null"],
+              "minimum": 1,
+              "description": "Line number (1-indexed)"
+            },
+            "section": {
+              "type": ["string", "null"],
+              "description": "Section heading or identifier"
             }
           }
         },
@@ -365,19 +399,26 @@
       "type": "object",
       "properties": {
         "metric": {
-          "enum": ["HR", "OR", "RR", "MD", "SMD", "Δmean", "Δ%", "ResponderDiff", "Other"]
+          "enum": ["HR", "OR", "RR", "MD", "SMD", "Δmean", "Δ%", "ResponderDiff", "Other"],
+          "description": "Effect size metric type: HR (Hazard Ratio), OR (Odds Ratio), RR (Risk Ratio), MD (Mean Difference), SMD (Standardized Mean Difference), Δmean (Mean Change), Δ% (Percent Change), ResponderDiff (Responder Difference)"
         },
         "value": {
-          "type": ["number", "null"]
+          "type": ["number", "null"],
+          "description": "Effect size value (can be negative for harmful effects, positive for beneficial effects)"
         },
         "ci_low": {
-          "type": ["number", "null"]
+          "type": ["number", "null"],
+          "description": "Lower bound of confidence interval"
         },
         "ci_high": {
-          "type": ["number", "null"]
+          "type": ["number", "null"],
+          "description": "Upper bound of confidence interval"
         },
         "ci_level": {
-          "type": ["number", "null"]
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Confidence level (e.g., 0.95 for 95% confidence interval)"
         },
         "timepoint": {
           "type": ["string", "null"]
@@ -401,10 +442,16 @@
           "$ref": "#/$defs/EffectSize"
         },
         "p_value": {
-          "type": ["number", "null"]
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Statistical p-value (0.0 to 1.0, where < 0.05 typically indicates statistical significance)"
         },
         "adjusted_p_value": {
-          "type": ["number", "null"]
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Multiplicity-adjusted p-value (0.0 to 1.0)"
         },
         "multiplicity_adjusted": {
           "type": ["boolean", "null"]

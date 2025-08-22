@@ -218,6 +218,18 @@ class Trial(Base):
         back_populates="trial",
         cascade="all, delete-orphan",
     )
+    signals: Mapped[List["Signal"]] = relationship(
+        back_populates="trial",
+        cascade="all, delete-orphan",
+    )
+    gates: Mapped[List["Gate"]] = relationship(
+        back_populates="trial",
+        cascade="all, delete-orphan",
+    )
+    scores: Mapped[List["Score"]] = relationship(
+        back_populates="trial",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         Index("idx_trials_status", "status"),
@@ -227,48 +239,34 @@ class Trial(Base):
 
 
 class TrialVersion(Base):
+    """Trial version history for endpoint change detection (S1)."""
     __tablename__ = "trial_versions"
 
-    trial_version_id: Mapped[int] = mapped_column(primary_key=True)
+    version_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     trial_id: Mapped[int] = mapped_column(
         ForeignKey("trials.trial_id", ondelete="CASCADE"),
-        index=True,
         nullable=False,
     )
     captured_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=datetime.utcnow,
         nullable=False,
-        index=True,
     )
-    last_update_posted_date: Mapped[Optional[date]] = mapped_column(Date, default=None)
-
-    from sqlalchemy import Integer as _Int  # local alias to avoid shadowing
-    raw_jsonb: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-
-    primary_endpoint_text: Mapped[Optional[str]] = mapped_column(String, default=None)
-    sample_size: Mapped[Optional[int]] = mapped_column(_Int, default=None)
-    analysis_plan_text: Mapped[Optional[str]] = mapped_column(String, default=None)
-    changes_jsonb: Mapped[Optional[dict]] = mapped_column(JSONB, default=None)
-
-    changed_primary_endpoint: Mapped[Optional[bool]] = mapped_column(Boolean, default=None)
-    changed_sample_size: Mapped[Optional[bool]] = mapped_column(Boolean, default=None)
-    sample_size_delta: Mapped[Optional[int]] = mapped_column(_Int, default=None)
-    changed_analysis_plan: Mapped[Optional[bool]] = mapped_column(Boolean, default=None)
+    raw_jsonb: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
+    primary_endpoint_text: Mapped[Optional[str]] = mapped_column(Text)
+    sample_size: Mapped[Optional[int]] = mapped_column(Integer)
+    analysis_plan_text: Mapped[Optional[str]] = mapped_column(Text)
+    changes_jsonb: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
+    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, server_default="{}", nullable=False)
 
     trial: Mapped["Trial"] = relationship(back_populates="versions")
 
     __table_args__ = (
-        UniqueConstraint("trial_id", "sha256", name="uq_trial_version_hash"),
-        Index("idx_trial_versions_trial_time", "trial_id", "captured_at"),
-        Index(
-            "idx_trial_versions_changed",
-            "changed_primary_endpoint",
-            "changed_sample_size",
-            "changed_analysis_plan",
-        ),
-        Index("idx_trial_versions_updated", "last_update_posted_date"),
+        CheckConstraint("sample_size IS NULL OR sample_size > 0", name="ck_trial_versions_sample_size_positive"),
+        Index("ix_trial_versions_trial_id", "trial_id"),
+        Index("ix_trial_versions_captured_at", "captured_at"),
+        Index("ix_trial_versions_raw_jsonb_gin", "raw_jsonb", postgresql_using="gin"),
+        Index("ix_trial_versions_changes_jsonb_gin", "changes_jsonb", postgresql_using="gin"),
+        Index("ix_trial_versions_metadata_gin", "metadata", postgresql_using="gin"),
     )
 
 
@@ -295,13 +293,16 @@ class Study(Base):
     url: Mapped[Optional[str]] = mapped_column(Text)
     oa_status: Mapped[str] = mapped_column(Text, server_default="unknown")  # open, green, bronze, closed, unknown
     extracted_jsonb: Mapped[Optional[dict]] = mapped_column(JSONB)  # Study Card JSON
+    object_id: Mapped[Optional[int]] = mapped_column(ForeignKey("storage_objects.object_id"), nullable=True)
     coverage_level: Mapped[Optional[str]] = mapped_column(Text)  # high, med, low
     notes_md: Mapped[Optional[str]] = mapped_column(Text)
+    p_value: Mapped[Optional[float]] = mapped_column(Numeric, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     trial: Mapped["Trial"] = relationship()
     document_links: Mapped[List["DocumentLink"]] = relationship(back_populates="study")
+    storage_object: Mapped[Optional["StorageObject"]] = relationship()
 
     __table_args__ = (
         Index("ix_studies_trial", "trial_id"),
@@ -383,6 +384,54 @@ class AssetAlias(Base):
 
 
 # ---------------------------------------------------------------------------
+# Storage domain
+# ---------------------------------------------------------------------------
+
+class StorageObject(Base):
+    __tablename__ = "storage_objects"
+
+    object_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_uri: Mapped[str] = mapped_column(Text, nullable=False)
+    backend_type: Mapped[str] = mapped_column(String(20), nullable=False)  # local, s3
+    tier: Mapped[str] = mapped_column(Text, nullable=False)  # local, s3
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    refcount: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_accessed: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    object_metadata: Mapped[Optional[dict]] = mapped_column(JSONB)
+
+    __table_args__ = (
+        Index("ix_storage_objects_sha256", "sha256"),
+        Index("ix_storage_objects_backend_type", "backend_type"),
+        Index("ix_storage_objects_tier", "tier"),
+        Index("ix_storage_objects_refcount", "refcount"),
+        Index("ix_storage_objects_last_accessed", "last_accessed"),
+        Index("ix_storage_objects_created_at", "created_at"),
+        UniqueConstraint("sha256", "backend_type", name="uq_storage_objects_sha256_backend"),
+        CheckConstraint("tier IN ('local','s3')", name="ck_storage_objects_tier"),
+    )
+
+
+class StorageReference(Base):
+    __tablename__ = "storage_references"
+
+    reference_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    object_id: Mapped[int] = mapped_column(ForeignKey("storage_objects.object_id", ondelete="CASCADE"), nullable=False)
+    reference_type: Mapped[str] = mapped_column(String(50), nullable=False)  # document, study, asset, etc.
+    entity_id: Mapped[int] = mapped_column(BigInteger, nullable=False)  # ID of the referencing entity
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    storage_object: Mapped["StorageObject"] = relationship()
+
+    __table_args__ = (
+        Index("ix_storage_references_object_id", "object_id"),
+        Index("ix_storage_references_reference", "reference_type", "entity_id"),
+        UniqueConstraint("object_id", "reference_type", "entity_id", name="uq_storage_references_unique"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Document staging domain
 # ---------------------------------------------------------------------------
 
@@ -395,6 +444,7 @@ class Document(Base):
     publisher: Mapped[Optional[str]] = mapped_column(Text)
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     storage_uri: Mapped[str] = mapped_column(Text, nullable=False)
+    object_id: Mapped[Optional[int]] = mapped_column(ForeignKey("storage_objects.object_id"), nullable=True)
     content_type: Mapped[Optional[str]] = mapped_column(Text)
     sha256: Mapped[str] = mapped_column(Text, nullable=False)
     oa_status: Mapped[str] = mapped_column(Text, server_default="unknown")  # open, green, bronze, closed, unknown
@@ -436,6 +486,8 @@ class Document(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
+
+    storage_object: Mapped[Optional["StorageObject"]] = relationship()
 
     __table_args__ = (
         Index("ix_documents_sha256", "sha256"),
@@ -631,9 +683,14 @@ class LinkAudit(Base):
     heuristic_applied: Mapped[Optional[str]] = mapped_column(Text)
     evidence_jsonb: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
     promotion_status: Mapped[str] = mapped_column(Text, server_default="pending", nullable=False)
+    
+    # Human review fields
+    label: Mapped[Optional[bool]] = mapped_column(Boolean)  # True=correct, False=incorrect, NULL=unreviewed
+    label_source: Mapped[Optional[str]] = mapped_column(Text)  # "human_review", "gold_standard", "external_validation"
+    reviewed_by: Mapped[Optional[str]] = mapped_column(Text)  # Username or system identifier
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))  # When review was completed
+    
     review_notes: Mapped[Optional[str]] = mapped_column(Text)
-    reviewed_by: Mapped[Optional[str]] = mapped_column(Text)
-    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -648,6 +705,8 @@ class LinkAudit(Base):
         Index("ix_link_audit_confidence", "confidence"),
         Index("ix_link_audit_promotion_status", "promotion_status"),
         Index("ix_link_audit_heuristic", "heuristic_applied"),
+        Index("ix_link_audit_label", "label"),
+        Index("ix_link_audit_reviewed_at", "reviewed_at"),
     )
 
 
@@ -674,4 +733,99 @@ class MergeCandidate(Base):
         Index("ix_merge_candidates_asset1", "asset_id_1"),
         Index("ix_merge_candidates_asset2", "asset_id_2"),
         Index("ix_merge_candidates_status", "status"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Trial Failure Detection Models
+# ---------------------------------------------------------------------------
+
+
+class Signal(Base):
+    """Individual failure detection signals (S1-S9)."""
+    __tablename__ = "signals"
+
+    signal_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    trial_id: Mapped[int] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"), nullable=False)
+    S_id: Mapped[str] = mapped_column(String(10), nullable=False)  # S1, S2, S3, etc.
+    value: Mapped[Optional[float]] = mapped_column(Numeric(10, 6))  # Numeric signal value
+    severity: Mapped[str] = mapped_column(String(1), nullable=False)  # H, M, L
+    evidence_span: Mapped[Optional[str]] = mapped_column(Text)  # JSON or text describing evidence
+    source_study_id: Mapped[Optional[int]] = mapped_column(ForeignKey("studies.study_id", ondelete="SET NULL"))
+    fired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, server_default="{}", nullable=False)
+
+    trial: Mapped["Trial"] = relationship(back_populates="signals")
+    source_study: Mapped[Optional["Study"]] = relationship()
+
+    __table_args__ = (
+        CheckConstraint("severity IN ('H', 'M', 'L')", name="ck_signals_severity_valid"),
+        CheckConstraint("S_id ~ '^S[1-9]$'", name="ck_signals_s_id_format"),
+        CheckConstraint("value IS NULL OR (value >= -999999.999999 AND value <= 999999.999999)", name="ck_signals_value_range"),
+        UniqueConstraint("trial_id", "S_id", name="uq_signals_trial_s_id"),
+        Index("ix_signals_trial_id", "trial_id"),
+        Index("ix_signals_s_id", "S_id"),
+        Index("ix_signals_severity", "severity"),
+        Index("ix_signals_fired_at", "fired_at"),
+        Index("ix_signals_metadata_gin", "metadata", postgresql_using="gin"),
+    )
+
+
+class Gate(Base):
+    """Combined failure detection gates (G1-G4)."""
+    __tablename__ = "gates"
+
+    gate_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    trial_id: Mapped[int] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"), nullable=False)
+    G_id: Mapped[str] = mapped_column(String(10), nullable=False)  # G1, G2, G3, G4
+    fired_bool: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    supporting_S_ids: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String(10)))  # Array of S_ids
+    lr_used: Mapped[Optional[float]] = mapped_column(Numeric(10, 6))  # Likelihood ratio
+    rationale_text: Mapped[Optional[str]] = mapped_column(Text)  # Human-readable explanation
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, server_default="{}", nullable=False)
+
+    trial: Mapped["Trial"] = relationship(back_populates="gates")
+
+    __table_args__ = (
+        CheckConstraint("G_id ~ '^G[1-4]$'", name="ck_gates_g_id_format"),
+        CheckConstraint("lr_used IS NULL OR (lr_used >= 0 AND lr_used <= 999999.999999)", name="ck_gates_lr_range"),
+        UniqueConstraint("trial_id", "G_id", name="uq_gates_trial_g_id"),
+        Index("ix_gates_trial_id", "trial_id"),
+        Index("ix_gates_g_id", "G_id"),
+        Index("ix_gates_fired_bool", "fired_bool"),
+        Index("ix_gates_metadata_gin", "metadata", postgresql_using="gin"),
+    )
+
+
+class Score(Base):
+    """Trial failure probability scores."""
+    __tablename__ = "scores"
+
+    score_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    trial_id: Mapped[int] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"), nullable=False)
+    run_id: Mapped[str] = mapped_column(String(50), nullable=False)  # Unique identifier for scoring run
+    prior_pi: Mapped[float] = mapped_column(Numeric(6, 5), nullable=False)  # Prior failure probability
+    logit_prior: Mapped[float] = mapped_column(Numeric(10, 6), nullable=False)  # log(prior_pi/(1-prior_pi))
+    sum_log_lr: Mapped[float] = mapped_column(Numeric(10, 6), nullable=False, default=0)  # Sum of log likelihood ratios
+    logit_post: Mapped[float] = mapped_column(Numeric(10, 6), nullable=False)  # logit_prior + sum_log_lr
+    p_fail: Mapped[float] = mapped_column(Numeric(6, 5), nullable=False)  # Posterior failure probability
+    features_frozen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))  # When features were frozen
+    scored_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, server_default="{}", nullable=False)
+
+    trial: Mapped["Trial"] = relationship(back_populates="scores")
+
+    __table_args__ = (
+        CheckConstraint("prior_pi >= 0 AND prior_pi <= 1", name="ck_scores_prior_pi_range"),
+        CheckConstraint("p_fail >= 0 AND p_fail <= 1", name="ck_scores_p_fail_range"),
+        CheckConstraint("logit_prior >= -20 AND logit_prior <= 20", name="ck_scores_logit_prior_range"),
+        CheckConstraint("logit_post >= -20 AND logit_post <= 20", name="ck_scores_logit_post_range"),
+        CheckConstraint("sum_log_lr >= -20 AND sum_log_lr <= 20", name="ck_scores_sum_log_lr_range"),
+        UniqueConstraint("trial_id", "run_id", name="uq_scores_trial_run"),
+        Index("ix_scores_trial_id", "trial_id"),
+        Index("ix_scores_run_id", "run_id"),
+        Index("ix_scores_p_fail", "p_fail"),
+        Index("ix_scores_scored_at", "scored_at"),
+        Index("ix_scores_metadata_gin", "metadata", postgresql_using="gin"),
     )

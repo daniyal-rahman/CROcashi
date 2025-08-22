@@ -137,3 +137,13 @@ cython_debug/
 
 # data
 data/
+data/raw/
+data/duckdb/
+*.db
+*.sqlite
+*.sqlite3
+
+# Local storage
+data/local/
+data/temp/
+data/cache/

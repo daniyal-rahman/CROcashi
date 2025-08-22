@@ -7,6 +7,8 @@ from document text using regex patterns and normalization rules.
 
 import re
 import unicodedata
+import hashlib
+from datetime import datetime, timezone
 from typing import List, Tuple, Optional, Dict, Any
 from dataclasses import dataclass
 
@@ -22,6 +24,12 @@ class AssetMatch:
     char_end: int
     detector: str
     confidence: float = 1.0
+    # Source versioning and deduplication fields
+    source_version: str = "1.0"  # Version of extraction rules used
+    extraction_timestamp: str = ""  # When this extraction was performed
+    deduplication_key: str = ""  # Key for deduplication (hash of content + position)
+    source_document_id: str = ""  # ID of source document
+    source_page_hash: str = ""  # Hash of source page content for change detection
 
 
 # Asset code patterns as specified in phase4.md
@@ -30,10 +38,101 @@ ASSET_CODE_PATTERNS = [
     r"\b[A-Z]{1,4}\d{2,5}\b",              # AB123
     r"\b[A-Z]{2,5}-[A-Z]{1,3}-\d{2,5}\b",  # BMS-AA-001
     r"\b[A-Z]{1,4}-\d+[A-Z]{1,2}\b",       # AB-123X
+    r"\b[A-Z]{1,4}\d+[A-Z]{1,2}\b",        # AB123X (without hyphen)
 ]
 
 # Compile patterns for efficiency
 COMPILED_PATTERNS = [re.compile(pattern) for pattern in ASSET_CODE_PATTERNS]
+
+# Current version of extraction rules
+EXTRACTION_RULES_VERSION = "1.0.0"
+
+def generate_deduplication_key(value_text: str, page_no: int, char_start: int, 
+                              char_end: int, source_document_id: str = "") -> str:
+    """
+    Generate a deduplication key for an asset match.
+    
+    This key combines the normalized value, position, and source document
+    to identify duplicate extractions across different runs.
+    
+    Args:
+        value_text: The extracted text value
+        page_no: Page number
+        char_start: Character start position
+        char_end: Character end position
+        source_document_id: Source document identifier
+        
+    Returns:
+        SHA256 hash string for deduplication
+    """
+    # Create a unique string combining all identifying information
+    key_string = f"{value_text.lower()}:{page_no}:{char_start}:{char_end}:{source_document_id}"
+    return hashlib.sha256(key_string.encode('utf-8')).hexdigest()
+
+def generate_page_hash(page_content: str) -> str:
+    """
+    Generate a hash of page content for change detection.
+    
+    Args:
+        page_content: Raw page text content
+        
+    Returns:
+        SHA256 hash of the page content
+    """
+    return hashlib.sha256(page_content.encode('utf-8')).hexdigest()
+
+def deduplicate_asset_matches(matches: List[AssetMatch], 
+                             strategy: str = "strict") -> List[AssetMatch]:
+    """
+    Remove duplicate asset matches based on deduplication strategy.
+    
+    Args:
+        matches: List of AssetMatch objects
+        strategy: Deduplication strategy ("strict", "position_based", "content_based")
+        
+    Returns:
+        Deduplicated list of AssetMatch objects
+    """
+    if not matches:
+        return []
+    
+    if strategy == "strict":
+        # Use deduplication keys (most strict)
+        seen_keys = set()
+        unique_matches = []
+        
+        for match in matches:
+            if match.deduplication_key and match.deduplication_key not in seen_keys:
+                seen_keys.add(match.deduplication_key)
+                unique_matches.append(match)
+        
+        return unique_matches
+        
+    elif strategy == "position_based":
+        # Group by position and keep highest confidence
+        position_groups = {}
+        
+        for match in matches:
+            pos_key = (match.page_no, match.char_start, match.char_end)
+            if pos_key not in position_groups or match.confidence > position_groups[pos_key].confidence:
+                position_groups[pos_key] = match
+        
+        return list(position_groups.values())
+        
+    elif strategy == "content_based":
+        # Group by normalized value and keep highest confidence
+        content_groups = {}
+        
+        for match in matches:
+            norm_key = match.value_norm
+            if norm_key not in content_groups or match.confidence > content_groups[norm_key].confidence:
+                content_groups[norm_key] = match
+        
+        return list(content_groups.values())
+    
+    else:
+        # Default to strict deduplication
+        return deduplicate_asset_matches(matches, "strict")
 
 
 def norm_drug_name(text: str) -> str:
@@ -51,6 +150,10 @@ def norm_drug_name(text: str) -> str:
     """
     if not text:
         return ""
+    
+    # Strip trademark symbols and quotes BEFORE NFKD normalization
+    text = re.sub(r'[®™©]', '', text)   # Remove original trademark symbols
+    text = re.sub(r'["\']', '', text)
     
     # NFKD normalization (decompose unicode characters)
     text = unicodedata.normalize('NFKD', text)
@@ -74,10 +177,6 @@ def norm_drug_name(text: str) -> str:
     # ASCII fold (convert accented characters to ASCII equivalents)
     # This is a simplified version - in production you might want a more comprehensive mapping
     text = text.encode('ascii', 'ignore').decode('ascii')
-    
-    # Strip trademark symbols and quotes
-    text = re.sub(r'[®™©]', '', text)
-    text = re.sub(r'["\']', '', text)
     
     # Collapse multiple spaces to single space
     text = re.sub(r'\s+', ' ', text)
@@ -148,22 +247,29 @@ def generate_code_variants(code: str) -> List[str]:
     return list(set(variants))  # Remove duplicates
 
 
-def extract_asset_codes(text: str, page_no: int = 1) -> List[AssetMatch]:
+def extract_asset_codes(text: str, page_no: int = 1, source_document_id: str = "", 
+                        page_content: str = "") -> List[AssetMatch]:
     """
     Extract asset codes from text using regex patterns.
     
     Args:
         text: Text to search for asset codes
         page_no: Page number where the text was found
+        source_document_id: Source document identifier for deduplication
+        page_content: Raw page content for change detection
         
     Returns:
-        List of AssetMatch objects
+        List of AssetMatch objects with versioning and deduplication
     """
     matches = []
+    current_timestamp = datetime.now(timezone.utc).isoformat()
+    page_hash = generate_page_hash(page_content) if page_content else ""
     
     for pattern in COMPILED_PATTERNS:
         for match in pattern.finditer(text):
             value_text = match.group(0)
+            char_start = match.start()
+            char_end = match.end()
             
             # Create both hyphenated and collapsed forms as aliases
             if '-' in value_text:
@@ -174,10 +280,17 @@ def extract_asset_codes(text: str, page_no: int = 1) -> List[AssetMatch]:
                     value_norm=value_text,
                     alias_type='code',
                     page_no=page_no,
-                    char_start=match.start(),
-                    char_end=match.end(),
+                    char_start=char_start,
+                    char_end=char_end,
                     detector='regex',
-                    confidence=1.0
+                    confidence=1.0,
+                    source_version=EXTRACTION_RULES_VERSION,
+                    extraction_timestamp=current_timestamp,
+                    deduplication_key=generate_deduplication_key(
+                        value_text, page_no, char_start, char_end, source_document_id
+                    ),
+                    source_document_id=source_document_id,
+                    source_page_hash=page_hash
                 ))
                 
                 # Also add collapsed form
@@ -186,10 +299,17 @@ def extract_asset_codes(text: str, page_no: int = 1) -> List[AssetMatch]:
                     value_norm=collapsed_form,
                     alias_type='code',
                     page_no=page_no,
-                    char_start=match.start(),
-                    char_end=match.end(),
+                    char_start=char_start,
+                    char_end=char_end,
                     detector='regex',
-                    confidence=1.0
+                    confidence=1.0,
+                    source_version=EXTRACTION_RULES_VERSION,
+                    extraction_timestamp=current_timestamp,
+                    deduplication_key=generate_deduplication_key(
+                        collapsed_form, page_no, char_start, char_end, source_document_id
+                    ),
+                    source_document_id=source_document_id,
+                    source_page_hash=page_hash
                 ))
             else:
                 # Collapsed form (e.g., AB123)
@@ -198,10 +318,17 @@ def extract_asset_codes(text: str, page_no: int = 1) -> List[AssetMatch]:
                     value_norm=value_text,
                     alias_type='code',
                     page_no=page_no,
-                    char_start=match.start(),
-                    char_end=match.end(),
+                    char_start=char_start,
+                    char_end=char_end,
                     detector='regex',
-                    confidence=1.0
+                    confidence=1.0,
+                    source_version=EXTRACTION_RULES_VERSION,
+                    extraction_timestamp=current_timestamp,
+                    deduplication_key=generate_deduplication_key(
+                        value_text, page_no, char_start, char_end, source_document_id
+                    ),
+                    source_document_id=source_document_id,
+                    source_page_hash=page_hash
                 ))
     
     return matches
