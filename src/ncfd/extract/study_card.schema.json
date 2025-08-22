@@ -1,0 +1,831 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ncfd/schema/study_card.schema.json",
+  "title": "Study Card",
+  "type": "object",
+  "required": ["doc", "trial", "primary_endpoints", "populations", "arms", "results", "coverage_level"],
+  "properties": {
+    "doc": {
+      "type": "object",
+      "required": ["doc_type", "title", "year", "url", "source_id"],
+      "properties": {
+        "doc_type": {
+          "enum": ["PR", "Abstract", "Paper", "Registry", "FDA"]
+        },
+        "title": {
+          "type": "string"
+        },
+        "year": {
+          "type": "integer"
+        },
+        "url": {
+          "type": "string"
+        },
+        "source_id": {
+          "type": "string"
+        },
+        "oa_status": {
+          "type": "string"
+        },
+        "citation": {
+          "type": "string"
+        }
+      }
+    },
+    "trial": {
+      "type": "object",
+      "required": ["nct_id", "phase", "indication", "is_pivotal"],
+      "properties": {
+        "nct_id": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "indication": {
+          "type": "string"
+        },
+        "is_pivotal": {
+          "type": "boolean"
+        },
+        "sponsor_company_id": {
+          "type": ["integer", "null"]
+        },
+        "sponsor_text": {
+          "type": ["string", "null"]
+        },
+        "est_primary_completion_date": {
+          "type": ["string", "null"]
+        },
+        "status": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "primary_endpoints": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "timepoint": {
+            "type": ["string", "null"]
+          },
+          "definition": {
+            "type": ["string", "null"]
+          },
+          "evidence": {
+            "$ref": "#/$defs/EvidenceArray"
+          }
+        }
+      }
+    },
+    "secondary_endpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "timepoint": {
+            "type": ["string", "null"]
+          },
+          "evidence": {
+            "$ref": "#/$defs/EvidenceArray"
+          }
+        }
+      }
+    },
+    "populations": {
+      "type": "object",
+      "required": ["itt", "pp"],
+      "properties": {
+        "itt": {
+          "type": "object",
+          "properties": {
+            "defined": {
+              "type": "boolean"
+            },
+            "text": {
+              "type": ["string", "null"]
+            },
+            "evidence": {
+              "$ref": "#/$defs/EvidenceArray"
+            }
+          }
+        },
+        "pp": {
+          "type": "object",
+          "properties": {
+            "defined": {
+              "type": "boolean"
+            },
+            "text": {
+              "type": ["string", "null"]
+            },
+            "evidence": {
+              "$ref": "#/$defs/EvidenceArray"
+            }
+          }
+        },
+        "analysis_primary_on": {
+          "enum": ["ITT", "PP", "mITT", null]
+        },
+        "dropouts_overall_pct": {
+          "type": ["number", "null"]
+        },
+        "missing_data_imputation": {
+          "type": ["string", "null"]
+        },
+        "evidence": {
+          "$ref": "#/$defs/EvidenceArray"
+        }
+      }
+    },
+    "arms": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["label", "n"],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "n": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of participants in this arm"
+          },
+          "dose": {
+            "type": ["string", "null"]
+          },
+          "evidence": {
+            "$ref": "#/$defs/EvidenceArray"
+          }
+        }
+      }
+    },
+    "sample_size": {
+      "type": "object",
+      "required": ["total_n"],
+      "properties": {
+        "total_n": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Total number of participants enrolled in the study"
+        },
+        "power": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Statistical power (0.0 to 1.0, where 0.8+ is typically considered adequate)"
+        },
+        "alpha": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Significance level (typically 0.05 for 5% significance)"
+        },
+        "evidence": {
+          "$ref": "#/$defs/EvidenceArray"
+        }
+      }
+    },
+    "results": {
+      "type": "object",
+      "required": ["primary"],
+      "properties": {
+        "primary": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ResultItem"
+          }
+        },
+        "secondary": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResultItem"
+          }
+        },
+        "interim_looks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "number": {
+                "type": ["integer", "null"]
+              },
+              "alpha_spent": {
+                "type": ["number", "null"]
+              },
+              "stopping_reason": {
+                "type": ["string", "null"]
+              },
+              "evidence": {
+                "$ref": "#/$defs/EvidenceArray"
+              }
+            }
+          }
+        },
+        "subgroups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "effect_size": {
+                "$ref": "#/$defs/EffectSize"
+              },
+              "p_value": {
+                "type": ["number", "null"]
+              },
+              "multiplicity_adjusted": {
+                "type": ["boolean", "null"]
+              },
+              "evidence": {
+                "$ref": "#/$defs/EvidenceArray"
+              }
+            }
+          }
+        }
+      }
+    },
+    "protocol_changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string"
+          },
+          "when": {
+            "type": ["string", "null"]
+          },
+          "post_LPR": {
+            "type": ["boolean", "null"]
+          },
+          "evidence": {
+            "$ref": "#/$defs/EvidenceArray"
+          }
+        }
+      }
+    },
+    "contradictions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "enum": ["OS_vs_PFS", "primary_vs_subgroup", "other"]
+          },
+          "description": {
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/$defs/EvidenceArray"
+          }
+        }
+      }
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "enum": ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9"]
+          },
+          "evidence": {
+            "$ref": "#/$defs/EvidenceArray"
+          },
+          "rationale": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "coverage_level": {
+      "enum": ["high", "med", "low"]
+    },
+    "coverage_rationale": {
+      "type": "string"
+    },
+    "extraction_audit": {
+      "type": "object",
+      "properties": {
+        "missing_fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "tone_analysis": {
+      "type": "object",
+      "properties": {
+        "overall_tone": {
+          "enum": ["cautious", "neutral", "definitive"],
+          "description": "Overall tone/claim strength of the document"
+        },
+        "claim_strength": {
+          "type": "object",
+          "properties": {
+            "primary_endpoint": {
+              "enum": ["weak", "moderate", "strong"],
+              "description": "Strength of claims about primary endpoint"
+            },
+            "secondary_endpoints": {
+              "enum": ["weak", "moderate", "strong"],
+              "description": "Strength of claims about secondary endpoints"
+            },
+            "subgroup_analyses": {
+              "enum": ["weak", "moderate", "strong"],
+              "description": "Strength of claims about subgroup analyses"
+            }
+          }
+        },
+        "cautious_language": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "phrase": {
+                "type": "string"
+              },
+              "context": {
+                "type": "string"
+              },
+              "evidence": {
+                "$ref": "#/$defs/EvidenceArray"
+              }
+            }
+          }
+        },
+        "definitive_language": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "phrase": {
+                "type": "string"
+              },
+              "context": {
+                "type": "string"
+              },
+              "evidence": {
+                "$ref": "#/$defs/EvidenceArray"
+              }
+            }
+          }
+        }
+      }
+    },
+    "conflicts_and_funding": {
+      "type": "object",
+      "properties": {
+        "conflicts_of_interest": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "enum": ["financial", "employment", "advisory", "equity", "patents", "none_declared", "other"]
+              },
+              "description": {
+                "type": "string"
+              },
+              "entities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "evidence": {
+                "$ref": "#/$defs/EvidenceArray"
+              }
+            }
+          }
+        },
+        "funding_sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "enum": ["industry", "government", "academic", "foundation", "mixed", "not_disclosed"]
+              },
+              "entity": {
+                "type": "string"
+              },
+              "grant_number": {
+                "type": ["string", "null"]
+              },
+              "evidence": {
+                "$ref": "#/$defs/EvidenceArray"
+              }
+            }
+          }
+        },
+        "sponsor_role": {
+          "type": "object",
+          "properties": {
+            "trial_design": {
+              "type": ["boolean", "null"]
+            },
+            "data_collection": {
+              "type": ["boolean", "null"]
+            },
+            "data_analysis": {
+              "type": ["boolean", "null"]
+            },
+            "manuscript_preparation": {
+              "type": ["boolean", "null"]
+            },
+            "evidence": {
+              "$ref": "#/$defs/EvidenceArray"
+            }
+          }
+        }
+      }
+    },
+    "publication_details": {
+      "type": "object",
+      "properties": {
+        "journal_type": {
+          "enum": ["high_impact", "specialty", "general", "supplement", "preprint", "conference", "other"]
+        },
+        "journal_name": {
+          "type": ["string", "null"]
+        },
+        "impact_factor": {
+          "type": ["number", "null"]
+        },
+        "open_access": {
+          "type": ["boolean", "null"]
+        },
+        "peer_reviewed": {
+          "type": ["boolean", "null"]
+        },
+        "publication_date": {
+          "type": ["string", "null"]
+        },
+        "doi": {
+          "type": ["string", "null"]
+        },
+        "pmid": {
+          "type": ["string", "null"]
+        },
+        "registry_discrepancies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "registry_value": {
+                "type": "string"
+              },
+              "publication_value": {
+                "type": "string"
+              },
+              "evidence": {
+                "$ref": "#/$defs/EvidenceArray"
+              }
+            }
+          }
+        }
+      }
+    },
+    "data_location_mapping": {
+      "type": "object",
+      "properties": {
+        "tables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "table_id": {
+                "type": "string"
+              },
+              "caption": {
+                "type": "string"
+              },
+              "data_types": {
+                "type": "array",
+                "items": {
+                  "enum": ["demographics", "baseline", "efficacy", "safety", "subgroup", "other"]
+                }
+              },
+              "location": {
+                "$ref": "#/$defs/Evidence"
+              }
+            }
+          }
+        },
+        "figures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "figure_id": {
+                "type": "string"
+              },
+              "caption": {
+                "type": "string"
+              },
+              "figure_type": {
+                "enum": ["kaplan_meier", "forest_plot", "waterfall", "scatter", "bar_chart", "flow_diagram", "other"]
+              },
+              "data_types": {
+                "type": "array",
+                "items": {
+                  "enum": ["survival", "efficacy", "safety", "subgroup", "patient_flow", "other"]
+                }
+              },
+              "location": {
+                "$ref": "#/$defs/Evidence"
+              }
+            }
+          }
+        },
+        "quote_spans": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "context": {
+                "type": "string"
+              },
+              "data_type": {
+                "enum": ["numeric", "qualitative", "interpretation", "limitation", "conclusion"]
+              },
+              "location": {
+                "$ref": "#/$defs/Evidence"
+              }
+            }
+          }
+        }
+      }
+    },
+    "reviewer_notes": {
+      "type": "object",
+      "properties": {
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "enum": ["study_design", "sample_size", "follow_up", "endpoints", "analysis", "generalizability", "other"]
+              },
+              "description": {
+                "type": "string"
+              },
+              "severity": {
+                "enum": ["minor", "moderate", "major", "critical"]
+              },
+              "evidence": {
+                "$ref": "#/$defs/EvidenceArray"
+              }
+            }
+          }
+        },
+        "oddities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "enum": ["statistical", "clinical", "regulatory", "methodological", "reporting", "other"]
+              },
+              "description": {
+                "type": "string"
+              },
+              "evidence": {
+                "$ref": "#/$defs/EvidenceArray"
+              }
+            }
+          }
+        },
+        "geographic_outliers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "regions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "description": {
+                "type": "string"
+              },
+              "impact": {
+                "enum": ["minimal", "moderate", "significant"]
+              },
+              "evidence": {
+                "$ref": "#/$defs/EvidenceArray"
+              }
+            }
+          }
+        },
+        "unexplained_discrepancies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "enum": ["numbers", "dates", "demographics", "outcomes", "other"]
+              },
+              "description": {
+                "type": "string"
+              },
+              "source1": {
+                "type": "string"
+              },
+              "source2": {
+                "type": "string"
+              },
+              "evidence": {
+                "$ref": "#/$defs/EvidenceArray"
+              }
+            }
+          }
+        },
+        "quality_assessment": {
+          "type": "object",
+          "properties": {
+            "overall_quality": {
+              "enum": ["excellent", "good", "fair", "poor"]
+            },
+            "data_completeness": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "evidence_strength": {
+              "enum": ["strong", "moderate", "weak", "insufficient"]
+            },
+            "reviewer_confidence": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 1.0
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "EvidenceArray": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Evidence"
+      }
+    },
+    "Evidence": {
+      "type": "object",
+      "required": ["loc"],
+      "properties": {
+        "loc": {
+          "type": "object",
+          "required": ["scheme"],
+          "properties": {
+            "scheme": {
+              "enum": ["page_paragraph", "char_offsets", "line_number", "section_heading"],
+              "description": "Location scheme: page_paragraph (page + paragraph), char_offsets (character start/end), line_number (line-based), section_heading (section-based)"
+            },
+            "page": {
+              "type": ["integer", "null"],
+              "minimum": 1,
+              "description": "Page number (1-indexed)"
+            },
+            "paragraph": {
+              "type": ["integer", "null"],
+              "minimum": 1,
+              "description": "Paragraph number within page (1-indexed)"
+            },
+            "start": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "description": "Character start position (0-indexed)"
+            },
+            "end": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "description": "Character end position (0-indexed, exclusive)"
+            },
+            "line": {
+              "type": ["integer", "null"],
+              "minimum": 1,
+              "description": "Line number (1-indexed)"
+            },
+            "section": {
+              "type": ["string", "null"],
+              "description": "Section heading or identifier"
+            }
+          }
+        },
+        "text_preview": {
+          "type": ["string", "null"],
+          "maxLength": 300
+        }
+      }
+    },
+    "EffectSize": {
+      "type": "object",
+      "properties": {
+        "metric": {
+          "enum": ["HR", "OR", "RR", "MD", "SMD", "Δmean", "Δ%", "ResponderDiff", "Other"],
+          "description": "Effect size metric type: HR (Hazard Ratio), OR (Odds Ratio), RR (Risk Ratio), MD (Mean Difference), SMD (Standardized Mean Difference), Δmean (Mean Change), Δ% (Percent Change), ResponderDiff (Responder Difference)"
+        },
+        "value": {
+          "type": ["number", "null"],
+          "description": "Effect size value (can be negative for harmful effects, positive for beneficial effects)"
+        },
+        "ci_low": {
+          "type": ["number", "null"],
+          "description": "Lower bound of confidence interval"
+        },
+        "ci_high": {
+          "type": ["number", "null"],
+          "description": "Upper bound of confidence interval"
+        },
+        "ci_level": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Confidence level (e.g., 0.95 for 95% confidence interval)"
+        },
+        "timepoint": {
+          "type": ["string", "null"]
+        },
+        "direction_favors": {
+          "enum": ["treatment", "control", null]
+        },
+        "evidence": {
+          "$ref": "#/$defs/EvidenceArray"
+        }
+      }
+    },
+    "ResultItem": {
+      "type": "object",
+      "required": ["endpoint"],
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        },
+        "effect_size": {
+          "$ref": "#/$defs/EffectSize"
+        },
+        "p_value": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Statistical p-value (0.0 to 1.0, where < 0.05 typically indicates statistical significance)"
+        },
+        "adjusted_p_value": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Multiplicity-adjusted p-value (0.0 to 1.0)"
+        },
+        "multiplicity_adjusted": {
+          "type": ["boolean", "null"]
+        },
+        "population": {
+          "enum": ["ITT", "PP", "mITT", null]
+        },
+        "success_declared": {
+          "type": ["boolean", "null"]
+        },
+        "evidence": {
+          "$ref": "#/$defs/EvidenceArray"
+        }
+      }
+    }
+  }
+}
