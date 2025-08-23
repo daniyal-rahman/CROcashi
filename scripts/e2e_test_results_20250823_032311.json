@@ -1,0 +1,12 @@
+{
+  "duration_seconds": 0.06517,
+  "success": false,
+  "ingestion": {},
+  "data_quality": {},
+  "study_cards": {},
+  "signal_detection": {},
+  "errors": [
+    "E2E test failed: (psycopg2.errors.UndefinedTable) relation \"studies\" does not exist\nLINE 3: FROM studies) AS anon_1\n             ^\n\n[SQL: SELECT count(*) AS count_1 \nFROM (SELECT studies.study_id AS studies_study_id, studies.trial_id AS studies_trial_id, studies.doc_type AS studies_doc_type, studies.citation AS studies_citation, studies.year AS studies_year, studies.url AS studies_url, studies.oa_status AS studies_oa_status, studies.extracted_jsonb AS studies_extracted_jsonb, studies.object_id AS studies_object_id, studies.coverage_level AS studies_coverage_level, studies.notes_md AS studies_notes_md, studies.p_value AS studies_p_value, studies.created_at AS studies_created_at, studies.updated_at AS studies_updated_at \nFROM studies) AS anon_1]\n(Background on this error at: https://sqlalche.me/e/20/f405)"
+  ],
+  "warnings": []
+}

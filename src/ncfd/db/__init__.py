@@ -4,7 +4,6 @@ from .session import (
     create_all,
     session_scope,
     get_session,
-    SessionLocal,
     Base,
 )
 
@@ -18,6 +17,5 @@ __all__ = [
     "create_all",
     "session_scope",
     "get_session",
-    "SessionLocal",
     "Base",
 ]

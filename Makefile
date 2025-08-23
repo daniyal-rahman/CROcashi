@@ -290,10 +290,7 @@ ingest_ctgov: ## Ingest ClinicalTrials.gov data (use SINCE=YYYY-MM-DD)
 
 # Resolver CLI commands
 run_id: ## Generate run ID for tracking
-	$(PYTHON) - <<'PY'
-	from datetime import datetime
-	print(datetime.utcnow().strftime("resolver-%Y%m%dT%H%M%SZ"))
-	PY
+	$(PYTHON) -c "from datetime import datetime; print(datetime.utcnow().strftime('resolver-%Y%m%dT%H%M%SZ'))"
 
 resolve_one: ## Resolve single sponsor (use SPONSOR='company name')
 	PYTHONPATH=src $(PYTHON) -m ncfd.mapping.cli resolve-one "$(SPONSOR)" --cfg config/resolver.yaml --k 25

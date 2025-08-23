@@ -1,0 +1,13 @@
+{
+  "timestamp": "2025-08-23T04:07:53.652852",
+  "total_trials": 1001,
+  "data_quality": {
+    "phase_coverage": 100.0,
+    "status_coverage": 100.0,
+    "pivotal_coverage": 100.0,
+    "sponsor_coverage": 100.0
+  },
+  "study_cards_created": 3,
+  "signals_detected": 1,
+  "overall_success": true
+}

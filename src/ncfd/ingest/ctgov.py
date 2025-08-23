@@ -7,15 +7,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Generator, Iterable, List, Optional, Tuple
+from typing import Generator, Iterable, List, Optional, Tuple, Dict, Any
 import hashlib
 import json
 import os
 import sys
 import time
+import logging
 
 import requests
 from bs4 import BeautifulSoup
+
+from .ctgov_types import (
+    ComprehensiveTrialFields, SponsorInfo, TrialDesign, Intervention, 
+    Condition, Outcome, EnrollmentInfo, StatisticalAnalysis, Location,
+    TrialPhase, TrialStatus, InterventionType, StudyType
+)
 
 DEFAULT_BASE_URL = "https://clinicaltrials.gov/api/v2"
 SESSION = requests.Session()
@@ -56,6 +63,7 @@ class CtgovClient:
     def __init__(self, base_url: str = DEFAULT_BASE_URL, session: Optional[requests.Session] = None) -> None:
         self.base_url = base_url.rstrip("/")
         self.session = session or SESSION
+        self.logger = logging.getLogger(__name__)
 
     # -----------------------------
     # API pagination (robust path)
@@ -76,26 +84,58 @@ class CtgovClient:
             params["query.term"] = f"AREA[LastUpdatePostDate]RANGE[{since.isoformat()},MAX]"
 
         next_token = None
+        retry_count = 0
+        max_retries = 3
+        
         while True:
             call = dict(params)
             if next_token:
                 call["pageToken"] = next_token
 
-            resp = self.session.get(url, params=call, timeout=45)
-            # retry once on transient 5xx
-            if resp.status_code >= 500:
-                time.sleep(1.0)
+            try:
                 resp = self.session.get(url, params=call, timeout=45)
-            resp.raise_for_status()
+                
+                # Handle different response status codes
+                if resp.status_code == 200:
+                    retry_count = 0  # Reset retry count on success
+                elif resp.status_code >= 500:
+                    # Server error - retry with exponential backoff
+                    if retry_count < max_retries:
+                        retry_count += 1
+                        wait_time = min(2 ** retry_count, 30)  # Max 30 seconds
+                        self.logger.warning(f"Server error {resp.status_code}, retrying in {wait_time}s (attempt {retry_count}/{max_retries})")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        resp.raise_for_status()
+                elif resp.status_code == 429:
+                    # Rate limit - wait and retry
+                    retry_after = int(resp.headers.get('Retry-After', 60))
+                    self.logger.warning(f"Rate limited, waiting {retry_after}s before retry")
+                    time.sleep(retry_after)
+                    continue
+                else:
+                    resp.raise_for_status()
 
-            data = resp.json()
-            studies = data.get("studies", [])
-            for st in studies:
-                yield st
+                data = resp.json()
+                studies = data.get("studies", [])
+                for st in studies:
+                    yield st
 
-            next_token = data.get("nextPageToken") or resp.headers.get("x-next-page-token") or resp.headers.get("X-Next-Page-Token")
-            if not next_token:
-                break
+                next_token = data.get("nextPageToken") or resp.headers.get("x-next-page-token") or resp.headers.get("X-Next-Page-Token")
+                if not next_token:
+                    break
+                    
+            except requests.exceptions.RequestException as e:
+                if retry_count < max_retries:
+                    retry_count += 1
+                    wait_time = min(2 ** retry_count, 30)
+                    self.logger.warning(f"Request failed: {e}, retrying in {wait_time}s (attempt {retry_count}/{max_retries})")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    self.logger.error(f"Max retries exceeded for {url}: {e}")
+                    raise
 
     # -----------------------------
     # High-level iterator
@@ -148,6 +188,7 @@ class CtgovClient:
     # Field extraction
     # -----------------------------
     def extract_fields(self, study: dict) -> NormalizedFields:
+        """Extract basic fields (maintains backward compatibility)."""
         ps = study.get("protocolSection", {}) or {}
         identification = ps.get("identificationModule", {}) or {}
         nct_id = identification.get("nctId")
@@ -206,6 +247,420 @@ class CtgovClient:
             last_update_posted_date=last_update,
             est_primary_completion_date=est_primary_completion,
         )
+
+    def extract_comprehensive_fields(self, study: dict) -> ComprehensiveTrialFields:
+        """Extract comprehensive trial information."""
+        ps = study.get("protocolSection", {}) or {}
+        identification = ps.get("identificationModule", {}) or {}
+        
+        # Basic identification
+        nct_id = identification.get("nctId")
+        brief_title = identification.get("briefTitle")
+        official_title = identification.get("officialTitle")
+        acronym = identification.get("acronym")
+        
+        # Sponsor information
+        sponsor_info = self._extract_sponsor_info(ps)
+        
+        # Study type and phase
+        study_type = self._determine_study_type(ps)
+        phase = self._extract_phase(ps)
+        
+        # Trial design
+        trial_design = self._extract_trial_design(ps)
+        
+        # Interventions
+        interventions = self._extract_interventions(ps)
+        
+        # Conditions
+        conditions = self._extract_conditions(ps)
+        
+        # Outcomes
+        primary_outcomes = self._extract_outcomes(ps, "primaryOutcomes")
+        secondary_outcomes = self._extract_outcomes(ps, "secondaryOutcomes")
+        other_outcomes = self._extract_outcomes(ps, "otherOutcomes")
+        
+        # Enrollment
+        enrollment_info = self._extract_enrollment_info(ps)
+        
+        # Eligibility
+        eligibility_criteria = self._extract_eligibility_criteria(ps)
+        
+        # Statistical analysis
+        statistical_analysis = self._extract_statistical_analysis(ps)
+        
+        # Status and dates
+        status, dates = self._extract_status_and_dates(ps)
+        
+        # Locations
+        locations = self._extract_locations(ps)
+        
+        # Additional metadata
+        keywords = self._extract_keywords(ps)
+        mesh_terms = self._extract_mesh_terms(ps)
+        study_documents = self._extract_study_documents(ps)
+        
+        return ComprehensiveTrialFields(
+            nct_id=nct_id,
+            brief_title=brief_title,
+            official_title=official_title,
+            acronym=acronym,
+            sponsor_info=sponsor_info,
+            study_type=study_type,
+            phase=phase,
+            trial_design=trial_design,
+            interventions=interventions,
+            conditions=conditions,
+            primary_outcomes=primary_outcomes,
+            secondary_outcomes=secondary_outcomes,
+            other_outcomes=other_outcomes,
+            enrollment_info=enrollment_info,
+            eligibility_criteria=eligibility_criteria,
+            statistical_analysis=statistical_analysis,
+            status=status,
+            first_posted_date=dates.get("first_posted"),
+            last_update_posted_date=dates.get("last_update"),
+            study_start_date=dates.get("study_start"),
+            primary_completion_date=dates.get("primary_completion"),
+            study_completion_date=dates.get("study_completion"),
+            locations=locations,
+            keywords=keywords,
+            mesh_terms=mesh_terms,
+            study_documents=study_documents,
+            raw_jsonb=study,
+            extracted_at=datetime.utcnow()
+        )
+
+    def _extract_sponsor_info(self, ps: Dict[str, Any]) -> SponsorInfo:
+        """Extract detailed sponsor information."""
+        sponsor_module = ps.get("sponsorCollaboratorsModule", {}) or {}
+        
+        lead_sponsor = sponsor_module.get("leadSponsor", {}) or {}
+        lead_sponsor_name = lead_sponsor.get("name", "")
+        lead_sponsor_cik = lead_sponsor.get("cik")
+        lead_sponsor_lei = lead_sponsor.get("lei")
+        lead_sponsor_country = lead_sponsor.get("country")
+        
+        collaborators = []
+        for collab in sponsor_module.get("collaborators", []) or []:
+            name = collab.get("name")
+            if name:
+                collaborators.append(name)
+        
+        responsible_party = sponsor_module.get("responsibleParty", {}) or {}
+        responsible_party_name = responsible_party.get("name")
+        responsible_party_type = responsible_party.get("type")
+        
+        agency_class = sponsor_module.get("agencyClass")
+        
+        return SponsorInfo(
+            lead_sponsor_name=lead_sponsor_name,
+            lead_sponsor_cik=lead_sponsor_cik,
+            lead_sponsor_lei=lead_sponsor_lei,
+            lead_sponsor_country=lead_sponsor_country,
+            collaborators=collaborators,
+            responsible_party_name=responsible_party_name,
+            responsible_party_type=responsible_party_type,
+            agency_class=agency_class
+        )
+
+    def _determine_study_type(self, ps: Dict[str, Any]) -> StudyType:
+        """Determine the study type."""
+        design_module = ps.get("designModule", {}) or {}
+        study_type = design_module.get("studyType") or ps.get("studyType")
+        
+        if study_type:
+            study_type_upper = study_type.upper()
+            if "INTERVENTIONAL" in study_type_upper:
+                return StudyType.INTERVENTIONAL
+            elif "OBSERVATIONAL" in study_type_upper:
+                return StudyType.OBSERVATIONAL
+            elif "EXPANDED_ACCESS" in study_type_upper:
+                return StudyType.EXPANDED_ACCESS
+        
+        return StudyType.INTERVENTIONAL  # Default
+
+    def _extract_phase(self, ps: Dict[str, Any]) -> Optional[TrialPhase]:
+        """Extract trial phase."""
+        design_module = ps.get("designModule", {}) or {}
+        phases = design_module.get("phases", []) or []
+        
+        if not phases:
+            return None
+        
+        phase_str = phases[0].upper()
+        
+        # Map phase strings to enum values
+        phase_mapping = {
+            "PHASE1": TrialPhase.PHASE1,
+            "PHASE2": TrialPhase.PHASE2,
+            "PHASE3": TrialPhase.PHASE3,
+            "PHASE4": TrialPhase.PHASE4,
+            "PHASE2_PHASE3": TrialPhase.PHASE2_PHASE3,
+            "PHASE1_PHASE2": TrialPhase.PHASE1_PHASE2,
+            "PHASE3_PHASE4": TrialPhase.PHASE3_PHASE4,
+            "EARLY_PHASE1": TrialPhase.EARLY_PHASE1
+        }
+        
+        return phase_mapping.get(phase_str)
+
+    def _extract_trial_design(self, ps: Dict[str, Any]) -> TrialDesign:
+        """Extract trial design information."""
+        design_module = ps.get("designModule", {}) or {}
+        
+        allocation = design_module.get("allocation")
+        masking = design_module.get("masking")
+        masking_description = design_module.get("maskingDescription")
+        primary_purpose = design_module.get("primaryPurpose")
+        intervention_model = design_module.get("interventionModel")
+        time_perspective = design_module.get("timePerspective")
+        observational_model = design_module.get("observationalModel")
+        
+        return TrialDesign(
+            allocation=allocation,
+            masking=masking,
+            masking_description=masking_description,
+            primary_purpose=primary_purpose,
+            intervention_model=intervention_model,
+            time_perspective=time_perspective,
+            observational_model=observational_model
+        )
+
+    def _extract_interventions(self, ps: Dict[str, Any]) -> List[Intervention]:
+        """Extract intervention information."""
+        interventions = []
+        arms_interventions = ps.get("armsInterventionsModule", {}) or {}
+        
+        for item in arms_interventions.get("interventions", []) or []:
+            name = item.get("name", "")
+            type_str = item.get("type", "").upper()
+            
+            # Map intervention type to enum
+            intervention_type = InterventionType.OTHER
+            if type_str == "DRUG":
+                intervention_type = InterventionType.DRUG
+            elif type_str == "BIOLOGICAL":
+                intervention_type = InterventionType.BIOLOGICAL
+            elif type_str == "DEVICE":
+                intervention_type = InterventionType.DEVICE
+            elif type_str == "PROCEDURE":
+                intervention_type = InterventionType.PROCEDURE
+            elif type_str == "RADIATION":
+                intervention_type = InterventionType.RADIATION
+            elif type_str == "BEHAVIORAL":
+                intervention_type = InterventionType.BEHAVIORAL
+            elif type_str == "GENETIC":
+                intervention_type = InterventionType.GENETIC
+            elif type_str == "DIETARY_SUPPLEMENT":
+                intervention_type = InterventionType.DIETARY_SUPPLEMENT
+            elif type_str == "COMBINATION_PRODUCT":
+                intervention_type = InterventionType.COMBINATION_PRODUCT
+            elif type_str == "DIAGNOSTIC_TEST":
+                intervention_type = InterventionType.DIAGNOSTIC_TEST
+            
+            description = item.get("description")
+            arm_labels = item.get("armLabels", []) or []
+            other_names = item.get("otherNames", []) or []
+            
+            # Extract drug codes if available
+            drug_codes = []
+            if item.get("drugCodes"):
+                for code in item.get("drugCodes", []):
+                    if isinstance(code, dict):
+                        drug_codes.append(code.get("code", ""))
+                    else:
+                        drug_codes.append(str(code))
+            
+            interventions.append(Intervention(
+                name=name,
+                type=intervention_type,
+                description=description,
+                arm_labels=arm_labels,
+                other_names=other_names,
+                drug_codes=drug_codes
+            ))
+        
+        return interventions
+
+    def _extract_conditions(self, ps: Dict[str, Any]) -> List[Condition]:
+        """Extract condition information."""
+        conditions = []
+        conditions_module = ps.get("conditionsModule", {}) or {}
+        
+        for item in conditions_module.get("conditions", []) or []:
+            name = item.get("name", "")
+            mesh_terms = item.get("meshTerms", []) or []
+            synonyms = item.get("synonyms", []) or []
+            
+            conditions.append(Condition(
+                name=name,
+                mesh_terms=mesh_terms,
+                synonyms=synonyms
+            ))
+        
+        return conditions
+
+    def _extract_outcomes(self, ps: Dict[str, Any], outcome_type: str) -> List[Outcome]:
+        """Extract outcome information."""
+        outcomes = []
+        outcomes_module = ps.get("outcomesModule", {}) or {}
+        
+        for item in outcomes_module.get(outcome_type, []) or []:
+            measure = item.get("measure", "")
+            description = item.get("description")
+            time_frame = item.get("timeFrame")
+            unit_of_measure = item.get("unitOfMeasure")
+            safety_issue = item.get("safetyIssue", False)
+            
+            outcomes.append(Outcome(
+                measure=measure,
+                description=description,
+                time_frame=time_frame,
+                type=outcome_type.upper().replace("OUTCOMES", ""),
+                unit_of_measure=unit_of_measure,
+                safety_issue=safety_issue
+            ))
+        
+        return outcomes
+
+    def _extract_enrollment_info(self, ps: Dict[str, Any]) -> EnrollmentInfo:
+        """Extract enrollment information."""
+        design_module = ps.get("designModule", {}) or {}
+        enrollment_info = design_module.get("enrollmentInfo", {}) or {}
+        
+        count = enrollment_info.get("count")
+        type_str = enrollment_info.get("type")
+        age_min = enrollment_info.get("minimumAge")
+        age_max = enrollment_info.get("maximumAge")
+        age_unit = enrollment_info.get("ageUnit")
+        sex = enrollment_info.get("sex")
+        healthy_volunteers = enrollment_info.get("healthyVolunteers")
+        
+        return EnrollmentInfo(
+            count=count,
+            type=type_str,
+            age_min=age_min,
+            age_max=age_max,
+            age_unit=age_unit,
+            sex=sex,
+            healthy_volunteers=healthy_volunteers
+        )
+
+    def _extract_eligibility_criteria(self, ps: Dict[str, Any]) -> Optional[str]:
+        """Extract eligibility criteria."""
+        eligibility_module = ps.get("eligibilityModule", {}) or {}
+        return eligibility_module.get("eligibilityCriteria")
+
+    def _extract_statistical_analysis(self, ps: Dict[str, Any]) -> StatisticalAnalysis:
+        """Extract statistical analysis information."""
+        analysis_module = ps.get("analysisModule", {}) or {}
+        
+        analysis_plan = analysis_module.get("analysisPlan")
+        statistical_method = analysis_module.get("statisticalMethod")
+        alpha_level = analysis_module.get("alphaLevel")
+        power = analysis_module.get("power")
+        sample_size_calculation = analysis_module.get("sampleSizeCalculation")
+        interim_analyses = analysis_module.get("interimAnalyses")
+        multiplicity_adjustment = analysis_module.get("multiplicityAdjustment")
+        
+        return StatisticalAnalysis(
+            analysis_plan=analysis_plan,
+            statistical_method=statistical_method,
+            alpha_level=alpha_level,
+            power=power,
+            sample_size_calculation=sample_size_calculation,
+            interim_analyses=interim_analyses,
+            multiplicity_adjustment=multiplicity_adjustment
+        )
+
+    def _extract_status_and_dates(self, ps: Dict[str, Any]) -> Tuple[Optional[TrialStatus], Dict[str, Optional[date]]]:
+        """Extract status and dates."""
+        status_module = ps.get("statusModule", {}) or {}
+        
+        status_str = status_module.get("overallStatus")
+        status = None
+        if status_str:
+            status_upper = status_str.upper()
+            status_mapping = {
+                "ACTIVE_NOT_RECRUITING": TrialStatus.ACTIVE_NOT_RECRUITING,
+                "COMPLETED": TrialStatus.COMPLETED,
+                "ENROLLING_BY_INVITATION": TrialStatus.ENROLLING_BY_INVITATION,
+                "NOT_YET_RECRUITING": TrialStatus.NOT_YET_RECRUITING,
+                "RECRUITING": TrialStatus.RECRUITING,
+                "SUSPENDED": TrialStatus.SUSPENDED,
+                "TERMINATED": TrialStatus.TERMINATED,
+                "WITHDRAWN": TrialStatus.WITHDRAWN
+            }
+            status = status_mapping.get(status_upper, TrialStatus.UNKNOWN)
+        
+        # Extract dates
+        first_posted = _parse_date((status_module.get("studyFirstPostDateStruct") or {}).get("date"))
+        last_update = _parse_date((status_module.get("lastUpdatePostDateStruct") or {}).get("date"))
+        study_start = _parse_date((status_module.get("startDateStruct") or {}).get("date"))
+        primary_completion = _parse_date((status_module.get("primaryCompletionDateStruct") or {}).get("date"))
+        study_completion = _parse_date((status_module.get("completionDateStruct") or {}).get("date"))
+        
+        dates = {
+            "first_posted": first_posted,
+            "last_update": last_update,
+            "study_start": study_start,
+            "primary_completion": primary_completion,
+            "study_completion": study_completion
+        }
+        
+        return status, dates
+
+    def _extract_locations(self, ps: Dict[str, Any]) -> List[Location]:
+        """Extract location information."""
+        locations = []
+        locations_module = ps.get("locationsModule", {}) or {}
+        
+        for item in locations_module.get("facilities", []) or []:
+            facility_name = item.get("facility", "")
+            city = item.get("city")
+            state = item.get("state")
+            country = item.get("country")
+            zip_code = item.get("zipCode")
+            status = item.get("status")
+            
+            locations.append(Location(
+                facility_name=facility_name,
+                city=city,
+                state=state,
+                country=country,
+                zip_code=zip_code,
+                status=status
+            ))
+        
+        return locations
+
+    def _extract_keywords(self, ps: Dict[str, Any]) -> List[str]:
+        """Extract keywords."""
+        identification = ps.get("identificationModule", {}) or {}
+        return identification.get("keywords", []) or []
+
+    def _extract_mesh_terms(self, ps: Dict[str, Any]) -> List[str]:
+        """Extract MeSH terms."""
+        conditions_module = ps.get("conditionsModule", {}) or {}
+        mesh_terms = []
+        
+        for condition in conditions_module.get("conditions", []) or []:
+            terms = condition.get("meshTerms", []) or []
+            mesh_terms.extend(terms)
+        
+        return list(set(mesh_terms))  # Remove duplicates
+
+    def _extract_study_documents(self, ps: Dict[str, Any]) -> List[str]:
+        """Extract study document references."""
+        documents_module = ps.get("documentsModule", {}) or {}
+        documents = []
+        
+        for doc in documents_module.get("documents", []) or []:
+            url = doc.get("url")
+            if url:
+                documents.append(url)
+        
+        return documents
 
     # -----------------------------
     # Optional HTML history scrape

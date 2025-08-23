@@ -1,0 +1,37 @@
+{
+  "duration_seconds": 1.031752,
+  "success": false,
+  "ingestion": {
+    "success": false,
+    "trials_processed": 0,
+    "trials_new": 0,
+    "trials_updated": 0,
+    "changes_detected": 0,
+    "processing_time": 0.970449,
+    "errors": [
+      "Error processing trial NCT07085182: Error processing trial NCT07085182: '_GeneratorContextManager' object has no attribute 'query'",
+      "Error processing trial NCT05081882: Error processing trial NCT05081882: '_GeneratorContextManager' object has no attribute 'query'",
+      "Error processing trial NCT06661720: Error processing trial NCT06661720: '_GeneratorContextManager' object has no attribute 'query'",
+      "Error processing trial NCT06720220: Error processing trial NCT06720220: '_GeneratorContextManager' object has no attribute 'query'",
+      "Error processing trial NCT06117774: Error processing trial NCT06117774: '_GeneratorContextManager' object has no attribute 'query'",
+      "Error processing trial NCT02882282: Error processing trial NCT02882282: '_GeneratorContextManager' object has no attribute 'query'",
+      "Error processing trial NCT06539182: Error processing trial NCT06539182: '_GeneratorContextManager' object has no attribute 'query'",
+      "Error processing trial NCT04619420: Error processing trial NCT04619420: '_GeneratorContextManager' object has no attribute 'query'",
+      "Error processing trial NCT03970720: Error processing trial NCT03970720: '_GeneratorContextManager' object has no attribute 'query'",
+      "Error processing trial NCT05361720: Error processing trial NCT05361720: '_GeneratorContextManager' object has no attribute 'query'",
+      "Error processing trial NCT07083882: Error processing trial NCT07083882: '_GeneratorContextManager' object has no attribute 'query'",
+      "Error processing trial NCT06209320: Error processing trial NCT06209320: '_GeneratorContextManager' object has no attribute 'query'",
+      "Error processing trial NCT00391820: Error processing trial NCT00391820: '_GeneratorContextManager' object has no attribute 'query'",
+      "Error processing trial NCT03954782: Error processing trial NCT03954782: '_GeneratorContextManager' object has no attribute 'query'",
+      "Error processing trial NCT06846320: Error processing trial NCT06846320: '_GeneratorContextManager' object has no attribute 'query'",
+      "Ingestion failed: '_GeneratorContextManager' object has no attribute 'close'"
+    ]
+  },
+  "data_quality": {},
+  "study_cards": {},
+  "signal_detection": {},
+  "errors": [
+    "CT.gov ingestion failed"
+  ],
+  "warnings": []
+}

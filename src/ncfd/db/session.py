@@ -30,22 +30,45 @@ def _get_database_url(override: Optional[str] = None) -> str:
         or "sqlite+pysqlite:///:memory:"
     )
 
+# Module-level engine and session factory for better connection pooling
+_engine = None
+_Session = None
+
 def get_engine(url: str | None = None):
     """Return a SQLAlchemy engine bound to the resolved URL."""
-    db_url = _get_database_url(url)
-    kwargs = {"pool_pre_ping": True, "future": True}
-    # SQLite-specific safe defaults
-    if db_url.startswith("sqlite"):
-        kwargs["connect_args"] = {"check_same_thread": False}
-    return create_engine(db_url, **kwargs)
+    global _engine
+    if _engine is None:
+        db_url = _get_database_url(url)
+        kwargs = {"pool_pre_ping": True, "future": True}
+        # SQLite-specific safe defaults
+        if db_url.startswith("sqlite"):
+            kwargs["connect_args"] = {"check_same_thread": False}
+        _engine = create_engine(db_url, **kwargs)
+    return _engine
+
+def reset_engine():
+    """Reset the module-level engine (useful for testing/debugging)."""
+    global _engine, _Session
+    if _engine:
+        try:
+            _engine.dispose()
+        except Exception:
+            pass
+    _engine = None
+    _Session = None
 
 def create_all(url: str | None = None) -> None:
     """Create all tables defined in :mod:`ncfd.db.models`."""
     engine = get_engine(url)
     Base.metadata.create_all(engine)
 
-# Configure an unbound Session factory; we bind per-context to chosen engine.
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, future=True)
+# Configure a session factory bound to the module-level engine
+def _get_session_factory():
+    global _Session
+    if _Session is None:
+        engine = get_engine()
+        _Session = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    return _Session
 
 # -----------------------------------------------------------------------------
 # Context managers
@@ -60,9 +83,16 @@ def session_scope(url: str | None = None) -> Iterator[Session]:
         with session_scope() as s:
             s.execute(...)
     """
-    engine = get_engine(url)
-    SessionLocal.configure(bind=engine)
-    session: Session = SessionLocal()
+    # Use module-level engine if no URL override
+    if url is None:
+        session_factory = _get_session_factory()
+        session: Session = session_factory()
+    else:
+        # Fallback to creating new engine for URL override
+        engine = create_engine(url, pool_pre_ping=True, future=True)
+        session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+        session: Session = session_factory()
+    
     try:
         yield session
         session.commit()
@@ -83,9 +113,9 @@ def get_session(url: str | None = None) -> Iterator[Session]:
 
 __all__ = [
     "get_engine",
+    "reset_engine",
     "create_all",
     "session_scope",
     "get_session",
-    "SessionLocal",
     "Base",
 ]

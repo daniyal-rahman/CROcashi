@@ -1,234 +1,293 @@
-# CROcashi Pipeline Configuration
-# This file contains configuration presets for different pipeline execution modes
+# Unified Pipeline Configuration
+# =============================
 
-# Default company filtering criteria
-default_company_filter:
-  min_market_cap: 100_000_000  # $100M minimum
-  max_market_cap: null          # No upper limit
-  exchanges:
-    - NASDAQ
-    - NYSE
-    - NYSE American
-  exclude_countries:
-    - CN  # China
-    - HK  # Hong Kong
-  min_trial_count: 1
-  include_private: false
-
-# Conservative investment filter (large cap only)
-conservative_filter:
-  min_market_cap: 1_000_000_000  # $1B minimum
-  max_market_cap: null
-  exchanges:
-    - NASDAQ
-    - NYSE
-  exclude_countries:
-    - CN
-    - HK
-  min_trial_count: 2
-  include_private: false
-
-# Aggressive investment filter (small cap included)
-aggressive_filter:
-  min_market_cap: 50_000_000   # $50M minimum
-  max_market_cap: null
-  exchanges:
-    - NASDAQ
-    - NYSE
-    - NYSE American
-    - OTCQX
-  exclude_countries:
-    - CN
-    - HK
-  min_trial_count: 1
-  include_private: false
-
-# Research filter (academic and private companies)
-research_filter:
-  min_market_cap: 0
-  max_market_cap: null
-  exchanges: []  # No exchange restrictions
-  exclude_countries: []
-  min_trial_count: 1
-  include_private: true
-
-# Pipeline execution configuration
-pipeline_config:
-  # Document processing limits
-  max_documents_per_company: 100
-  max_total_documents: 1000
+# Orchestration Configuration
+orchestration:
+  # Execution order and dependencies
+  execution_order: ["ctgov", "sec"]  # CT.gov first, then SEC
+  parallel_execution: false  # Sequential execution for now
+  dependency_checking: true  # Check CT.gov completion before SEC
   
-  # Batch processing
-  discovery_batch_size: 50
-  fetch_batch_size: 25
-  parse_batch_size: 25
-  link_batch_size: 25
+  # Error handling and retries
+  max_retries: 3
+  retry_delay_seconds: 300  # 5 minutes between retries
+  
+  # State management
+  state_file: ".state/unified_orchestrator.json"
+  execution_history_limit: 100
+  
+  # Scheduling
+  daily_execution_time: "02:00"  # 2 AM daily
+  timezone: "UTC"
+  
+  # Monitoring
+  enable_execution_monitoring: true
+  alert_on_failure: true
+  alert_on_slow_execution: true
+  slow_execution_threshold_minutes: 60
+
+# CT.gov Pipeline Configuration
+ctgov:
+  # Pipeline settings
+  enabled: true
+  priority: "high"
+  
+  # Ingestion settings
+  daily_schedule: "0 2 * * *"  # 2 AM daily (cron format)
+  batch_size: 100
+  max_trials_per_run: 1000
+  
+  # Change detection
+  change_detection_enabled: true
+  auto_trigger_signals: true
+  trigger_on_high_significance: true
+  trigger_on_medium_significance: false
+  
+  # Data quality
+  validation_enabled: true
+  min_quality_score: 0.7
+  min_required_field_completeness: 0.8
+  
+  # Performance
+  sleep_between_batches_ms: 200
+  max_concurrent_requests: 1
+  
+  # State management
+  state_file: ".state/ctgov_pipeline.json"
+  cursor_file: ".state/ctgov_cursor.txt"
+
+# SEC Pipeline Configuration
+sec:
+  # Pipeline settings
+  enabled: true
+  priority: "medium"
+  
+  # Ingestion settings
+  daily_schedule: "0 3 * * *"  # 3 AM daily (after CT.gov)
+  max_filings_per_run: 500
   
   # Rate limiting
-  rate_limit_delay: 1.0  # seconds between requests
-  max_requests_per_minute: 60
+  rate_limit_per_minute: 2
+  burst_size: 5
   
-  # Storage and processing
-  enable_storage: true
-  enable_parallel_processing: false
+  # Form types to process
+  form_types: ["8-K", "10-K", "10-Q"]
   
-  # Error handling
-  max_retries: 3
-  retry_delay: 5.0
+  # Company monitoring
+  monitored_companies: []  # Empty = all companies
+  exclude_companies: []
   
-  # Logging
-  log_level: INFO
-  enable_structured_logging: true
+  # LangExtract integration
+  langextract_enabled: true
+  auto_process_extractions: true
+  review_low_confidence: true
+  confidence_threshold: 0.7
+  
+  # State management
+  state_file: ".state/sec_pipeline.json"
+  cache_dir: ".cache/sec"
 
-# Company domain discovery patterns
-company_domain_patterns:
-  # Common IR/PR paths to check
-  ir_paths:
-    - /investors
-    - /ir
-    - /investor-relations
-    - /investor-relations/news
-    - /investor-relations/press-releases
+# Integration Configuration
+integration:
+  # Entity resolution
+  auto_resolve_companies: true
+  auto_resolve_trials: true
+  company_resolution_delay_minutes: 10
+  trial_resolution_delay_minutes: 5
   
-  pr_paths:
-    - /newsroom
-    - /news
-    - /press-releases
-    - /media
-    - /press
-    - /about/news
-    - /about/press
+  # Signal evaluation
+  auto_evaluate_signals: true
+  signal_evaluation_delay_minutes: 5
+  trigger_on_trial_changes: true
+  trigger_on_sec_events: true
   
-  # File extensions to prioritize
-  priority_extensions:
-    - .pdf
-    - .html
-    - .htm
+  # Database updates
+  batch_database_updates: true
+  batch_size: 50
+  enable_transactions: true
   
-  # Keywords that indicate news/PR content
-  news_keywords:
-    - news
-    - press
-    - release
-    - announcement
-    - update
-    - results
-    - trial
-    - clinical
-    - drug
-    - therapy
+  # Cross-pipeline linking
+  link_trials_to_filings: true
+  link_companies_to_trials: true
+  update_trial_status_from_filings: true
 
-# Asset extraction configuration
-asset_extraction:
-  # Confidence thresholds
-  confidence_thresholds:
-    exact_match: 1.0
-    regex_match: 0.95
-    fuzzy_match: 0.8
-    dictionary_match: 0.85
+# Data Quality Configuration
+data_quality:
+  # Overall quality thresholds
+  min_overall_quality_score: 0.6
+  max_error_rate: 0.05  # 5%
   
-  # Entity types to extract
-  entity_types:
-    - asset_code
-    - inn_name
-    - generic_name
-    - nct_id
-    - doi
-    - pmid
+  # Validation rules
+  validate_trial_data: true
+  validate_filing_data: true
+  validate_entity_relationships: true
   
-  # Span capture settings
-  span_capture:
-    max_span_length: 1000
-    min_span_length: 3
-    overlap_threshold: 0.5
+  # Quality monitoring
+  track_quality_metrics: true
+  alert_on_quality_degradation: true
+  quality_degradation_threshold: 0.1
+  
+  # Data completeness
+  min_trial_completeness: 0.7
+  min_filing_completeness: 0.8
+  min_entity_completeness: 0.9
 
-# Conference abstract sources
-conference_sources:
-  aacr:
-    name: "American Association for Cancer Research"
-    base_urls:
-      - https://cancerres.aacrjournals.org
-      - https://aacrjournals.org
-    access_type: "open"
-    update_frequency: "monthly"
-  
-  asco:
-    name: "American Society of Clinical Oncology"
-    base_urls:
-      - https://ascopubs.org
-      - https://meetings.asco.org
-    access_type: "subscription"
-    update_frequency: "quarterly"
-  
-  esmo:
-    name: "European Society for Medical Oncology"
-    base_urls:
-      - https://www.esmo.org
-      - https://www.annalsofoncology.org
-    access_type: "mixed"
-    update_frequency: "quarterly"
-
-# LLM analysis hooks (future implementation)
-llm_analysis:
-  # Analysis types to perform
-  analysis_types:
-    - red_flag_detection
-    - risk_assessment
-    - trial_outcome_prediction
-    - competitive_analysis
-  
-  # Data preparation
-  data_preparation:
-    max_context_length: 4000
-    include_metadata: true
-    include_citations: true
-  
-  # Output formats
-  output_formats:
-    - json
-    - markdown
-    - html
-    - pdf
-
-# Dossier generation hooks (future implementation)
-dossier_generation:
-  # Dossier components
-  components:
-    - company_overview
-    - trial_summary
-    - asset_pipeline
-    - risk_assessment
-    - investment_recommendation
-  
-  # Template settings
-  templates:
-    default_template: "standard_dossier"
-    custom_templates: []
-    include_charts: true
-    include_tables: true
-  
-  # Output settings
-  output:
-    format: "pdf"
-    include_appendix: true
-    max_pages: 50
-
-# Monitoring and alerting
+# Monitoring Configuration
 monitoring:
-  # Performance thresholds
-  performance_thresholds:
-    max_execution_time: 3600  # 1 hour
-    max_memory_usage: 2048    # 2GB
-    max_cpu_usage: 80         # 80%
+  # Overall monitoring
+  enable_monitoring: true
+  monitoring_interval_seconds: 300  # 5 minutes
   
-  # Alerting
-  alerts:
-    enable_email_alerts: false
-    enable_slack_alerts: false
-    enable_webhook_alerts: false
+  # Performance monitoring
+  track_execution_times: true
+  track_throughput: true
+  track_error_rates: true
+  track_success_rates: true
   
-  # Metrics collection
-  metrics:
-    enable_prometheus: false
-    enable_grafana: false
-    metrics_retention_days: 30
+  # Resource monitoring
+  track_memory_usage: true
+  track_disk_usage: true
+  track_network_usage: true
+  
+  # Alerting thresholds
+  alert_on_execution_time_above: 3600  # 1 hour
+  alert_on_error_rate_above: 0.1  # 10%
+  alert_on_success_rate_below: 0.8  # 80%
+  alert_on_memory_usage_above: 0.8  # 80%
+  alert_on_disk_usage_above: 0.9  # 90%
+
+# Caching Configuration
+caching:
+  # Overall caching
+  enable_caching: true
+  cache_ttl_hours: 24
+  
+  # Cache invalidation
+  invalidate_on_content_change: true
+  invalidate_on_schema_change: true
+  invalidate_on_config_change: true
+  
+  # Cache storage
+  cache_dir: ".cache"
+  max_cache_size_gb: 10
+  enable_cache_compression: true
+
+# Logging Configuration
+logging:
+  # Overall logging
+  enable_logging: true
+  log_level: "INFO"
+  log_format: "json"
+  
+  # Log rotation
+  max_log_size_mb: 100
+  max_log_files: 10
+  log_retention_days: 30
+  
+  # Structured logging
+  include_timestamps: true
+  include_execution_id: true
+  include_pipeline_name: true
+  
+  # Log destinations
+  log_to_file: true
+  log_to_console: true
+  log_to_syslog: false
+
+# Alerting Configuration
+alerting:
+  # Overall alerting
+  enable_alerting: true
+  alert_channels: ["log", "email"]
+  
+  # Email alerts
+  smtp_server: null
+  smtp_port: 587
+  smtp_username: null
+  smtp_password: null
+  alert_recipients: []
+  
+  # Alert rules
+  alert_on_pipeline_failure: true
+  alert_on_high_error_rate: true
+  alert_on_quality_degradation: true
+  alert_on_slow_execution: true
+  
+  # Alert throttling
+  max_alerts_per_hour: 10
+  alert_cooldown_minutes: 30
+
+# Development Configuration
+development:
+  # Debug mode
+  debug_mode: false
+  verbose_logging: false
+  
+  # Testing
+  test_mode: false
+  mock_external_apis: false
+  
+  # Development overrides
+  override_schedules: false
+  development_schedules: false
+  
+  # Data sampling
+  sample_data: false
+  sample_percentage: 0.1
+  max_execution_time_minutes: 30
+
+# Security Configuration
+security:
+  # API security
+  require_authentication: false
+  api_key_required: false
+  
+  # Data security
+  encrypt_sensitive_data: false
+  mask_pii: true
+  
+  # Access control
+  restrict_file_access: true
+  restrict_database_access: true
+  
+  # Audit logging
+  enable_audit_logging: true
+  log_access_attempts: true
+  log_data_changes: true
+
+# Backup Configuration
+backup:
+  # Overall backup
+  enable_backups: true
+  backup_frequency: "daily"
+  backup_retention_days: 30
+  
+  # Backup content
+  backup_pipeline_state: true
+  backup_execution_history: true
+  backup_cache_data: false
+  
+  # Backup storage
+  backup_dir: ".backups"
+  backup_compression: true
+  backup_encryption: false
+
+# Performance Configuration
+performance:
+  # Overall performance
+  enable_performance_optimization: true
+  
+  # Database optimization
+  enable_connection_pooling: true
+  max_database_connections: 20
+  database_query_timeout_seconds: 300
+  
+  # Memory optimization
+  enable_memory_optimization: true
+  max_memory_usage_mb: 2048
+  enable_garbage_collection: true
+  
+  # Concurrency optimization
+  max_worker_processes: 4
+  max_worker_threads: 8
+  enable_async_processing: true

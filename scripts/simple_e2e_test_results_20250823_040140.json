@@ -1,0 +1,17 @@
+{
+  "duration_seconds": 0.052515,
+  "success": false,
+  "database": {
+    "success": false,
+    "error": "(psycopg2.errors.UndefinedColumn) column companies.state_incorp does not exist\nLINE 2: ...name, companies.name_norm AS companies_name_norm, companies....\n                                                             ^\n\n[SQL: SELECT count(*) AS count_1 \nFROM (SELECT companies.company_id AS companies_company_id, companies.cik AS companies_cik, companies.name AS companies_name, companies.name_norm AS companies_name_norm, companies.state_incorp AS companies_state_incorp, companies.country_incorp AS companies_country_incorp, companies.sic AS companies_sic, companies.website_domain AS companies_website_domain, companies.lei AS companies_lei, companies.created_at AS companies_created_at, companies.updated_at AS companies_updated_at, companies.metadata AS companies_metadata \nFROM companies) AS anon_1]\n(Background on this error at: https://sqlalche.me/e/20/f405)",
+    "connection_healthy": false
+  },
+  "data_quality": {},
+  "trial_analysis": {},
+  "study_cards": {},
+  "signal_detection": {},
+  "errors": [
+    "Database connectivity test failed"
+  ],
+  "warnings": []
+}

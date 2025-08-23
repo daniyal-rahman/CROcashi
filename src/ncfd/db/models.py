@@ -197,6 +197,8 @@ class Trial(Base):
 
     trial_id: Mapped[int] = mapped_column(primary_key=True)
     nct_id: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    brief_title: Mapped[Optional[str]] = mapped_column(String, default=None)
+    official_title: Mapped[Optional[str]] = mapped_column(String, default=None)
     sponsor_text: Mapped[Optional[str]] = mapped_column(String, default=None)
     sponsor_company_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("companies.company_id"),
@@ -242,7 +244,7 @@ class TrialVersion(Base):
     """Trial version history for endpoint change detection (S1)."""
     __tablename__ = "trial_versions"
 
-    version_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    trial_version_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     trial_id: Mapped[int] = mapped_column(
         ForeignKey("trials.trial_id", ondelete="CASCADE"),
         nullable=False,
@@ -251,12 +253,17 @@ class TrialVersion(Base):
         DateTime(timezone=True),
         nullable=False,
     )
+    last_update_posted_date: Mapped[Optional[date]] = mapped_column(Date)
     raw_jsonb: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
-    primary_endpoint_text: Mapped[Optional[str]] = mapped_column(Text)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    primary_endpoint_text: Mapped[Optional[str]] = mapped_column(String)
     sample_size: Mapped[Optional[int]] = mapped_column(Integer)
-    analysis_plan_text: Mapped[Optional[str]] = mapped_column(Text)
-    changes_jsonb: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
-    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, server_default="{}", nullable=False)
+    analysis_plan_text: Mapped[Optional[str]] = mapped_column(String)
+    changes_jsonb: Mapped[Optional[dict]] = mapped_column(JSONB, server_default="{}")
+    changed_primary_endpoint: Mapped[Optional[bool]] = mapped_column(Boolean)
+    changed_sample_size: Mapped[Optional[bool]] = mapped_column(Boolean)
+    sample_size_delta: Mapped[Optional[int]] = mapped_column(Integer)
+    changed_analysis_plan: Mapped[Optional[bool]] = mapped_column(Boolean)
 
     trial: Mapped["Trial"] = relationship(back_populates="versions")
 
@@ -266,7 +273,6 @@ class TrialVersion(Base):
         Index("ix_trial_versions_captured_at", "captured_at"),
         Index("ix_trial_versions_raw_jsonb_gin", "raw_jsonb", postgresql_using="gin"),
         Index("ix_trial_versions_changes_jsonb_gin", "changes_jsonb", postgresql_using="gin"),
-        Index("ix_trial_versions_metadata_gin", "metadata", postgresql_using="gin"),
     )
 
 

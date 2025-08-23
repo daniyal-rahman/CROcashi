@@ -1,0 +1,39 @@
+{
+  "duration_seconds": 1.300588,
+  "success": false,
+  "ingestion": {
+    "success": true,
+    "trials_processed": 15,
+    "trials_new": 1,
+    "trials_updated": 0,
+    "changes_detected": 0,
+    "processing_time": 1.181952,
+    "errors": []
+  },
+  "data_quality": {
+    "total_trials_analyzed": 20,
+    "trials_with_sponsor": 20,
+    "trials_with_phase": 17,
+    "trials_with_status": 20,
+    "trials_with_title": 5,
+    "trials_with_versions": 17,
+    "phase_distribution": {
+      "PHASE2": 12,
+      "PHASE3": 5
+    },
+    "status_distribution": {
+      "RECRUITING": 8,
+      "COMPLETED": 4,
+      "ACTIVE_NOT_RECRUITING": 5,
+      "recruiting": 3
+    },
+    "unique_sponsors": 18,
+    "completeness_score": 0.775
+  },
+  "study_cards": {},
+  "signal_detection": {},
+  "errors": [
+    "E2E test failed: Instance <Trial at 0x10c5f0bf0> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)"
+  ],
+  "warnings": []
+}

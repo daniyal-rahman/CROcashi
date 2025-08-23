@@ -1,0 +1,243 @@
+# SEC Filings Configuration
+# ========================
+
+# API Configuration
+api:
+  base_url: "https://www.sec.gov/Archives/edgar/data"
+  timeout_seconds: 60
+  max_retries: 3
+  
+  # Rate limiting (SEC enforces polite scraping)
+  rate_limit_per_minute: 2  # Conservative: 2 requests per minute
+  burst_size: 5  # Allow small bursts
+  
+  # Headers to avoid blocking
+  user_agent: "CROcashi/1.0 (clinical-trial-analysis@example.com)"
+  accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+  accept_language: "en-US,en;q=0.5"
+  
+  # Retry configuration
+  retry_delay_base: 2  # Exponential backoff base
+  max_retry_delay: 300  # Maximum delay (5 minutes)
+  retry_on_status_codes: [429, 403, 500, 502, 503, 504]
+
+# Document Processing Configuration
+document_processing:
+  # Section extraction strategies
+  extraction_strategies:
+    - "html_outline"      # Most reliable: HTML heading structure
+    - "pattern_based"     # Fallback: Regex patterns
+    - "manual_fallback"   # Last resort: Delimiter-based
+  
+  # Section confidence thresholds
+  confidence_thresholds:
+    high: 0.8
+    medium: 0.5
+    low: 0.0
+  
+  # Content analysis
+  min_section_length: 100  # Minimum characters for valid section
+  max_section_length: 50000  # Maximum characters per section
+  
+  # HTML processing
+  strip_inline_styles: true
+  flatten_tables: true
+  collapse_whitespace: true
+  fix_encodings: true
+
+# Pattern Configuration
+patterns:
+  # 8-K item patterns (robust with fallbacks)
+  8k_items:
+    primary:
+      - '(?i)\\bItem\\s+(\\d+\\.\\d+)\\b.*?(?=\\bItem\\s+\\d+\\.\\d+\\b|SIGNATURES|EXHIBITS|\\Z)'
+      - '(?i)\\bItem\\s+(\\d+\\.\\d+)\\b.*?(?=\\n\\s*\\n|\\Z)'
+    fallback:
+      - '(?i)\\bItem\\s+(\\d+\\.\\d+)\\b.*?(?=\\bItem\\b|\\Z)'
+  
+  # 10-K section patterns
+  10k_sections:
+    business:
+      - '(?i)\\b(?:Item\\s+)?1A?\\s*[\\.:]\\s*Risk\\s+Factors?\\b.*?(?=\\b(?:Item\\s+)?1B?\\b|\\Z)'
+      - '(?i)\\b(?:Item\\s+)?1\\s*[\\.:]\\s*Business\\b.*?(?=\\b(?:Item\\s+)?1A?\\b|\\Z)'
+    clinical:
+      - '(?i)\\b(?:Item\\s+)?1\\s*[\\.:]\\s*Business.*?Clinical\\s+Development.*?(?=\\b(?:Item\\s+)?2\\b|\\Z)'
+    fallback:
+      - '(?i)\\bRisk\\s+Factors?\\b.*?(?=\\b(?:Item\\s+)?\\d+\\b|\\Z)'
+  
+  # Generic patterns
+  general:
+    - '(?i)\\b(?:Item\\s+)?(\\d+[A-Z]?)\\s*[\\.:]\\s*([^.\n]+?)\\b.*?(?=\\b(?:Item\\s+)?\\d+[A-Z]?\\b|\\Z)'
+
+# LangExtract Configuration (Google Gemini)
+langextract:
+  enabled: true
+  model_name: "gemini-1.5-pro"
+  temperature: 0.1  # Low temperature for consistency
+  max_retries: 3
+  
+  # Schema validation
+  strict_validation: true
+  require_evidence_spans: true
+  confidence_threshold: 0.5
+  
+  # Hallucination prevention
+  verbatim_only: true
+  null_on_uncertainty: true
+  evidence_span_required: true
+  
+  # Extraction schemas
+  schemas:
+    8k_trial_events:
+      - trial_identifier
+      - trial_phase
+      - event_type
+      - event_description
+      - primary_endpoint_outcome
+      - safety_events
+      - enrollment_impact
+    
+    10k_clinical:
+      - pipeline_stage
+      - pivotal_status
+      - enrollment_target
+      - enrollment_current
+      - fda_interactions
+      - regulatory_milestones
+      - primary_endpoints
+      - secondary_endpoints
+
+# Caching Configuration
+caching:
+  enabled: true
+  cache_dir: ".cache/sec"
+  cache_ttl_hours: 24  # Cache for 24 hours
+  
+  # Content hashing
+  hash_algorithm: "sha256"
+  store_content_hashes: true
+  store_section_hashes: true
+  
+  # Cache invalidation
+  invalidate_on_content_change: true
+  invalidate_on_section_change: true
+
+# Change Detection Configuration
+change_detection:
+  enabled: true
+  
+  # Content drift tracking
+  track_document_changes: true
+  track_section_changes: true
+  track_content_hashes: true
+  
+  # Change significance
+  significant_change_threshold: 0.1  # 10% content change
+  min_change_length: 50  # Minimum characters for significant change
+  
+  # Version tracking
+  store_versions: true
+  max_versions_per_document: 10
+
+# Data Quality Configuration
+data_quality:
+  validation_enabled: true
+  
+  # Required fields
+  required_fields:
+    - "cik"
+    - "accession"
+    - "form_type"
+    - "filing_date"
+    - "company_name"
+  
+  # Quality thresholds
+  min_section_count: 1
+  min_section_confidence: "LOW"
+  max_extraction_errors: 5
+  
+  # Content validation
+  validate_html_structure: true
+  validate_section_boundaries: true
+  validate_content_hashes: true
+
+# Filtering Configuration
+filtering:
+  # Form types to process
+  form_types:
+    - "8-K"    # Current reports (trial events)
+    - "10-K"   # Annual reports (clinical development)
+    - "10-Q"   # Quarterly reports (updates)
+  
+  # Company filtering
+  include_companies: []  # Empty = all companies
+  exclude_companies: []  # Companies to skip
+  
+  # Date filtering
+  min_filing_date: "2000-01-01"
+  max_filing_date: null  # No upper limit
+  
+  # Content filtering
+  min_content_length: 1000
+  exclude_empty_filings: true
+
+# Monitoring Configuration
+monitoring:
+  enable_metrics: true
+  enable_logging: true
+  
+  # Metrics collection
+  track_processing_times: true
+  track_success_rates: true
+  track_error_rates: true
+  track_cache_hit_rates: true
+  
+  # Performance monitoring
+  alert_on_slow_processing: true
+  slow_processing_threshold_seconds: 300  # 5 minutes
+  
+  # Error monitoring
+  alert_on_high_error_rate: true
+  high_error_rate_threshold: 0.1  # 10%
+  
+  # Rate limiting monitoring
+  track_rate_limit_hits: true
+  alert_on_rate_limit_exceeded: true
+
+# Integration Configuration
+integration:
+  # Entity resolution
+  auto_resolve_companies: true
+  company_resolution_delay_minutes: 10
+  
+  # Signal evaluation
+  auto_evaluate_signals: true
+  signal_evaluation_delay_minutes: 5
+  
+  # Database updates
+  batch_database_updates: true
+  batch_size: 50
+  
+  # External notifications
+  notify_on_changes: false
+  webhook_url: null
+  slack_webhook: null
+
+# Development Configuration
+development:
+  # Debug mode
+  debug_mode: false
+  verbose_logging: false
+  
+  # Testing
+  test_mode: false
+  mock_api_responses: false
+  
+  # Development overrides
+  override_rate_limits: false
+  development_rate_limit: 10  # Higher limit for development
+  
+  # Data sampling
+  sample_data: false
+  sample_percentage: 0.1
+  max_filings_per_run: 100

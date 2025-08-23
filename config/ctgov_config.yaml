@@ -1,0 +1,223 @@
+# ClinicalTrials.gov Configuration
+# ================================
+
+# API Configuration
+api:
+  base_url: "https://clinicaltrials.gov/api/v2"
+  timeout_seconds: 45
+  max_retries: 3
+  retry_delay_base: 2  # Exponential backoff base
+  max_retry_delay: 30  # Maximum delay in seconds
+  
+  # Rate limiting
+  rate_limit_requests_per_minute: 300  # Conservative limit
+  rate_limit_burst_size: 10
+  
+  # Headers
+  user_agent: "CROcashi/1.0 (clinical trial analysis)"
+  accept: "application/json"
+
+# Ingestion Configuration
+ingestion:
+  # Schedule
+  daily_schedule: "0 2 * * *"  # 2 AM daily (cron format)
+  batch_size: 100
+  max_studies_per_run: 1000
+  
+  # Date filtering
+  backfill_start_date: "2000-01-01"
+  default_since_days: 7  # Default to last 7 days if no cursor
+  
+  # Progress tracking
+  save_cursor: true
+  cursor_file: ".state/ctgov_cursor.txt"
+  
+  # Performance
+  sleep_between_batches_ms: 200
+  max_concurrent_requests: 1  # CT.gov doesn't support concurrent requests well
+
+# Change Detection Configuration
+change_detection:
+  enabled: true
+  
+  # Field significance levels
+  high_significance_fields:
+    - "primary_endpoint_text"
+    - "sample_size"
+    - "analysis_plan_text"
+    - "phase"
+    - "status"
+    - "trial_design.allocation"
+    - "trial_design.masking"
+    - "statistical_analysis.alpha_level"
+    - "statistical_analysis.power"
+  
+  medium_significance_fields:
+    - "sponsor_info.lead_sponsor_name"
+    - "interventions"
+    - "conditions"
+    - "enrollment_info.count"
+    - "locations"
+    - "study_start_date"
+    - "primary_completion_date"
+  
+  low_significance_fields:
+    - "brief_title"
+    - "official_title"
+    - "acronym"
+    - "keywords"
+    - "mesh_terms"
+    - "eligibility_criteria"
+  
+  # Change thresholds
+  numeric_change_threshold: 0.1  # 10% change threshold
+  text_similarity_threshold: 0.8  # Text similarity threshold
+  
+  # Auto-trigger signal evaluation
+  auto_trigger_signals: true
+  trigger_on_high_significance: true
+  trigger_on_medium_significance: false  # Only high significance by default
+
+# Data Quality Configuration
+data_quality:
+  validation_enabled: true
+  
+  # Required fields
+  required_fields:
+    - "nct_id"
+    - "sponsor_info.lead_sponsor_name"
+    - "phase"
+    - "status"
+  
+  # Quality thresholds
+  min_sponsor_name_length: 3
+  max_sample_size: 100000
+  min_quality_score: 0.7
+  
+  # Field completeness requirements
+  min_required_field_completeness: 0.8
+  min_optional_field_completeness: 0.5
+
+# Filtering Configuration
+filtering:
+  # Study type filters
+  study_types:
+    - "INTERVENTIONAL"
+  
+  # Intervention type filters
+  intervention_types:
+    - "DRUG"
+    - "BIOLOGICAL"
+  
+  # Phase filters
+  phases:
+    - "PHASE2"
+    - "PHASE3"
+    - "PHASE2_PHASE3"
+  
+  # Status filters
+  include_statuses:
+    - "RECRUITING"
+    - "ACTIVE_NOT_RECRUITING"
+    - "ENROLLING_BY_INVITATION"
+    - "NOT_YET_RECRUITING"
+    - "COMPLETED"
+    - "SUSPENDED"
+    - "TERMINATED"
+  
+  # Enrollment filters
+  min_enrollment: 50
+  max_enrollment: 100000
+  
+  # Geographic filters
+  include_countries:
+    - "United States"
+    - "Canada"
+    - "United Kingdom"
+    - "Germany"
+    - "France"
+    - "Japan"
+    - "Australia"
+  
+  exclude_countries:
+    - "China"
+    - "Russia"
+    - "Iran"
+    - "North Korea"
+
+# Monitoring Configuration
+monitoring:
+  enable_metrics: true
+  enable_logging: true
+  
+  # Metrics collection
+  collect_ingestion_metrics: true
+  collect_quality_metrics: true
+  collect_performance_metrics: true
+  
+  # Logging levels
+  log_level: "INFO"
+  log_format: "json"
+  
+  # Performance monitoring
+  track_response_times: true
+  track_error_rates: true
+  track_success_rates: true
+  
+  # Alerting thresholds
+  alert_on_error_rate_above: 0.05  # 5%
+  alert_on_response_time_above: 30  # 30 seconds
+  alert_on_quality_score_below: 0.6
+
+# Storage Configuration
+storage:
+  # Raw data storage
+  save_raw_json: true
+  raw_data_compression: true
+  
+  # Change history storage
+  save_change_history: true
+  max_change_history_days: 365
+  
+  # Backup configuration
+  enable_backups: true
+  backup_frequency: "daily"
+  backup_retention_days: 30
+
+# Integration Configuration
+integration:
+  # Signal evaluation
+  auto_evaluate_signals: true
+  signal_evaluation_delay_minutes: 5
+  
+  # Entity resolution
+  auto_resolve_sponsors: true
+  sponsor_resolution_delay_minutes: 10
+  
+  # Database updates
+  batch_database_updates: true
+  batch_size: 50
+  
+  # External systems
+  notify_on_changes: false
+  webhook_url: null
+  slack_webhook: null
+
+# Development Configuration
+development:
+  # Debug mode
+  debug_mode: false
+  verbose_logging: false
+  
+  # Testing
+  test_mode: false
+  mock_api_responses: false
+  
+  # Development overrides
+  override_schedule: false
+  development_schedule: "*/5 * * * *"  # Every 5 minutes for development
+  
+  # Data sampling
+  sample_data: false
+  sample_size: 10
+  sample_percentage: 0.1

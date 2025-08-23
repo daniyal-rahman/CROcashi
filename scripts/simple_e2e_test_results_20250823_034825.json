@@ -1,0 +1,17 @@
+{
+  "duration_seconds": 0.045159,
+  "success": false,
+  "database": {
+    "success": false,
+    "error": "(psycopg2.errors.InFailedSqlTransaction) current transaction is aborted, commands ignored until end of transaction block\n\n[SQL: SELECT trials.trial_id AS trials_trial_id, trials.nct_id AS trials_nct_id, trials.brief_title AS trials_brief_title, trials.official_title AS trials_official_title, trials.sponsor_text AS trials_sponsor_text, trials.sponsor_company_id AS trials_sponsor_company_id, trials.phase AS trials_phase, trials.indication AS trials_indication, trials.is_pivotal AS trials_is_pivotal, trials.primary_endpoint_text AS trials_primary_endpoint_text, trials.est_primary_completion_date AS trials_est_primary_completion_date, trials.status AS trials_status, trials.first_posted_date AS trials_first_posted_date, trials.last_update_posted_date AS trials_last_update_posted_date, trials.intervention_types AS trials_intervention_types, trials.last_seen_at AS trials_last_seen_at, trials.current_sha256 AS trials_current_sha256 \nFROM trials ORDER BY trials.last_seen_at DESC \n LIMIT %(param_1)s]\n[parameters: {'param_1': 5}]\n(Background on this error at: https://sqlalche.me/e/20/2j85)",
+    "connection_healthy": false
+  },
+  "data_quality": {},
+  "trial_analysis": {},
+  "study_cards": {},
+  "signal_detection": {},
+  "errors": [
+    "Database connectivity test failed"
+  ],
+  "warnings": []
+}

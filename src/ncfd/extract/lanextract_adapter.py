@@ -1,8 +1,8 @@
 """
-LangExtract adapter for Gemini integration with Study Card extraction.
+LangExtract adapter for Gemini and OpenAI integration with Study Card extraction.
 
 This module provides the interface between the document processing pipeline
-and Gemini via LangExtract for extracting structured study information.
+and LLM providers via LangExtract for extracting structured study information.
 """
 
 from __future__ import annotations
@@ -22,9 +22,43 @@ class ExtractionError(Exception):
     """Raised when extraction fails or returns invalid data."""
     pass
 
-# Freeze model choice and environment variable
-MODEL_ID = "gemini-1.5-pro"  # Single, stable model choice
-ENV_VAR = "LANGEXTRACT_API_KEY_GEMINI"  # Clear, provider-specific naming
+# Model configuration - supports both Gemini and OpenAI
+class ModelConfig:
+    """Configuration for different LLM providers."""
+    
+    GEMINI = {
+        "model_id": "gemini-1.5-pro",
+        "env_var": "LANGEXTRACT_API_KEY_GEMINI",
+        "provider": "gemini",
+        "fence_output": False,
+        "use_schema_constraints": True
+    }
+    
+    OPENAI = {
+        "model_id": "gpt-5-mini",  # Latest GPT-5 model, falls back to gpt-4o if not available
+        "env_var": "OPENAI_API_KEY", 
+        "provider": "openai",
+        "fence_output": True,
+        "use_schema_constraints": False
+    }
+    
+    @classmethod
+    def get_active_config(cls) -> Dict[str, Any]:
+        """Get the active model configuration based on environment variables."""
+        # Check OpenAI first (preferred for billing)
+        if os.getenv(cls.OPENAI["env_var"]):
+            logger.info("Using OpenAI configuration")
+            return cls.OPENAI
+        
+        # Fall back to Gemini
+        if os.getenv(cls.GEMINI["env_var"]):
+            logger.info("Using Gemini configuration")
+            return cls.GEMINI
+        
+        raise ValueError(
+            f"Neither {cls.OPENAI['env_var']} nor {cls.GEMINI['env_var']} "
+            f"environment variables are set. Please set one of them."
+        )
 
 def load_prompts() -> str:
     """Load the study card prompts and embed the minified JSON schema."""
@@ -60,19 +94,22 @@ class StudyCardAdapter:
     Thin, typed adapter for Study Card extraction via LangExtract.
     
     This adapter provides a stable interface with strict validation
-    and fails hard on non-JSON or invalid data.
+    and fails hard on non-JSON or invalid data. Supports both Gemini and OpenAI.
     """
     
     def __init__(self):
         """Initialize the adapter with prompts and validation."""
         self.prompts = load_prompts()
         
+        # Get active model configuration
+        self.config = ModelConfig.get_active_config()
+        
         # Verify API key is available
-        api_key = os.getenv(ENV_VAR)
+        api_key = os.getenv(self.config["env_var"])
         if not api_key:
             raise ValueError(
-                f"{ENV_VAR} environment variable not set. "
-                f"Please set your Google Gemini API key for LangExtract."
+                f"{self.config['env_var']} environment variable not set. "
+                f"Please set your API key for {self.config['provider']}."
             )
     
     def extract(self, text: str, prompt: str) -> Dict[str, Any]:
@@ -113,25 +150,57 @@ class StudyCardAdapter:
                 )
             ]
             
-            # Run extraction with single model choice
+            # Get API key for the active provider
+            api_key = os.getenv(self.config["env_var"])
+            
+            # Run extraction with provider-specific configuration
             result = lx.extract(
                 text_or_documents=text,
                 prompt_description=prompt,
                 examples=examples,
-                model_id=MODEL_ID
+                model_id=self.config["model_id"],
+                api_key=api_key,
+                fence_output=self.config["fence_output"],
+                use_schema_constraints=self.config["use_schema_constraints"]
             )
             
-            # Single, consistent result shape - fail hard if not found
-            if not result or not hasattr(result, 'extractions') or not result.extractions:
-                raise ExtractionError("No extractions returned from LangExtract")
+            # Debug: Log the actual response structure
+            logger.debug(f"LangExtract response type: {type(result)}")
+            logger.debug(f"LangExtract response attributes: {dir(result) if hasattr(result, '__dict__') else 'No __dict__'}")
+            if hasattr(result, '__dict__'):
+                logger.debug(f"LangExtract response dict: {result.__dict__}")
             
-            extraction = result.extractions[0]
-            if not hasattr(extraction, 'extraction_text'):
-                raise ExtractionError("Extraction missing extraction_text field")
+            # Handle different response formats from different providers
+            study_card_text = None
             
-            study_card_text = extraction.extraction_text
+            # Check if result has extractions (Gemini format)
+            if hasattr(result, 'extractions') and result.extractions:
+                extraction = result.extractions[0]
+                if hasattr(extraction, 'extraction_text'):
+                    study_card_text = extraction.extraction_text
+            
+            # Check if result is directly the extracted text (OpenAI format)
+            elif hasattr(result, 'content') and result.content:
+                study_card_text = result.content
+            
+            # Check if result is a string (fallback)
+            elif isinstance(result, str):
+                study_card_text = result
+            
+            # Check if result is a dict with content
+            elif isinstance(result, dict) and 'content' in result:
+                study_card_text = result['content']
+            
+            # Try to access the result as a property if it's a LangExtract object
+            elif hasattr(result, 'result') and result.result:
+                study_card_text = result.result
+            
+            # Last resort: try to convert to string
+            elif result:
+                study_card_text = str(result)
+            
             if not study_card_text:
-                raise ExtractionError("Extraction text is empty")
+                raise ExtractionError(f"No extraction text found in LangExtract response. Response type: {type(result)}")
             
             # Single-pass JSON parse - no repairs, no fallbacks
             try:
@@ -166,7 +235,7 @@ def run_langextract(prompt_text: str, payload: Dict[str, Any], model_id: str = N
     Args:
         prompt_text: The system prompt and instructions
         payload: The document data to extract from
-        model_id: Ignored - uses fixed MODEL_ID for consistency
+        model_id: Ignored - uses active configuration for consistency
         
     Returns:
         Parsed StudyCard data as a dictionary
