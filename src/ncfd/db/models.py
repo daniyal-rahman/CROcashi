@@ -753,7 +753,7 @@ class Signal(Base):
 
     signal_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     trial_id: Mapped[int] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"), nullable=False)
-    S_id: Mapped[str] = mapped_column(String(10), nullable=False)  # S1, S2, S3, etc.
+    s_id: Mapped[str] = mapped_column(String(10), nullable=False)  # S1, S2, S3, etc.
     value: Mapped[Optional[float]] = mapped_column(Numeric(10, 6))  # Numeric signal value
     severity: Mapped[str] = mapped_column(String(1), nullable=False)  # H, M, L
     evidence_span: Mapped[Optional[str]] = mapped_column(Text)  # JSON or text describing evidence
@@ -766,11 +766,11 @@ class Signal(Base):
 
     __table_args__ = (
         CheckConstraint("severity IN ('H', 'M', 'L')", name="ck_signals_severity_valid"),
-        CheckConstraint("S_id ~ '^S[1-9]$'", name="ck_signals_s_id_format"),
+        CheckConstraint("s_id ~ '^S[1-9]$'", name="ck_signals_s_id_format"),
         CheckConstraint("value IS NULL OR (value >= -999999.999999 AND value <= 999999.999999)", name="ck_signals_value_range"),
-        UniqueConstraint("trial_id", "S_id", name="uq_signals_trial_s_id"),
+        UniqueConstraint("trial_id", "s_id", name="uq_signals_trial_s_id"),
         Index("ix_signals_trial_id", "trial_id"),
-        Index("ix_signals_s_id", "S_id"),
+        Index("ix_signals_s_id", "s_id"),
         Index("ix_signals_severity", "severity"),
         Index("ix_signals_fired_at", "fired_at"),
         Index("ix_signals_metadata_gin", "metadata", postgresql_using="gin"),
@@ -783,7 +783,7 @@ class Gate(Base):
 
     gate_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     trial_id: Mapped[int] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"), nullable=False)
-    G_id: Mapped[str] = mapped_column(String(10), nullable=False)  # G1, G2, G3, G4
+    g_id: Mapped[str] = mapped_column(String(10), nullable=False)  # G1, G2, G3, G4
     fired_bool: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     supporting_S_ids: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String(10)))  # Array of S_ids
     lr_used: Mapped[Optional[float]] = mapped_column(Numeric(10, 6))  # Likelihood ratio
@@ -794,11 +794,11 @@ class Gate(Base):
     trial: Mapped["Trial"] = relationship(back_populates="gates")
 
     __table_args__ = (
-        CheckConstraint("G_id ~ '^G[1-4]$'", name="ck_gates_g_id_format"),
+        CheckConstraint("g_id ~ '^G[1-4]$'", name="ck_gates_g_id_format"),
         CheckConstraint("lr_used IS NULL OR (lr_used >= 0 AND lr_used <= 999999.999999)", name="ck_gates_lr_range"),
-        UniqueConstraint("trial_id", "G_id", name="uq_gates_trial_g_id"),
+        UniqueConstraint("trial_id", "g_id", name="uq_gates_trial_g_id"),
         Index("ix_gates_trial_id", "trial_id"),
-        Index("ix_gates_g_id", "G_id"),
+        Index("ix_gates_g_id", "g_id"),
         Index("ix_gates_fired_bool", "fired_bool"),
         Index("ix_gates_metadata_gin", "metadata", postgresql_using="gin"),
     )
