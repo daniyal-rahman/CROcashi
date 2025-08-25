@@ -478,3 +478,4 @@ if __name__ == "__main__":
 ---
 
 **Next steps**: wire DB queries, flesh out `backtest.precision_at_k` using real freeze‑day universes, and plug evidence spans into the drawer. This skeleton is deliberately minimal but drop‑in with your repo layout.
+
