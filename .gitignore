@@ -147,3 +147,5 @@ data/duckdb/
 data/local/
 data/temp/
 data/cache/
+.triage/todos.txt
+backups/*.sql
