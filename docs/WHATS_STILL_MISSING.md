@@ -65,9 +65,47 @@ So to directly answer your question: **No, the current filtering does NOT catch 
 The current system would categorize an NCI-sponsored trial as "Government Health Agency" even if it's testing a drug owned by Moderna or BioNTech.
 
 
+Rev 0009 — Run lineage & artifacts
+
+runs
+
+run_id (text, PK)
+
+started_at, finished_at (timestamptz), status (VARCHAR + CHECK in run_status set)
+
+flow_name (text), config_hash (char(64))
+
+run_artifacts
+
+artifact_id (PK bigserial), run_id (FK → runs, CASCADE)
+
+artifact_type (text), object_store_key (text), meta (jsonb)
+
+Indexes: btree on run_id
+
+Rev 0010 — Secondary indexes & housekeeping
+
+Add / finalize
+
+GIN on studies.extracted_jsonb (if not already)
+
+btree on trials.est_primary_completion_date, trials.sponsor_company_id
+
+trigram GIN on companies.name_norm, company_aliases.alias
+
+Partial uniques on studies.hash and disclosures.text_hash (“unique when not null”)
+
+(Optional) row-update triggers to maintain updated_at on companies / studies
+
+Any late CHECKs once loaders are stable (e.g., ensure phase is not null for pivotal trials)
 OPEN AI Langextract has a schema mismatch for some reason.
 Lang extract cant find number of arms in a study some times 
 The study cards are kinda shit. I think they should have some structure, but also I think that the study card being build right now is way too rudamentary. 
 I think the way it needs to be implemented is that lang extract deals will pulling concrete facts from the study like what was dosing how many patients etc., then you have another llm that you feed in abstract, methods and results and then pull trends/ look for red flags and what not. Then you can have a multimodal model attempt to analyze the graphs maybe? But the main issue that I think would run into is that those 3 sections can be very verbose, and so just pulling them isn't going to be enough probs need to filter them down and that way you can do a multipass in parrallel searching for each thing in its own prompt. This way the model doesn't fall victim to the perswasive language of the study and also context rot. 
 The other thing I probably have to start thinking about is how to implement early stopping in this so that I dont fry my wallet -- I think you can triage papers before generating study cards, and then if two papers from a trial are really promising, you can traige that trial down in priority, so double sorting.
 Might need a second lit review for disease and pathway analysis 
+phase might live in diff places in api so might hav to check multiple places not doing that rn
+theres a created_at and captured_at which basically do the exact same thing. This needs to be consolidated.
+
+
+

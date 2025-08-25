@@ -285,6 +285,8 @@ alembic: ## Run alembic command (use ARGS='history' or other commands)
 
 # ClinicalTrials.gov ingestion
 SINCE ?= 2000-01-01
+SINCE := $(or $(CTG_SINCE),$(SINCE))
+
 ingest_ctgov: ## Ingest ClinicalTrials.gov data (use SINCE=YYYY-MM-DD)
 	CONFIG_PROFILE=local $(PYTHON) scripts/ingest_ctgov.py --since $(SINCE)
 

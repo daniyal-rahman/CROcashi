@@ -2,99 +2,90 @@
 """
 Study Card Architecture - New Database Models
 
-This module implements the complete database schema for the Study Card system,
-replacing the previous architecture with a precision-first approach focused on
-US-listed companies and pivotal Phase 2b/3 trials.
+Precision-first schema for US-listed issuers and pivotal Phase 2b/3 trials.
 """
 
 from __future__ import annotations
+
 from datetime import datetime, date
-from typing import Optional, List
 from decimal import Decimal
+from typing import Optional, List, Dict
 
+# import sqlalchemy as sa
+from sqlalchemy import (String, Text, Boolean, Date, DateTime, ForeignKey, Index, UniqueConstraint, Integer, BigInteger, CheckConstraint, func, Numeric, Enum as SQLEnum, CHAR, text, MetaData)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import (
-    String, Text, Boolean, Date, DateTime, ForeignKey, Index,
-    UniqueConstraint, Integer, BigInteger, CheckConstraint, event, func,
-    PrimaryKeyConstraint, Numeric, Enum as SQLEnum, CHAR, text
-)
-
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, ENUM as PGEnum
 
+
 # ---------------------------------------------------------------------------
-# Base
+# Base with naming convention
 # ---------------------------------------------------------------------------
+
+NAMING_CONVENTION = {
+    "ix": "ix_%(column_0_N_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_N_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_N_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
+
 
 class Base(DeclarativeBase):
-    """SQLAlchemy declarative base for Study Card models."""
-    pass
+    metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
 
 # ---------------------------------------------------------------------------
-# Enums - FIXED: Instantiated instances, not classes
+# Enums (Postgres types will be created in baseline)
 # ---------------------------------------------------------------------------
 
-# PostgreSQL enums (must be instantiated, not subclassed)
 ExchangeEnum = PGEnum(
-    'NASDAQ', 'NYSE', 'NYSE_AM', 'OTCQX', 'OTCQB',
-    name='exchange_enum', create_type=True
+    "NASDAQ", "NYSE", "NYSE_AM", "OTCQX", "OTCQB", name="exchange_enum", create_type=True
 )
-PhaseEnum = PGEnum(
-    'P2', 'P2B', 'P2_3', 'P3',
-    name='phase_enum', create_type=True
-)
+PhaseEnum = PGEnum("P2", "P2B", "P2_3", "P3", name="phase_enum", create_type=True)
 DocTypeEnum = PGEnum(
-    'PR', '8K', 'Abstract', 'Poster', 'Paper', 'Registry', 'FDA',
-    name='doc_type_enum', create_type=True
+    "PR", "8K", "Abstract", "Poster", "Paper", "Registry", "FDA", name="doc_type_enum", create_type=True
 )
 OAStatusEnum = PGEnum(
-    'oa_gold', 'oa_green', 'accepted_ms', 'embargoed', 'unknown',
-    name='oa_status_enum', create_type=True
+    "oa_gold", "oa_green", "accepted_ms", "embargoed", "unknown", name="oa_status_enum", create_type=True
 )
-CoverageLevelEnum = PGEnum(
-    'high', 'med', 'low',
-    name='coverage_level_enum', create_type=True
-)
+CoverageLevelEnum = PGEnum("high", "med", "low", name="coverage_level_enum", create_type=True)
 TrialStatusEnum = PGEnum(
-    'Recruiting', 'Active, not recruiting', 'Completed', 'Terminated',
-    'Suspended', 'Withdrawn', 'Not yet recruiting', 'Enrolling by invitation',
-    'Unknown status',
-    name='trial_status_enum', create_type=True
+    "Recruiting",
+    "Active, not recruiting",
+    "Completed",
+    "Terminated",
+    "Suspended",
+    "Withdrawn",
+    "Not yet recruiting",
+    "Enrolling by invitation",
+    "Unknown status",
+    name="trial_status_enum",
+    create_type=True,
 )
-SeverityEnum = PGEnum(
-    'H', 'M', 'L',
-    name='severity_enum', create_type=True
-)
-SignalIDEnum = PGEnum(
-    'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9',
-    name='signal_id_enum', create_type=True
-)
-GateIDEnum = PGEnum(
-    'G1', 'G2', 'G3', 'G4',
-    name='gate_id_enum', create_type=True
-)
-CertaintyEnum = PGEnum(
-    'low', 'med', 'high',
-    name='certainty_enum', create_type=True
-)
+SeverityEnum = PGEnum("H", "M", "L", name="severity_enum", create_type=True)
+SignalIDEnum = PGEnum("S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", name="signal_id_enum", create_type=True)
+GateIDEnum = PGEnum("G1", "G2", "G3", "G4", name="gate_id_enum", create_type=True)
+CertaintyEnum = PGEnum("low", "med", "high", name="certainty_enum", create_type=True)
 
-# SQLAlchemy enums (non-PG, don't need separate types)
-RunStatusEnum = SQLEnum('success', 'failed', 'partial', name='run_status_enum')
-AssignmentType = SQLEnum('sale', 'license', 'security', name='assignment_type')
-ArtifactType = SQLEnum('model', 'data', 'report', 'config', name='artifact_type')
-LRScopeEnum = SQLEnum('gate', 'signal', name='lr_scope')
+# App-level (not PG) enums
+RunStatusEnum = SQLEnum("success", "failed", "partial", name="run_status_enum")
+AssignmentType = SQLEnum("sale", "license", "security", name="assignment_type")
+ArtifactType = SQLEnum("model", "data", "report", "config", name="artifact_type")
+LRScopeEnum = SQLEnum("gate", "signal", name="lr_scope")
+
 
 # ---------------------------------------------------------------------------
 # Reference & Identity
 # ---------------------------------------------------------------------------
 
 class Company(Base):
-    """Companies table - core entity for all organizations"""
     __tablename__ = "companies"
 
     company_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     name_norm: Mapped[str] = mapped_column(Text, nullable=False)
-    cik: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True)
+    # CIK must preserve leading zeros
+    cik: Mapped[Optional[str]] = mapped_column(CHAR(10), unique=True)
     lei: Mapped[Optional[str]] = mapped_column(Text)
     state_incorp: Mapped[Optional[str]] = mapped_column(Text)
     country_incorp: Mapped[Optional[str]] = mapped_column(Text)
@@ -111,11 +102,16 @@ class Company(Base):
 
     __table_args__ = (
         Index("idx_companies_website_domain", "website_domain"),
+        # trigram GIN (requires pg_trgm extension)
+        Index(
+            "idx_companies_name_norm",
+            text("name_norm gin_trgm_ops"),
+            postgresql_using="gin",
+        ),
     )
 
 
 class CompanyAlias(Base):
-    """Company aliases and alternative names"""
     __tablename__ = "company_aliases"
 
     alias_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -126,52 +122,51 @@ class CompanyAlias(Base):
     valid_to: Mapped[Optional[date]] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    # Relationships
     company: Mapped["Company"] = relationship(back_populates="aliases")
 
-    __table_args__ = (
-        Index("idx_company_aliases_company_id", "company_id"),
-    )
+    __table_args__ = (Index("idx_company_aliases_company_id", "company_id"),)
 
 
 class Security(Base):
-    """Securities table - stock tickers and exchange listings"""
     __tablename__ = "securities"
 
     security_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.company_id", ondelete="CASCADE"), nullable=False)
     ticker: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     exchange: Mapped[str] = mapped_column(ExchangeEnum, nullable=False)
-    is_adr: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_adr: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
-    # Relationships
     company: Mapped["Company"] = relationship(back_populates="securities")
 
     __table_args__ = (
         Index("idx_securities_exchange", "exchange"),
         Index("idx_securities_company_id", "company_id"),
+        Index("idx_securities_active", "active"),
     )
+
 
 # ---------------------------------------------------------------------------
 # Assets & Ownership
 # ---------------------------------------------------------------------------
 
 class Asset(Base):
-    """Assets table - drugs, compounds, and therapeutic agents"""
     __tablename__ = "assets"
 
     asset_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    names_jsonb: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {inn, internal_codes[], generic[], cas, unii, chembl_id, drugbank_id}
+    names_jsonb: Mapped[Dict[str, object]] = mapped_column(JSONB, nullable=False)  # {inn, internal_codes[], ...}
     modality: Mapped[Optional[str]] = mapped_column(Text)
     target: Mapped[Optional[str]] = mapped_column(Text)
     moa: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
-    # Relationships
     ownership: Mapped[List["AssetOwnership"]] = relationship(back_populates="asset", cascade="all, delete-orphan")
     studies: Mapped[List["Study"]] = relationship(back_populates="asset")
     patents: Mapped[List["Patent"]] = relationship(back_populates="asset")
@@ -184,7 +179,6 @@ class Asset(Base):
 
 
 class AssetOwnership(Base):
-    """Asset ownership and licensing relationships"""
     __tablename__ = "asset_ownership"
 
     ownership_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -196,7 +190,6 @@ class AssetOwnership(Base):
     evidence_url: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    # Relationships
     asset: Mapped["Asset"] = relationship(back_populates="ownership")
     company: Mapped["Company"] = relationship(back_populates="assets")
 
@@ -206,12 +199,12 @@ class AssetOwnership(Base):
         Index("idx_asset_ownership_start_date", "start_date"),
     )
 
+
 # ---------------------------------------------------------------------------
 # Trials & Versioning
 # ---------------------------------------------------------------------------
 
 class Trial(Base):
-    """Clinical trials table - core registry information"""
     __tablename__ = "trials"
 
     trial_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -220,16 +213,20 @@ class Trial(Base):
     official_title: Mapped[Optional[str]] = mapped_column(Text)
     sponsor_text: Mapped[Optional[str]] = mapped_column(Text)
     sponsor_company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.company_id"))
-    phase: Mapped[Optional[str]] = mapped_column(PhaseEnum)
+    # phase: Mapped[Optional[str]] = mapped_column(PhaseEnum)
+    # DB: VARCHAR(8) with CHECK (P2, P2B, P2/3, P3)
+    phase: Mapped[Optional[str]] = mapped_column(String(8))
     indication: Mapped[Optional[str]] = mapped_column(Text)
-    is_pivotal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_pivotal: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     primary_endpoint_text: Mapped[Optional[str]] = mapped_column(Text)
     est_primary_completion_date: Mapped[Optional[date]] = mapped_column(Date)
-    status: Mapped[Optional[str]] = mapped_column(TrialStatusEnum)
+    # status: Mapped[Optional[str]] = mapped_column(TrialStatusEnum)
+    # DB: VARCHAR(40) (ALL CAPS per your CHECK)
+    status: Mapped[Optional[str]] = mapped_column(String(40))
     first_posted_date: Mapped[Optional[date]] = mapped_column(Date)
     last_update_posted_date: Mapped[Optional[date]] = mapped_column(Date)
     results_first_posted_date: Mapped[Optional[date]] = mapped_column(Date)
-    has_results: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    has_results: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     lead_sponsor_class: Mapped[Optional[str]] = mapped_column(Text)
     responsible_party: Mapped[Optional[str]] = mapped_column(Text)
     allocation: Mapped[Optional[str]] = mapped_column(Text)
@@ -237,12 +234,12 @@ class Trial(Base):
     num_arms: Mapped[Optional[int]] = mapped_column(Integer)
     intervention_types: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text))
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    # FIXED: Fixed-length hash field
     current_sha256: Mapped[str] = mapped_column(CHAR(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
-    # Relationships
     sponsor_company: Mapped[Optional["Company"]] = relationship(back_populates="trials")
     versions: Mapped[List["TrialVersion"]] = relationship(back_populates="trial", cascade="all, delete-orphan")
     studies: Mapped[List["Study"]] = relationship(back_populates="trial")
@@ -259,35 +256,31 @@ class Trial(Base):
         Index("idx_trials_phase", "phase"),
         Index("idx_trials_status", "status"),
         Index("idx_trials_last_update_posted_date", "last_update_posted_date"),
-        # ADDED: GIN index for intervention types array
         Index("idx_trials_intervention_types", "intervention_types", postgresql_using="gin"),
+        Index("idx_trials_current_sha256", "current_sha256"),
     )
 
 
 class TrialVersion(Base):
-    """Trial versioning table - tracks changes over time"""
     __tablename__ = "trial_versions"
 
     trial_version_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     trial_id: Mapped[int] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"), nullable=False)
-    # FIXED: Added server_default for captured_at
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    # FIXED: Fixed-length hash field
     sha256: Mapped[str] = mapped_column(CHAR(64), nullable=False)
-    raw_jsonb: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    raw_jsonb: Mapped[Dict[str, object]] = mapped_column(JSONB, nullable=False)
     last_update_posted_date: Mapped[Optional[date]] = mapped_column(Date)
     primary_endpoint_text: Mapped[Optional[str]] = mapped_column(Text)
     sample_size: Mapped[Optional[int]] = mapped_column(Integer)
     analysis_plan_text: Mapped[Optional[str]] = mapped_column(Text)
-    changes_jsonb: Mapped[Optional[dict]] = mapped_column(JSONB)
-    changed_primary_endpoint: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    changed_sample_size: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    changes_jsonb: Mapped[Optional[Dict[str, object]]] = mapped_column(JSONB)
+    changed_primary_endpoint: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    changed_sample_size: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     sample_size_delta: Mapped[Optional[int]] = mapped_column(Integer)
-    changed_analysis_plan: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    metadata_jsonb: Mapped[Optional[dict]] = mapped_column(JSONB)
+    changed_analysis_plan: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    metadata_jsonb: Mapped[Optional[Dict[str, object]]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    # Relationships
     trial: Mapped["Trial"] = relationship(back_populates="versions")
 
     __table_args__ = (
@@ -295,47 +288,49 @@ class TrialVersion(Base):
         Index("idx_trial_versions_trial_captured", "trial_id", "captured_at", postgresql_using="btree"),
     )
 
+
 # ---------------------------------------------------------------------------
 # Documents & Storage
 # ---------------------------------------------------------------------------
 
 class Study(Base):
-    """Studies table - all documents with Study Card JSON"""
     __tablename__ = "studies"
 
     study_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    trial_id: Mapped[Optional[int]] = mapped_column(ForeignKey("trials.trial_id"))
-    asset_id: Mapped[Optional[int]] = mapped_column(ForeignKey("assets.asset_id"))
+    trial_id: Mapped[Optional[int]] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"))
+    asset_id: Mapped[Optional[int]] = mapped_column(ForeignKey("assets.asset_id", ondelete="SET NULL"))
     doc_type: Mapped[str] = mapped_column(DocTypeEnum, nullable=False)
     citation: Mapped[Optional[str]] = mapped_column(Text)
     year: Mapped[Optional[int]] = mapped_column(Integer)
     url: Mapped[Optional[str]] = mapped_column(Text)
-    # FIXED: Fixed-length hash field
     hash: Mapped[Optional[str]] = mapped_column(CHAR(64))
     oa_status: Mapped[Optional[str]] = mapped_column(OAStatusEnum)
     object_store_key: Mapped[str] = mapped_column(Text, nullable=False)
-    extracted_jsonb: Mapped[dict] = mapped_column(JSONB, nullable=False)  # Study Card JSON
+    extracted_jsonb: Mapped[Dict[str, object]] = mapped_column(JSONB, nullable=False)
     coverage_level: Mapped[str] = mapped_column(CoverageLevelEnum, nullable=False)
     notes_md: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
-    # Relationships
     trial: Mapped[Optional["Trial"]] = relationship(back_populates="studies")
     asset: Mapped[Optional["Asset"]] = relationship(back_populates="studies")
-    signal_evidence: Mapped[List["SignalEvidence"]] = relationship(back_populates="source_study", cascade="all, delete-orphan")
+    signal_evidence: Mapped[List["SignalEvidence"]] = relationship(
+        back_populates="source_study", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index("idx_studies_trial_id", "trial_id"),
         Index("idx_studies_asset_id", "asset_id"),
-        # FIXED: Partial unique index to handle NULL hashes
+        Index("idx_studies_doc_type", "doc_type"),
         Index("idx_studies_hash_unique", "hash", unique=True, postgresql_where=text("hash IS NOT NULL")),
         Index("idx_studies_extracted_jsonb", "extracted_jsonb", postgresql_using="gin"),
+        UniqueConstraint("object_store_key", name="uq_studies_object_store_key"),
     )
 
 
 class Disclosure(Base):
-    """Optional table for crawled text bodies"""
     __tablename__ = "disclosures"
 
     disclosure_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -343,30 +338,28 @@ class Disclosure(Base):
     source_type: Mapped[str] = mapped_column(DocTypeEnum, nullable=False)
     url: Mapped[Optional[str]] = mapped_column(Text)
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    # FIXED: Fixed-length hash field
     text_hash: Mapped[Optional[str]] = mapped_column(CHAR(64))
     text: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    # Relationships
     trial: Mapped["Trial"] = relationship(back_populates="disclosures")
 
     __table_args__ = (
         Index("idx_disclosures_trial_id", "trial_id"),
-        # FIXED: Partial unique index to handle NULL hashes - fixed column reference
-        Index("idx_disclosures_text_hash_unique", "text_hash", unique=True, postgresql_where=text("text_hash IS NOT NULL")),
+        Index("idx_disclosures_text_hash_unique", "text_hash", unique=True, postgresql_where=Text("text_hash IS NOT NULL")),
+        UniqueConstraint("trial_id", "url", name="uq_disclosures_trial_url"),
     )
+
 
 # ---------------------------------------------------------------------------
 # Patents
 # ---------------------------------------------------------------------------
 
 class Patent(Base):
-    """Patents table - intellectual property information"""
     __tablename__ = "patents"
 
     patent_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    asset_id: Mapped[Optional[int]] = mapped_column(ForeignKey("assets.asset_id"))
+    asset_id: Mapped[Optional[int]] = mapped_column(ForeignKey("assets.asset_id", ondelete="SET NULL"))
     family_id: Mapped[Optional[str]] = mapped_column(Text)
     jurisdiction: Mapped[str] = mapped_column(Text, nullable=False)
     number: Mapped[str] = mapped_column(Text, nullable=False)
@@ -374,21 +367,20 @@ class Patent(Base):
     status: Mapped[Optional[str]] = mapped_column(Text)
     assignees: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text))
     inventors: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text))
-    links_jsonb: Mapped[Optional[dict]] = mapped_column(JSONB)
+    links_jsonb: Mapped[Optional[Dict[str, object]]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    # Relationships
     asset: Mapped[Optional["Asset"]] = relationship(back_populates="patents")
     assignments: Mapped[List["PatentAssignment"]] = relationship(back_populates="patent", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_patents_asset_id", "asset_id"),
         Index("idx_patents_earliest_priority_date", "earliest_priority_date"),
+        UniqueConstraint("jurisdiction", "number", name="uq_patents_jurisdiction_number"),
     )
 
 
 class PatentAssignment(Base):
-    """Patent assignment and licensing history"""
     __tablename__ = "patent_assignments"
 
     assignment_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -401,7 +393,6 @@ class PatentAssignment(Base):
     source_url: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    # Relationships
     patent: Mapped["Patent"] = relationship(back_populates="assignments")
 
     __table_args__ = (
@@ -409,31 +400,28 @@ class PatentAssignment(Base):
         Index("idx_patent_assignments_exec_date", "exec_date"),
     )
 
+
 # ---------------------------------------------------------------------------
-# Signals → Gates → Scores - FIXED: Added run_id for lineage
+# Signals → Gates → Scores
 # ---------------------------------------------------------------------------
 
 class Signal(Base):
-    """Signals table - primitive S1-S9 per trial"""
     __tablename__ = "signals"
 
     signal_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     trial_id: Mapped[int] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"), nullable=False)
-    # FIXED: Added run_id for lineage tracking
-    run_id: Mapped[str] = mapped_column(Text, nullable=False)
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.run_id", ondelete="CASCADE"), nullable=False)
     s_id: Mapped[str] = mapped_column(SignalIDEnum, nullable=False)
     value: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6))
     severity: Mapped[Optional[str]] = mapped_column(SeverityEnum)
     fired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    metadata_jsonb: Mapped[Optional[dict]] = mapped_column(JSONB)
+    metadata_jsonb: Mapped[Optional[Dict[str, object]]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    # Relationships
     trial: Mapped["Trial"] = relationship(back_populates="signals")
     evidence: Mapped[List["SignalEvidence"]] = relationship(back_populates="signal", cascade="all, delete-orphan")
 
     __table_args__ = (
-        # FIXED: Unique constraint includes run_id for lineage
         UniqueConstraint("trial_id", "s_id", "run_id", name="uq_signal_trial_sid_run"),
         Index("idx_signals_trial_sid", "trial_id", "s_id"),
         Index("idx_signals_run_id", "run_id"),
@@ -441,14 +429,13 @@ class Signal(Base):
 
 
 class SignalEvidence(Base):
-    """Signal evidence table - many evidences per signal"""
     __tablename__ = "signal_evidence"
 
     evidence_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     signal_id: Mapped[int] = mapped_column(ForeignKey("signals.signal_id", ondelete="CASCADE"), nullable=False)
     source_study_id: Mapped[Optional[int]] = mapped_column(ForeignKey("studies.study_id", ondelete="SET NULL"))
     evidence_span: Mapped[Optional[str]] = mapped_column(Text)
-    metadata_jsonb: Mapped[Optional[dict]] = mapped_column(JSONB)
+    metadata_jsonb: Mapped[Optional[Dict]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships

@@ -54,7 +54,9 @@ def main():
                     last_update_posted_date=f.last_update_posted_date,
                     intervention_types=f.intervention_types,
                     current_sha256=sha256,
-                    last_seen_at=datetime.utcnow()
+                    last_seen_at=datetime.utcnow(),
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
                 )
                 session.add(trial)
                 trial_version = TrialVersion(

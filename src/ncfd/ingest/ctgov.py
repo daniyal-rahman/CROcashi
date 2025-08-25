@@ -199,7 +199,8 @@ class CtgovClient:
         sponsor_text = sponsor_text.get("name")
 
         phases = ps.get("designModule", {}).get("phases", []) or []
-        phase = phases[0] if phases else None
+        # phase = phases[0] if phases else None
+        phase = next((p.upper() for p in phases if p.upper() in ["PHASE2", "PHASE3", "PHASE2_PHASE3"]), None)
 
         intervention_types: List[str] = []
         for item in (ps.get("armsInterventionsModule", {}) or {}).get("interventions", []) or []:
@@ -388,18 +389,21 @@ class CtgovClient:
         if not phases:
             return None
         
-        phase_str = phases[0].upper()
-        
+        # phase_str = phases[0].upper()
+        for p in phases.upper():
+            if p in {"PHASE2", "PHASE3", "PHASE2_PHASE3"}:
+                phase_str = p
+                break
         # Map phase strings to enum values
         phase_mapping = {
-            "PHASE1": TrialPhase.PHASE1,
+            # "PHASE1": TrialPhase.PHASE1,
             "PHASE2": TrialPhase.PHASE2,
             "PHASE3": TrialPhase.PHASE3,
             "PHASE4": TrialPhase.PHASE4,
             "PHASE2_PHASE3": TrialPhase.PHASE2_PHASE3,
             "PHASE1_PHASE2": TrialPhase.PHASE1_PHASE2,
             "PHASE3_PHASE4": TrialPhase.PHASE3_PHASE4,
-            "EARLY_PHASE1": TrialPhase.EARLY_PHASE1
+            # "EARLY_PHASE1": TrialPhase.EARLY_PHASE1
         }
         
         return phase_mapping.get(phase_str)
