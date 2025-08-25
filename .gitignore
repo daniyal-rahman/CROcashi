@@ -148,6 +148,7 @@ data/local/
 data/temp/
 data/cache/
 .triage/todos.txt
-backups/*.sql
+backups/
 .triage/todos.txt
 backups/*.sql
+backup_*.sql
