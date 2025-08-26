@@ -64,7 +64,8 @@ endef
         review_list review_show review_accept review_reject \
         batch_dry batch_persist \
         subs_inspect subs_dry subs_load subs_build subs_link subs_link_load \
-        review_fill run_all ingest_ctgov
+        review_fill run_all ingest_ctgov \
+        ingest_sec_tickers ingest_sec_filings ingest_sec_backfill ingest_sec_status ingest_sec_all
 
 # --- Help ---
 help: ## Show this help message
@@ -99,11 +100,20 @@ help: ## Show this help message
 	@echo "Data Processing:"
 	@echo "  resolve_one        - Resolve single sponsor (use SPONSOR='name')"
 	@echo "  resolve_batch      - Resolve batch of sponsors"
+	@echo "  resolve_batch_auto - Resolve batch using auto-decider cascade (recommended)"
+	@echo "  resolve_batch_auto_test - Quick test batch (25 trials)"
+	@echo "  resolve_batch_auto_prod - Production batch (500 trials)"
+	@echo "  resolve_batch_auto_custom - Custom batch size (use N=number)"
 	@echo "  review_list        - List items in review queue"
 	@echo "  review_show        - Show review queue item (use RQ=id)"
 	@echo "  review_accept      - Accept review (use RQ=id CID=company_id)"
 	@echo "  review_reject      - Reject review (use RQ=id)"
 	@echo "  ingest_ctgov       - Ingest ClinicalTrials.gov data"
+	@echo "  ingest_sec_tickers - Ingest SEC company tickers and securities"
+	@echo "  ingest_sec_filings - Run SEC filings pipeline for daily monitoring"
+	@echo "  ingest_sec_backfill - Run SEC filings backfill"
+	@echo "  ingest_sec_status  - Check SEC pipeline status"
+	@echo "  ingest_sec_all     - Run all SEC ingestion tasks"
 	@echo "  subs_load          - Load subsidiary data"
 	@echo ""
 	@echo "Utilities:"
@@ -290,6 +300,33 @@ SINCE := $(or $(CTG_SINCE),$(SINCE))
 ingest_ctgov: ## Ingest ClinicalTrials.gov data (use SINCE=YYYY-MM-DD)
 	CONFIG_PROFILE=local $(PYTHON) scripts/ingest_ctgov.py --since $(SINCE)
 
+# SEC data ingestion
+SEC_JSON ?= data/sec/company_tickers_exchange.json
+SEC_START ?= 1990-01-01
+
+ingest_sec_tickers: ## Ingest SEC company tickers and securities (use SEC_JSON=path SEC_START=YYYY-MM-DD)
+	$(PYTHON) scripts/ingest_sec.py tickers --json $(SEC_JSON) --start $(SEC_START)
+
+ingest_sec_filings: ## Run SEC filings pipeline for daily monitoring
+	$(PYTHON) scripts/ingest_sec.py filings
+
+ingest_sec_backfill: ## Run SEC filings backfill (use START=YYYY-MM-DD END=YYYY-MM-DD)
+ifndef START
+	$(error Provide START=YYYY-MM-DD and END=YYYY-MM-DD for backfill)
+endif
+ifndef END
+	$(error Provide END=YYYY-MM-DD for backfill)
+endif
+	$(PYTHON) scripts/ingest_sec.py backfill --start $(START) --end $(END)
+
+ingest_sec_status: ## Check SEC pipeline status
+	$(PYTHON) scripts/ingest_sec.py status
+
+ingest_sec_all: ## Run all SEC ingestion tasks (tickers, filings, status)
+	$(MAKE) ingest_sec_tickers
+	$(MAKE) ingest_sec_filings
+	$(MAKE) ingest_sec_status
+
 # Resolver CLI commands
 run_id: ## Generate run ID for tracking
 	$(PYTHON) -c "from datetime import datetime; print(datetime.utcnow().strftime('resolver-%Y%m%dT%H%M%SZ'))"
@@ -370,6 +407,7 @@ run_all: ## Full setup: start database, run migrations, ingest data
 	$(MAKE) db_wait
 	$(MAKE) migrate_up
 	$(MAKE) ingest_ctgov
+	$(MAKE) ingest_sec_tickers
 
 # --- Legacy Aliases (for backward compatibility) ---
 .PHONY: db_migrate db.psql db.psql.c db.logs db.status db.dump db.dump.schema db.restore db.health db.env
@@ -378,6 +416,35 @@ run_all: ## Full setup: start database, run migrations, ingest data
 db_migrate: ## Legacy: Create and run auto-generated migration
 	POSTGRES_DSN=$(POSTGRES_DSN) DATABASE_URL=$(DATABASE_URL) $(VENV)/bin/alembic revision --autogenerate -m "auto"
 	$(MAKE) migrate_up
+# Batch resolve trials using auto-decider (recommended for production)
+resolve_batch_auto: ## Resolve batch of trials using auto-decider cascade
+	@echo "🚀 Starting batch resolution with auto-decider..."
+	@echo "   - Deterministic → Probabilistic → LLM (if needed)"
+	@echo "   - Processing $(or $(N),100) trials..."
+	@echo "   - Run ID: $$(date -u +%Y%m%dT%H%M%SZ)"
+	@RUN_ID=$$(date -u +%Y%m%dT%H%M%SZ); \
+	echo "RUN_ID=$$RUN_ID"; \
+	PYTHONPATH=src $(PYTHON) -m ncfd.mapping.cli resolve-batch \
+		--limit $(or $(N),100) \
+		--persist \
+		--apply-trial \
+		--run-id "$$RUN_ID" \
+		--decider auto
+
+# Quick batch with smaller limit (for testing)
+resolve_batch_auto_test: ## Resolve small batch for testing
+	$(MAKE) resolve_batch_auto N=25
+
+# Large batch for production runs
+resolve_batch_auto_prod: ## Resolve large batch for production
+	$(MAKE) resolve_batch_auto N=500
+
+# Batch with custom limit
+resolve_batch_auto_custom: ## Resolve batch with custom limit (use N=number)
+ifndef N
+	$(error Provide N=<number> for custom batch size)
+endif
+	$(MAKE) resolve_batch_auto N=$(N)
 
 # Legacy dot-notation commands (kept for compatibility)
 db.psql: db_psql_host

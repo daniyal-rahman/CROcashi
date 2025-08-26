@@ -8,10 +8,11 @@ import re
 from sqlalchemy import text, bindparam
 from sqlalchemy.orm import Session
 
-# Strict and loose normalizers:
-# - norm_name(): existing behavior (unchanged)
-# - norm_name_loose(): additionally drops joiners like "and" so "&" ≡ "and"
 from ncfd.mapping.normalize import norm_name, norm_name_loose
+
+# ---------------------------------------------------------------------------
+# Regexes and normalizers
+# ---------------------------------------------------------------------------
 
 # Tolerate closing punctuation after a domain
 DOMAIN_RE = re.compile(
@@ -24,6 +25,13 @@ DEFAULT_ALIAS_TYPES: Set[str] = {
 }
 DOMAIN_ALIAS_TYPE = "domain"
 
+# Unicode folding for dash/space (for regex rule fallback)
+_DASHES = dict.fromkeys(
+    map(ord, "\u2010\u2011\u2012\u2013\u2014\u2212\u2043\uFE58\uFE63\uFF0D"),
+    ord('-')
+)
+_SPACES = dict.fromkeys(map(ord, "\u00A0\u2007\u202F"), ord(' '))
+
 
 @dataclass(frozen=True)
 class Resolution:
@@ -31,6 +39,10 @@ class Resolution:
     method: str
     evidence: Dict[str, str]
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _extract_domain_candidate(s: str) -> Optional[str]:
     if not s:
@@ -44,19 +56,59 @@ def _extract_domain_candidate(s: str) -> Optional[str]:
     return dom
 
 
+def _det_by_rules(session: Session, sponsor_text: str) -> Optional[Resolution]:
+    """
+    Fallback: regex-based deterministic rules stored in resolver_det_rules.
+    Applies patterns against raw, folded, and normalized sponsor text.
+    """
+    rows = session.execute(
+        text("""
+            SELECT rule_id, pattern, company_id
+              FROM resolver_det_rules
+             ORDER BY priority DESC, rule_id ASC
+        """)
+    ).fetchall()
+
+    raw = sponsor_text or ""
+    folded = raw.translate(_DASHES).translate(_SPACES)
+    norm_strict = norm_name(raw)
+
+    for rule_id, pattern, company_id in rows:
+        try:
+            rx = re.compile(pattern)
+        except re.error:
+            continue
+        for probe in (raw, folded, norm_strict):
+            if rx.search(probe):
+                return Resolution(
+                    company_id=int(company_id),
+                    method="det_rule",
+                    evidence={
+                        "rule_id": str(rule_id),
+                        "pattern": pattern,
+                        "matched": probe,
+                    },
+                )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Main entrypoint
+# ---------------------------------------------------------------------------
+
 def resolve_company(
     session: Session,
     sponsor_text: str,
     allowed_alias_types: Optional[Iterable[str]] = None,
 ) -> Optional[Resolution]:
     """
-    High-precision deterministic resolver:
-      1) exact alias_norm within allowed alias types (strict, then loose)
-      2) exact companies.name_norm (strict, then loose)
-      3) exact domain match (alias_type='domain' or companies.website_domain)
+    Deterministic resolver:
+      1) alias_exact (strict, then loose)
+      2) company_name_exact (strict, then loose)
+      3) domain_exact or website_domain
+      4) rule-based regex fallback (resolver_det_rules)
 
-    The *loose* fallback treats 'and' ≡ '&' (and removes whole-word 'and'),
-    fixing cases like "Organon and Co" vs stored "Organon & Co." → "organon co".
+    Returns Resolution(company_id, method, evidence) or None.
     """
     if not sponsor_text or not sponsor_text.strip():
         return None
@@ -91,7 +143,7 @@ def resolve_company(
                 evidence={"alias_norm": sponsor_norm_strict, "raw": sponsor_text},
             )
 
-        # loose fallback (only if different)
+        # loose fallback
         if sponsor_norm_loose != sponsor_norm_strict:
             rows = session.execute(
                 q_alias, {"norm": sponsor_norm_loose, "types": tuple(allowed_alias_types)}
@@ -108,7 +160,6 @@ def resolve_company(
     # ---------------------------------------------------------------------- #
     q_company = text("SELECT company_id FROM companies WHERE name_norm = :norm")
 
-    # strict
     rows = session.execute(q_company, {"norm": sponsor_norm_strict}).fetchall()
     if len(rows) == 1:
         return Resolution(
@@ -117,7 +168,6 @@ def resolve_company(
             evidence={"name_norm": sponsor_norm_strict, "raw": sponsor_text},
         )
 
-    # loose fallback
     if sponsor_norm_loose != sponsor_norm_strict:
         rows = session.execute(q_company, {"norm": sponsor_norm_loose}).fetchall()
         if len(rows) == 1:
@@ -131,7 +181,6 @@ def resolve_company(
     # 3) domain matches (alias_type='domain') or companies.website_domain
     # ---------------------------------------------------------------------- #
     if dom:
-        # alias table (strip leading www.)
         rows = session.execute(
             text(
                 """
@@ -150,7 +199,6 @@ def resolve_company(
                 evidence={"domain": dom, "raw": sponsor_text},
             )
 
-        # companies.website_domain fallback
         rows = session.execute(
             text(
                 """
@@ -167,5 +215,12 @@ def resolve_company(
                 method="website_domain",
                 evidence={"domain": dom, "raw": sponsor_text},
             )
+
+    # ---------------------------------------------------------------------- #
+    # 4) regex rules fallback
+    # ---------------------------------------------------------------------- #
+    rule_hit = _det_by_rules(session, sponsor_text)
+    if rule_hit:
+        return rule_hit
 
     return None

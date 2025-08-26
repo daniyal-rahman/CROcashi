@@ -106,6 +106,6 @@ The other thing I probably have to start thinking about is how to implement earl
 Might need a second lit review for disease and pathway analysis 
 phase might live in diff places in api so might hav to check multiple places not doing that rn
 theres a created_at and captured_at which basically do the exact same thing. This needs to be consolidated.
-
+Add llm parser of sec for labeled asssets + llm web to back fill from companies to find their assets then map to trials to remove some recall concnerns with current filtering
 
 

@@ -444,84 +444,137 @@ def _log_llm_attempt(
     """
     try:
         # Create a separate session for logging to avoid rollback issues
-        try:
-            from ncfd.db.session import get_session
-            with get_session() as log_session:
-                # Prepare safe defaults for all NOT NULL columns
-                safe_sponsor_text = sponsor_text or "unknown_sponsor"
-                safe_nct_id = nct_id or "unknown_nct"
-                safe_run_id = run_id or "unknown_run"
-                
-                if success and decision:
-                    # Log successful decision
-                    safe_company_id = decision.company_id if decision.company_id else None
-                    safe_match_type = decision.match_type or "uncertain"
-                    safe_p_match = decision.confidence if decision.confidence else 0.0
-                    safe_top2_margin = 1.0 if decision.mode == "accept" else 0.0
-                    safe_features = decision.research_evidence or {}
-                    safe_evidence = {
-                        "llm_success": True,
-                        "decision_mode": decision.mode,
-                        "confidence": decision.confidence,
-                        "flags": decision.flags or [],
-                        "raw_data": raw_data or {}
-                    }
-                    safe_decided_by = "llm"
-                    safe_notes = decision.rationale or "LLM research completed successfully"
-                else:
-                    # Log failure with safe defaults
-                    safe_company_id = None
-                    safe_match_type = "failed"
-                    safe_p_match = 0.0
-                    safe_top2_margin = 0.0
-                    safe_features = {}
-                    safe_evidence = {
-                        "llm_success": False,
-                        "error": error_msg or "Unknown LLM failure",
-                        "raw_data": raw_data or {}
-                    }
-                    safe_decided_by = "llm"
-                    safe_notes = f"LLM research failed: {error_msg or 'Unknown error'}"
-                
-                # Insert into resolver_llm_logs with the correct schema
-                from sqlalchemy import text
-                sql = text("""
-                    INSERT INTO resolver_llm_logs
-                        (run_id, nct_id, sponsor_text, candidates, prompt, response_json, 
-                         decision_mode, chosen_company_id, confidence)
-                    VALUES
-                        (:run_id, :nct_id, :sponsor_text, :candidates, :prompt, :response_json,
-                         :decision_mode, :chosen_company_id, :confidence)
-                """)
-                
-                # Prepare data for the correct table schema
-                import json
-                safe_candidates = json.dumps(raw_data or {}) if raw_data else "{}"
-                safe_prompt = "LLM research prompt for clinical trial sponsor resolution"
-                safe_response_json = json.dumps(raw_data or {}) if raw_data else "{}"
-                safe_decision_mode = decision.mode if decision else "review"
-                safe_chosen_company_id = decision.company_id if decision and decision.company_id else None
-                safe_confidence = decision.confidence if decision else 0.0
-                
-                log_session.execute(sql, {
-                    "run_id": safe_run_id,
-                    "nct_id": safe_nct_id,
-                    "sponsor_text": safe_sponsor_text,
-                    "candidates": safe_candidates,
-                    "prompt": safe_prompt,
-                    "response_json": safe_response_json,
-                    "decision_mode": safe_decision_mode,
-                    "chosen_company_id": safe_chosen_company_id,
-                    "confidence": safe_confidence,
-                })
-                
-                log_session.commit()
-                print(f"[LOG] LLM attempt logged: {nct_id} -> {safe_match_type} (success={success})")
-                
-        except Exception as log_error:
-            print(f"[WARNING] Failed to log LLM attempt: {log_error}")
-            # The context manager will handle cleanup automatically
+        from ncfd.db.session import get_session
+        with get_session() as log_session:
+            # Prepare safe defaults for all NOT NULL columns
+            safe_sponsor_text = sponsor_text or "unknown_sponsor"
+            safe_nct_id = nct_id or "unknown_nct"
+            safe_run_id = run_id or "unknown_run"
+            
+            # First, ensure the run record exists
+            run_exists = log_session.execute(
+                text("SELECT 1 FROM resolver_runs WHERE run_id = :run_id"),
+                {"run_id": safe_run_id}
+            ).scalar()
+            
+            if not run_exists:
+                # Create the run record if it doesn't exist
+                try:
+                    log_session.execute(
+                        text("""
+                            INSERT INTO resolver_runs (run_id, decider, config_hash, config_notes)
+                            VALUES (:run_id, :decider, :config_hash, :config_notes)
+                            ON CONFLICT (run_id) DO NOTHING
+                        """),
+                        {
+                            "run_id": safe_run_id,
+                            "decider": "llm",
+                            "config_hash": None,
+                            "config_notes": "Auto-created for LLM logging"
+                        }
+                    )
+                    print(f"[LOG] Created missing run record: {safe_run_id}")
+                except Exception as run_error:
+                    print(f"[WARNING] Failed to create run record: {run_error}")
+                    return  # Can't log without a run record
+            
+            if success and decision:
+                # Log successful decision
+                safe_company_id = decision.company_id if decision.company_id else None
+                safe_match_type = decision.match_type or "uncertain"
+                safe_p_match = decision.confidence if decision.confidence else 0.0
+                safe_top2_margin = 1.0 if decision.mode == "accept" else 0.0
+                safe_features = decision.research_evidence or {}
+                safe_evidence = {
+                    "llm_success": True,
+                    "decision_mode": decision.mode,
+                    "confidence": decision.confidence,
+                    "flags": decision.flags or [],
+                    "raw_data": raw_data or {}
+                }
+                safe_decided_by = "llm"
+                safe_notes = decision.rationale or "LLM research completed successfully"
+            else:
+                # Log failure with safe defaults
+                safe_company_id = None
+                safe_match_type = "failed"
+                safe_p_match = 0.0
+                safe_top2_margin = 0.0
+                safe_features = {}
+                safe_evidence = {
+                    "llm_success": False,
+                    "error": error_msg or "Unknown LLM failure",
+                    "raw_data": raw_data or {}
+                }
+                safe_decided_by = "llm"
+                safe_notes = f"LLM research failed: {error_msg or 'Unknown error'}"
+            
+            # Insert into resolver_llm_logs with the correct schema
+            sql = text("""
+                INSERT INTO resolver_llm_logs
+                    (run_id, input_id, stage, model_name, prompt, response, token_count_input, token_count_output, cost_usd)
+                VALUES
+                    (:run_id, :input_id, :stage, :model_name, :prompt, :response, :token_count_input, :token_count_output, :cost_usd)
+            """)
+            
+            # Prepare data for the correct table schema
+            import json
+            safe_prompt = "LLM research prompt for clinical trial sponsor resolution"
+            safe_response = json.dumps(raw_data or {}) if raw_data else "{}"
+            
+            # We need to get the input_id from resolver_inputs table
+            # If it doesn't exist, create it to maintain referential integrity
+            input_result = log_session.execute(
+                text("SELECT input_id FROM resolver_inputs WHERE run_id = :run_id AND nct_id = :nct_id"),
+                {"run_id": safe_run_id, "nct_id": safe_nct_id}
+            ).fetchone()
+            
+            if input_result:
+                input_id = input_result[0]
+            else:
+                # Create input record if it doesn't exist
+                try:
+                    from ncfd.mapping.normalize import norm_name
+                    sponsor_norm_strict = norm_name(safe_sponsor_text, strict=True)
+                    sponsor_norm_loose = norm_name(safe_sponsor_text, strict=False)
                     
+                    insert_result = log_session.execute(
+                        text("""
+                            INSERT INTO resolver_inputs 
+                                (run_id, nct_id, sponsor_text, sponsor_text_norm_strict, sponsor_text_norm_loose)
+                            VALUES 
+                                (:run_id, :nct_id, :sponsor_text, :sponsor_norm_strict, :sponsor_norm_loose)
+                            RETURNING input_id
+                        """),
+                        {
+                            "run_id": safe_run_id,
+                            "nct_id": safe_nct_id,
+                            "sponsor_text": safe_sponsor_text,
+                            "sponsor_norm_strict": sponsor_norm_strict,
+                            "sponsor_norm_loose": sponsor_norm_loose,
+                        }
+                    )
+                    input_id = insert_result.scalar_one()
+                    print(f"[LOG] Created missing input record: {nct_id} -> input_id {input_id}")
+                except Exception as create_error:
+                    print(f"[WARNING] Failed to create input record: {create_error}")
+                    input_id = None
+            
+            log_session.execute(sql, {
+                "run_id": safe_run_id,
+                "input_id": input_id,
+                "stage": "research",
+                "model_name": "gpt-5",
+                "prompt": safe_prompt,
+                "response": safe_response,
+                "token_count_input": None,  # We don't have this info
+                "token_count_output": None,  # We don't have this info
+                "cost_usd": None,  # We don't have this info
+            })
+            
+            log_session.commit()
+            print(f"[LOG] LLM attempt logged: {nct_id} -> {safe_match_type} (success={success})")
+            
     except Exception as e:
         print(f"[ERROR] Critical logging failure: {e}")
         # At this point, we can't even log the logging failure, but we don't want to crash the main flow

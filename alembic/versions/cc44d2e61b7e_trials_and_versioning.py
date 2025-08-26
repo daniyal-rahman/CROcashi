@@ -50,7 +50,7 @@ TRIAL_STATUS_ALLOWED = (
     'SUSPENDED',
     'TERMINATED',
     'WITHDRAWN',
-    'UNKNOWN_STATUS'
+    'UNKNOWN'
 )
 def upgrade() -> None:
     # -------------------

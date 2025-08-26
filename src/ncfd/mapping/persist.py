@@ -221,6 +221,71 @@ def persist_decision(
     # commit handled by caller
 
 
+def create_resolver_run(
+    session: Session,
+    *,
+    run_id: str,
+    decider: str,
+    config_hash: Optional[str] = None,
+    config_notes: Optional[str] = None,
+) -> None:
+    """
+    Create a new resolver run record in resolver_runs table.
+    
+    This must be called before any other resolver operations that reference the run_id.
+    """
+    sql = text("""
+        INSERT INTO resolver_runs (run_id, decider, config_hash, config_notes)
+        VALUES (:run_id, :decider, :config_hash, :config_notes)
+        ON CONFLICT (run_id) DO NOTHING
+    """)
+    
+    session.execute(sql, {
+        "run_id": run_id,
+        "decider": decider,
+        "config_hash": config_hash,
+        "config_notes": config_notes,
+    })
+    # commit handled by caller (context manager)
+
+
+def create_resolver_input(
+    session: Session,
+    *,
+    run_id: str,
+    nct_id: str,
+    sponsor_text: str,
+) -> int:
+    """
+    Create a resolver input record in resolver_inputs table.
+    
+    Returns the input_id for use in other resolver operations.
+    """
+    from ncfd.mapping.normalize import norm_name, norm_name_loose
+    
+    sponsor_norm_strict = norm_name(sponsor_text)
+    sponsor_norm_loose = norm_name_loose(sponsor_text)
+    
+    sql = text("""
+        INSERT INTO resolver_inputs 
+            (run_id, nct_id, sponsor_text, sponsor_text_norm_strict, sponsor_text_norm_loose)
+        VALUES 
+            (:run_id, :nct_id, :sponsor_text, :sponsor_norm_strict, :sponsor_norm_loose)
+        RETURNING input_id
+    """)
+    
+    result = session.execute(sql, {
+        "run_id": run_id,
+        "nct_id": nct_id,
+        "sponsor_text": sponsor_text,
+        "sponsor_norm_strict": sponsor_norm_strict,
+        "sponsor_norm_loose": sponsor_norm_loose,
+    })
+    
+    input_id = result.scalar_one()
+    return int(input_id)
+
+
 from typing import Any, Dict, Iterable, List
 import sqlalchemy as sa
 from sqlalchemy import text, bindparam
@@ -264,9 +329,9 @@ def enqueue_review(
     # --- insert, but skip if a pending duplicate already exists ---
     sql = text("""
         INSERT INTO review_queue
-            (run_id, nct_id, sponsor_text, sponsor_text_norm, candidates, reason, status)
+            (run_id, nct_id, sponsor_text, sponsor_text_norm, candidates, reason, status, decided_by)
         SELECT
-            :run_id, :nct_id, :s_text, :s_norm, :cands, :reason, 'pending'
+            :run_id, :nct_id, :s_text, :s_norm, :cands, :reason, 'pending', 'auto'
         WHERE NOT EXISTS (
             SELECT 1 FROM review_queue
             WHERE status = 'pending'

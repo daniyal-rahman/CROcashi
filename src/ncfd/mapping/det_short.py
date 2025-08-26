@@ -1,3 +1,4 @@
+# src/ncfd/mapping/det_short.py
 """Deterministic short-circuit + persistence for resolver CLI."""
 from __future__ import annotations
 

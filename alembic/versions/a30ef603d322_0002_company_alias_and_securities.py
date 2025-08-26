@@ -65,6 +65,8 @@ def upgrade() -> None:
         sa.Column("valid_from", sa.Date(), nullable=True),
         sa.Column("valid_to", sa.Date(), nullable=True),
         sa.PrimaryKeyConstraint("alias_id", name="pk_company_aliases"),
+        sa.Column("alias_norm", sa.Text(), nullable=True),
+        sa.Column("alias_type", sa.Text(), nullable=True),
     )
     op.create_index("idx_company_aliases_company", "company_aliases", ["company_id"])
     op.create_index(

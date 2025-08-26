@@ -20,7 +20,7 @@ from ncfd.ingest.securities import upsert_security_active, ExchangeNotAllowed
 
 @dataclass(frozen=True)
 class SecCompanyRow:
-    cik: int
+    cik: str
     ticker: str
     title: str
     exchange: Optional[str]  # e.g., "Nasdaq", "NYSE", "NYSE American", "OTCQX", ...
@@ -47,10 +47,10 @@ _EXCHANGE_NAME_TO_CODE = {
     "new york stock exchange": "NYSE",
 
     # NYSE American / AMEX variants
-    "nyse american": "NYSE American",
-    "nyse mkt": "NYSE American",
-    "nyse mkt llc": "NYSE American",
-    "amex": "NYSE American",
+    "nyse american": "NYSE_AM",
+    "nyse mkt": "NYSE_AM",
+    "nyse mkt llc": "NYSE_AM",
+    "amex": "NYSE_AM",
 
     # OTC (only QX/QB are allowed in your whitelist)
     "otcqx": "OTCQX",
@@ -67,7 +67,7 @@ def _normalize_exchange_code(exchange_name: Optional[str]) -> Optional[str]:
     return _EXCHANGE_NAME_TO_CODE.get(key)
 
 
-def _get_or_create_company(session: Session, *, cik: int, name: str) -> tuple[int, bool]:
+def _get_or_create_company(session: Session, *, cik: str, name: str) -> tuple[int, bool]:
     """
     Returns (company_id, created_bool). Uses ORM so name_norm is set by events.
     """
@@ -134,7 +134,7 @@ def ingest_sec_rows(
                 continue
 
         try:
-            cid, created = _get_or_create_company(session, cik=int(r.cik), name=r.title)
+            cid, created = _get_or_create_company(session, cik=r.cik, name=r.title)
             if created:
                 inserted_companies += 1
             else:
@@ -209,7 +209,7 @@ def load_sec_company_tickers_json(path: str) -> Iterable[SecCompanyRow]:
         for row in data["data"]:
             if not isinstance(row, (list, tuple)):
                 continue
-            cik = int(str(row[i_cik]))
+            cik = str(row[i_cik]) if row[i_cik] is not None else ""
             title = str(row[i_name]) if row[i_name] is not None else ""
             ticker = str(row[i_tick]) if row[i_tick] is not None else ""
             exchange = str(row[i_exchg]) if (i_exchg is not None and row[i_exchg] is not None) else None
@@ -220,7 +220,7 @@ def load_sec_company_tickers_json(path: str) -> Iterable[SecCompanyRow]:
     if isinstance(data, dict) and all(isinstance(v, dict) for v in data.values()):
         for obj in data.values():
             yield SecCompanyRow(
-                cik=int(obj.get("cik") or obj.get("cik_str")),
+                cik=str(obj.get("cik") or obj.get("cik_str") or ""),
                 ticker=str(obj.get("ticker")),
                 title=str(obj.get("title") or obj.get("name") or ""),
                 exchange=obj.get("exchange"),
@@ -231,7 +231,7 @@ def load_sec_company_tickers_json(path: str) -> Iterable[SecCompanyRow]:
     if isinstance(data, list):
         for obj in data:
             yield SecCompanyRow(
-                cik=int(obj.get("cik") or obj.get("cik_str")),
+                cik=str(obj.get("cik") or obj.get("cik_str") or ""),
                 ticker=str(obj.get("ticker")),
                 title=str(obj.get("title") or obj.get("name") or ""),
                 exchange=obj.get("exchange"),
