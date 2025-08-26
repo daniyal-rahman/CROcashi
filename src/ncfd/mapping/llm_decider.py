@@ -21,6 +21,79 @@ except Exception as e:  # pragma: no cover
     OpenAI = None  # defer import error until first use
 
 
+def _extract_json_from_response(content: str) -> Optional[Dict[str, Any]]:
+    """
+    Extract JSON from LLM response, handling various formats.
+    
+    Args:
+        content: Raw response from LLM
+        
+    Returns:
+        Parsed JSON dict or None if extraction fails
+    """
+    if not content:
+        return None
+    
+    # First, try direct JSON parsing
+    try:
+        return json.loads(content.strip())
+    except json.JSONDecodeError:
+        pass
+    
+    # Look for JSON blocks in markdown code blocks
+    json_patterns = [
+        r'```json\s*([\s\S]*?)\s*```',
+        r'```\s*([\s\S]*?)\s*```',
+        r'`([^`]+)`',
+    ]
+    
+    for pattern in json_patterns:
+        matches = re.findall(pattern, content)
+        for match in matches:
+            try:
+                return json.loads(match.strip())
+            except json.JSONDecodeError:
+                continue
+    
+    # Look for JSON-like content between curly braces
+    brace_pattern = r'\{[^{}]*\}'
+    matches = re.findall(brace_pattern, content)
+    
+    for match in matches:
+        try:
+            return json.loads(match)
+        except json.JSONDecodeError:
+            continue
+    
+    # If all else fails, try to extract key-value pairs
+    try:
+        # Look for common patterns like "company_name": "value"
+        company_match = re.search(r'"company_name"\s*:\s*"([^"]+)"', content)
+        confidence_match = re.search(r'"confidence"\s*:\s*([0-9.]+)', content)
+        ticker_match = re.search(r'"ticker"\s*:\s*"([^"]+)"', content)
+        
+        if company_match or confidence_match:
+            result = {}
+            if company_match:
+                result["company_name"] = company_match.group(1)
+            if confidence_match:
+                result["confidence"] = float(confidence_match.group(1))
+            if ticker_match:
+                result["ticker"] = ticker_match.group(1)
+            
+            # Add defaults for missing fields
+            result.setdefault("match_type", "uncertain")
+            result.setdefault("evidence", [])
+            result.setdefault("reasoning", "")
+            result.setdefault("flags", [])
+            
+            return result
+    except Exception:
+        pass
+    
+    return None
+
+
 @dataclass
 class LlmDecision:
     mode: str                    # "accept" | "review" | "reject"
@@ -212,7 +285,7 @@ def _enhanced_system_prompt() -> str:
         "Use web search to research company details, ticker symbols, domains, and recent activity. "
         "Be thorough in your research and provide evidence for your decisions. "
         "Focus on biotech/pharma companies and clinical trial sponsors. "
-        "Output JSON only with the specified format."
+        "Output JSON only with the specified format. Do not include any other text or comments."
     )
 
 
@@ -240,16 +313,17 @@ def _enhanced_user_prompt(nct_id: str, trial_metadata: ClinicalTrialMetadata) ->
                 "Provide evidence and reasoning"
             ],
             "output_schema": {
-                "company_name": "string (exact company name found)",
+                "company_name": "string (exact company name found. Put the parent company if that is publicly traded.)",
                 "company_details": "string (brief company description)",
-                "ticker": "string (stock ticker if public company)",
+                "ticker": "string (stock ticker if public company. Only include exact ticker - parent company tickers are valid)",
                 "website": "string (company website if found)",
                 "confidence": "float (0.0-1.0 confidence in match)",
                 "match_type": "exact|high_confidence|moderate_confidence|low_confidence|uncertain",
                 "evidence": "array of strings (URLs, quotes, research findings)",
                 "reasoning": "string (detailed explanation of decision)",
                 "flags": "array of strings (any concerns or special notes)"
-            }
+            },
+            "output_instructions": "You must respond with ONLY valid JSON. No markdown, no explanations outside the JSON. The response must be parseable by json.loads()."
         }
     }
     return json.dumps(data, ensure_ascii=False)
@@ -266,7 +340,7 @@ def decide_with_llm_research(
     Enhanced LLM decision with independent research capabilities.
     Uses GPT-5's web search to research trials and companies independently.
     """
-    model = os.getenv("OPENAI_MODEL_RESOLVER", "gpt-5")
+    model = os.getenv("OPENAI_MODEL_RESOLVER", "gpt-5-mini")
     cli = _client()
     
     # If no OpenAI client available, use mock decision
@@ -283,7 +357,8 @@ def decide_with_llm_research(
             sponsor_text="unknown_sponsor",
             success=False,
             error_msg="Failed to fetch ClinicalTrials.gov metadata",
-            session=session
+            session=session,
+            model=model
         )
         return _mock_llm_decision_research(nct_id, session)
     
@@ -327,22 +402,30 @@ def decide_with_llm_research(
             success=False,
             error_msg=f"LLM API call failed: {e}",
             raw_data={"trial_metadata": trial_metadata.__dict__ if trial_metadata else None},
-            session=session
+            session=session,
+            model=model
         )
         return _mock_llm_decision_research(nct_id, session)
     
-    try:
-        data = json.loads(content)
-    except Exception as json_error:
+    # Debug: Print the raw LLM response
+    print(f"[DEBUG] Raw LLM response for {nct_id}:")
+    print(f"[DEBUG] Content length: {len(content)}")
+    print(f"[DEBUG] First 500 chars: {content[:500]}")
+    print(f"[DEBUG] Last 500 chars: {content[-500:]}")
+    
+    # Try to extract JSON from the response
+    data = _extract_json_from_response(content)
+    if not data:
         # Log the JSON parsing failure
         _log_llm_attempt(
             run_id=run_id,
             nct_id=nct_id,
             sponsor_text=trial_metadata.sponsor if trial_metadata else "unknown_sponsor",
             success=False,
-            error_msg=f"Model did not return valid JSON: {json_error}",
+            error_msg="Model did not return valid JSON",
             raw_data={"raw_content": content, "trial_metadata": trial_metadata.__dict__ if trial_metadata else None},
-            session=session
+            session=session,
+            model=model
         )
         # If model hiccups, return review with a flag
         return (
@@ -357,6 +440,13 @@ def decide_with_llm_research(
             {"raw": content, "trial_metadata": trial_metadata.__dict__}
         )
     
+    # Debug: Print extracted data
+    print(f"[DEBUG] Extracted data for {nct_id}:")
+    print(f"[DEBUG] company_name: {data.get('company_name', 'NOT FOUND')}")
+    print(f"[DEBUG] confidence: {data.get('confidence', 'NOT FOUND')}")
+    print(f"[DEBUG] ticker: {data.get('ticker', 'NOT FOUND')}")
+    print(f"[DEBUG] match_type: {data.get('match_type', 'NOT FOUND')}")
+    
     # Parse LLM response
     company_name = data.get("company_name", "")
     confidence = float(data.get("confidence", 0.0))
@@ -364,9 +454,31 @@ def decide_with_llm_research(
     evidence = data.get("evidence", [])
     reasoning = data.get("reasoning", "")
     flags = data.get("flags", [])
+    ticker = data.get("ticker", "")
     
     # Step 3: Try to match to our company database
-    company_id, db_confidence, db_match_type = _fuzzy_company_match(company_name, session)
+    # First, try to find company by ticker if LLM provided one
+    company_id = None
+    db_confidence = 0.0
+    db_match_type = "uncertain"
+    
+    if ticker:
+        # Look up company by ticker first (most reliable)
+        from sqlalchemy import text
+        ticker_result = session.execute(
+            text("SELECT company_id FROM securities WHERE ticker_norm = :ticker AND is_primary_listing = true LIMIT 1"),
+            {"ticker": ticker.upper()}
+        ).fetchone()
+        
+        if ticker_result:
+            company_id = ticker_result[0]
+            db_confidence = 0.95  # High confidence for ticker match
+            db_match_type = "ticker_match"
+            print(f"[LOG] Found company by ticker: {ticker} -> company_id: {company_id}")
+    
+    # If no ticker match, fall back to fuzzy company name matching
+    if not company_id:
+        company_id, db_confidence, db_match_type = _fuzzy_company_match(company_name, session)
     
     # Step 4: Determine final decision
     if company_id and confidence >= 0.8 and db_confidence >= 0.7:
@@ -422,7 +534,8 @@ def decide_with_llm_research(
         success=True,
         decision=decision,
         raw_data=raw,
-        session=session
+        session=session,
+        model=model
     )
     
     return decision, raw
@@ -436,7 +549,8 @@ def _log_llm_attempt(
     error_msg: str = None,
     decision: LlmDecision = None,
     raw_data: Dict[str, Any] = None,
-    session=None
+    session=None,
+    model: str = "unknown"
 ) -> None:
     """
     Robust logging of LLM attempts with safe defaults and separate session.
@@ -444,137 +558,156 @@ def _log_llm_attempt(
     """
     try:
         # Create a separate session for logging to avoid rollback issues
-        from ncfd.db.session import get_session
-        with get_session() as log_session:
-            # Prepare safe defaults for all NOT NULL columns
-            safe_sponsor_text = sponsor_text or "unknown_sponsor"
-            safe_nct_id = nct_id or "unknown_nct"
-            safe_run_id = run_id or "unknown_run"
-            
-            # First, ensure the run record exists
-            run_exists = log_session.execute(
-                text("SELECT 1 FROM resolver_runs WHERE run_id = :run_id"),
-                {"run_id": safe_run_id}
-            ).scalar()
-            
-            if not run_exists:
-                # Create the run record if it doesn't exist
-                try:
+        try:
+            from ncfd.db.session import get_session
+            with get_session() as log_session:
+                # Prepare safe defaults for all NOT NULL columns
+                safe_sponsor_text = sponsor_text or "unknown_sponsor"
+                safe_nct_id = nct_id or "unknown_nct"
+                safe_run_id = run_id or "unknown_run"
+                
+                if success and decision:
+                    # Log successful decision
+                    safe_company_id = decision.company_id if decision.company_id else None
+                    safe_match_type = decision.match_type or "uncertain"
+                    safe_p_match = decision.confidence if decision.confidence else 0.0
+                    safe_top2_margin = 1.0 if decision.mode == "accept" else 0.0
+                    safe_features = decision.research_evidence or {}
+                    safe_evidence = {
+                        "llm_success": True,
+                        "decision_mode": decision.mode,
+                        "confidence": decision.confidence,
+                        "flags": decision.flags or [],
+                        "raw_data": raw_data or {}
+                    }
+                    safe_decided_by = "llm"
+                    safe_notes = decision.rationale or "LLM research completed successfully"
+                else:
+                    # Log failure with safe defaults
+                    safe_company_id = None
+                    safe_match_type = "failed"
+                    safe_p_match = 0.0
+                    safe_top2_margin = 0.0
+                    safe_features = {}
+                    safe_evidence = {
+                        "llm_success": False,
+                        "error": error_msg or "Unknown LLM failure",
+                        "raw_data": raw_data or {}
+                    }
+                    safe_decided_by = "llm"
+                    safe_notes = f"LLM research failed: {error_msg or 'Unknown error'}"
+                
+                # Insert into resolver_llm_logs with the correct schema
+                from sqlalchemy import text
+                
+                # First, we need to ensure the run_id exists in resolver_runs
+                # If it doesn't exist, create a minimal run record
+                run_exists = log_session.execute(
+                    text("SELECT 1 FROM resolver_runs WHERE run_id = :run_id"),
+                    {"run_id": safe_run_id}
+                ).fetchone()
+                
+                if not run_exists:
+                    # Create a minimal run record
                     log_session.execute(
                         text("""
-                            INSERT INTO resolver_runs (run_id, decider, config_hash, config_notes)
-                            VALUES (:run_id, :decider, :config_hash, :config_notes)
-                            ON CONFLICT (run_id) DO NOTHING
+                            INSERT INTO resolver_runs (run_id, started_at, decider, config_hash, config_notes)
+                            VALUES (:run_id, NOW(), 'auto', 'test-config', 'Auto-generated for logging')
                         """),
-                        {
-                            "run_id": safe_run_id,
-                            "decider": "llm",
-                            "config_hash": None,
-                            "config_notes": "Auto-created for LLM logging"
-                        }
+                        {"run_id": safe_run_id}
                     )
-                    print(f"[LOG] Created missing run record: {safe_run_id}")
-                except Exception as run_error:
-                    print(f"[WARNING] Failed to create run record: {run_error}")
-                    return  # Can't log without a run record
-            
-            if success and decision:
-                # Log successful decision
-                safe_company_id = decision.company_id if decision.company_id else None
-                safe_match_type = decision.match_type or "uncertain"
-                safe_p_match = decision.confidence if decision.confidence else 0.0
-                safe_top2_margin = 1.0 if decision.mode == "accept" else 0.0
-                safe_features = decision.research_evidence or {}
-                safe_evidence = {
-                    "llm_success": True,
-                    "decision_mode": decision.mode,
-                    "confidence": decision.confidence,
-                    "flags": decision.flags or [],
-                    "raw_data": raw_data or {}
-                }
-                safe_decided_by = "llm"
-                safe_notes = decision.rationale or "LLM research completed successfully"
-            else:
-                # Log failure with safe defaults
-                safe_company_id = None
-                safe_match_type = "failed"
-                safe_p_match = 0.0
-                safe_top2_margin = 0.0
-                safe_features = {}
-                safe_evidence = {
-                    "llm_success": False,
-                    "error": error_msg or "Unknown LLM failure",
-                    "raw_data": raw_data or {}
-                }
-                safe_decided_by = "llm"
-                safe_notes = f"LLM research failed: {error_msg or 'Unknown error'}"
-            
-            # Insert into resolver_llm_logs with the correct schema
-            sql = text("""
-                INSERT INTO resolver_llm_logs
-                    (run_id, input_id, stage, model_name, prompt, response, token_count_input, token_count_output, cost_usd)
-                VALUES
-                    (:run_id, :input_id, :stage, :model_name, :prompt, :response, :token_count_input, :token_count_output, :cost_usd)
-            """)
-            
-            # Prepare data for the correct table schema
-            import json
-            safe_prompt = "LLM research prompt for clinical trial sponsor resolution"
-            safe_response = json.dumps(raw_data or {}) if raw_data else "{}"
-            
-            # We need to get the input_id from resolver_inputs table
-            # If it doesn't exist, create it to maintain referential integrity
-            input_result = log_session.execute(
-                text("SELECT input_id FROM resolver_inputs WHERE run_id = :run_id AND nct_id = :nct_id"),
-                {"run_id": safe_run_id, "nct_id": safe_nct_id}
-            ).fetchone()
-            
-            if input_result:
-                input_id = input_result[0]
-            else:
-                # Create input record if it doesn't exist
-                try:
-                    from ncfd.mapping.normalize import norm_name
-                    sponsor_norm_strict = norm_name(safe_sponsor_text, strict=True)
-                    sponsor_norm_loose = norm_name(safe_sponsor_text, strict=False)
+                
+                # We need to get the input_id from resolver_inputs table
+                input_result = log_session.execute(
+                    text("SELECT input_id FROM resolver_inputs WHERE run_id = :run_id AND nct_id = :nct_id"),
+                    {"run_id": safe_run_id, "nct_id": safe_nct_id}
+                ).fetchone()
+                
+                input_id = input_result[0] if input_result else None
+                
+                # If no input_id found, create one
+                if input_id is None:
+                    try:
+                        # Create a resolver_inputs record
+                        input_result = log_session.execute(
+                            text("""
+                                INSERT INTO resolver_inputs (run_id, nct_id, sponsor_text, sponsor_text_norm_strict, sponsor_text_norm_loose, created_at)
+                                VALUES (:run_id, :nct_id, :sponsor_text, :sponsor_text_norm_strict, :sponsor_text_norm_loose, NOW())
+                                RETURNING input_id
+                            """),
+                            {
+                                "run_id": safe_run_id,
+                                "nct_id": safe_nct_id,
+                                "sponsor_text": sponsor_text or "unknown",
+                                "sponsor_text_norm_strict": sponsor_text or "unknown",
+                                "sponsor_text_norm_loose": sponsor_text or "unknown"
+                            }
+                        ).fetchone()
+                        
+                        input_id = input_result[0] if input_result else None
+                        print(f"[LOG] Created resolver_inputs record: input_id={input_id}")
+                        
+                    except Exception as e:
+                        print(f"[WARNING] Failed to create resolver_inputs record: {e}")
+                        return
+                
+                # If still no input_id, we can't log
+                if input_id is None:
+                    print(f"[WARNING] Cannot log LLM attempt: failed to create input_id for run_id={safe_run_id}, nct_id={safe_nct_id}")
+                    return
+                
+                # Now insert into resolver_llm_logs with the correct schema
+                sql = text("""
+                    INSERT INTO resolver_llm_logs
+                        (run_id, input_id, stage, model_name, prompt, response, token_count_input, token_count_output, cost_usd)
+                    VALUES
+                        (:run_id, :input_id, :stage, :model_name, :prompt, :response, :token_count_input, :token_count_output, :cost_usd)
+                """)
+                
+                # Prepare data for the correct table schema
+                import json
+                
+                # Create a meaningful prompt and response based on the parameters
+                if success and decision:
+                    safe_prompt = f"LLM research for {nct_id}: {sponsor_text}"
+                    safe_response = json.dumps({
+                        "success": True,
+                        "decision": {
+                            "mode": decision.mode,
+                            "company_id": decision.company_id,
+                            "confidence": decision.confidence,
+                            "rationale": decision.rationale,
+                            "flags": decision.flags
+                        },
+                        "raw_data": raw_data
+                    })
+                else:
+                    safe_prompt = f"LLM research failed for {nct_id}: {sponsor_text}"
+                    safe_response = json.dumps({
+                        "success": False,
+                        "error": error_msg,
+                        "raw_data": raw_data
+                    })
+                
+                log_session.execute(sql, {
+                    "run_id": safe_run_id,
+                    "input_id": input_id,
+                    "stage": "research",
+                    "model_name": model,
+                    "prompt": safe_prompt,
+                    "response": safe_response,
+                    "token_count_input": None,  # We don't have this info
+                    "token_count_output": None,  # We don't have this info
+                    "cost_usd": None,  # We don't have this info
+                })
+                
+                log_session.commit()
+                print(f"[LOG] LLM attempt logged: {nct_id} -> success={success}")
+                
+        except Exception as log_error:
+            print(f"[WARNING] Failed to log LLM attempt: {log_error}")
+            # The context manager will handle cleanup automatically
                     
-                    insert_result = log_session.execute(
-                        text("""
-                            INSERT INTO resolver_inputs 
-                                (run_id, nct_id, sponsor_text, sponsor_text_norm_strict, sponsor_text_norm_loose)
-                            VALUES 
-                                (:run_id, :nct_id, :sponsor_text, :sponsor_norm_strict, :sponsor_norm_loose)
-                            RETURNING input_id
-                        """),
-                        {
-                            "run_id": safe_run_id,
-                            "nct_id": safe_nct_id,
-                            "sponsor_text": safe_sponsor_text,
-                            "sponsor_norm_strict": sponsor_norm_strict,
-                            "sponsor_norm_loose": sponsor_norm_loose,
-                        }
-                    )
-                    input_id = insert_result.scalar_one()
-                    print(f"[LOG] Created missing input record: {nct_id} -> input_id {input_id}")
-                except Exception as create_error:
-                    print(f"[WARNING] Failed to create input record: {create_error}")
-                    input_id = None
-            
-            log_session.execute(sql, {
-                "run_id": safe_run_id,
-                "input_id": input_id,
-                "stage": "research",
-                "model_name": "gpt-5",
-                "prompt": safe_prompt,
-                "response": safe_response,
-                "token_count_input": None,  # We don't have this info
-                "token_count_output": None,  # We don't have this info
-                "cost_usd": None,  # We don't have this info
-            })
-            
-            log_session.commit()
-            print(f"[LOG] LLM attempt logged: {nct_id} -> {safe_match_type} (success={success})")
-            
     except Exception as e:
         print(f"[ERROR] Critical logging failure: {e}")
         # At this point, we can't even log the logging failure, but we don't want to crash the main flow
@@ -596,7 +729,8 @@ def _mock_llm_decision_research(nct_id: str, session) -> Tuple[LlmDecision, Dict
             success=False,
             error_msg="Mock: No trial metadata available",
             raw_data={"mock": True, "reason": "no_metadata"},
-            session=session
+            session=session,
+            model="mock"
         )
         return (
             LlmDecision(
@@ -631,7 +765,8 @@ def _mock_llm_decision_research(nct_id: str, session) -> Tuple[LlmDecision, Dict
                 match_type="uncertain"
             ),
             raw_data={"mock": True, "decision": "review", "reason": "academic_sponsor"},
-            session=session
+            session=session,
+            model="mock"
         )
         return (
             LlmDecision(
@@ -669,7 +804,8 @@ def _mock_llm_decision_research(nct_id: str, session) -> Tuple[LlmDecision, Dict
             success=True,
             decision=mock_decision,
             raw_data={"mock": True, "decision": "accept", "reason": "company_found"},
-            session=session
+            session=session,
+            model="mock"
         )
         return (
             mock_decision,
@@ -694,7 +830,8 @@ def _mock_llm_decision_research(nct_id: str, session) -> Tuple[LlmDecision, Dict
             success=True,
             decision=mock_decision,
             raw_data={"mock": True, "decision": "review", "reason": "no_match"},
-            session=session
+            session=session,
+            model="mock"
         )
         return (
             mock_decision,

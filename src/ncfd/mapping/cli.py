@@ -29,8 +29,6 @@ from ncfd.mapping.blocks import load_trial_party, derive_context
 from ncfd.mapping.persist import (
     persist_decision,
     persist_candidate_features,
-    create_resolver_run,
-    create_resolver_input,
 )
 from ncfd.mapping.deterministic import resolve_company as det_resolve, Resolution
 from ncfd.mapping.alias_promotion import upsert_alias_from_sponsor
@@ -781,10 +779,6 @@ def resolve_one(
     cfg = _load_yaml(cfg_path)
     run_id = run_id or datetime.utcnow().strftime("resolver-%Y%m%dT%H%M%SZ")
     with get_session() as s:
-        # Create resolver run record if persisting
-        if persist:
-            create_resolver_run(s, run_id=run_id, decider=decider)
-        
         opts = FlowOptions(
             cfg=cfg,
             run_id=run_id,
@@ -828,13 +822,6 @@ def resolve_nct(
             raise typer.Exit(1)
 
         trial_id, sponsor_text = int(row[0]), (row[1] or "")
-        
-        # Create resolver run record if persisting
-        if persist:
-            create_resolver_run(s, run_id=run_id, decider=decider)
-            # Create resolver input record
-            create_resolver_input(s, run_id=run_id, nct_id=nct_id, sponsor_text=sponsor_text)
-        
         tp = load_trial_party(s, trial_id, nct_id, sponsor_text)
         ctx_full = derive_context(tp)
 
@@ -880,10 +867,6 @@ def resolve_batch(
     cfg = _load_yaml(cfg_path)
     run_id = run_id or datetime.utcnow().strftime("resolver-%Y%m%dT%H%M%SZ")
     with get_session() as s:
-        # Create resolver run record if persisting
-        if persist:
-            create_resolver_run(s, run_id=run_id, decider=decider)
-        
         rows = s.execute(
             text(
                 """
@@ -915,10 +898,6 @@ def resolve_batch(
         )
 
         for nct_id, sponsor_text in rows:
-            # Create resolver input record if persisting
-            if persist:
-                create_resolver_input(s, run_id=run_id, nct_id=nct_id, sponsor_text=sponsor_text or "")
-            
             # Thin wrapper—delegate to unified flow
             try:
                 run_resolution(
