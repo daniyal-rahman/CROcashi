@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from datetime import datetime, date
 from decimal import Decimal
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 
 # import sqlalchemy as sa
-from sqlalchemy import (String, Text, Boolean, Date, DateTime, ForeignKey, Index, UniqueConstraint, Integer, BigInteger, CheckConstraint, func, Numeric, Enum as SQLEnum, CHAR, text, MetaData)
+from sqlalchemy import (String, Text, Boolean, Date, DateTime, ForeignKey, Index, UniqueConstraint, Integer, BigInteger, CheckConstraint, func, Numeric, Enum as SQLEnum, CHAR, text, MetaData, PrimaryKeyConstraint, ForeignKeyConstraint)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, ENUM as PGEnum
 
@@ -170,6 +170,7 @@ class Asset(Base):
     ownership: Mapped[List["AssetOwnership"]] = relationship(back_populates="asset", cascade="all, delete-orphan")
     studies: Mapped[List["Study"]] = relationship(back_populates="asset")
     patents: Mapped[List["Patent"]] = relationship(back_populates="asset")
+    aliases: Mapped[List["AssetAlias"]] = relationship(back_populates="asset", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_assets_names_jsonb", "names_jsonb", postgresql_using="gin"),
@@ -249,6 +250,8 @@ class Trial(Base):
     catalysts: Mapped[List["Catalyst"]] = relationship(back_populates="trial", cascade="all, delete-orphan")
     labels: Mapped[List["Label"]] = relationship(back_populates="trial", cascade="all, delete-orphan")
     disclosures: Mapped[List["Disclosure"]] = relationship(back_populates="trial", cascade="all, delete-orphan")
+    # Documents are linked through DocumentLink table
+    # documents: Mapped[List["Document"]] = relationship(back_populates="trials")
 
     __table_args__ = (
         Index("idx_trials_sponsor_company_id", "sponsor_company_id"),
@@ -299,16 +302,18 @@ class Study(Base):
     study_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     trial_id: Mapped[Optional[int]] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"))
     asset_id: Mapped[Optional[int]] = mapped_column(ForeignKey("assets.asset_id", ondelete="SET NULL"))
+    doc_id: Mapped[Optional[int]] = mapped_column(ForeignKey("documents.doc_id", ondelete="SET NULL"))
     doc_type: Mapped[str] = mapped_column(DocTypeEnum, nullable=False)
     citation: Mapped[Optional[str]] = mapped_column(Text)
     year: Mapped[Optional[int]] = mapped_column(Integer)
     url: Mapped[Optional[str]] = mapped_column(Text)
-    hash: Mapped[Optional[str]] = mapped_column(CHAR(64))
+    text_hash: Mapped[Optional[str]] = mapped_column(CHAR(64))
     oa_status: Mapped[Optional[str]] = mapped_column(OAStatusEnum)
     object_store_key: Mapped[str] = mapped_column(Text, nullable=False)
     extracted_jsonb: Mapped[Dict[str, object]] = mapped_column(JSONB, nullable=False)
     coverage_level: Mapped[str] = mapped_column(CoverageLevelEnum, nullable=False)
     notes_md: Mapped[Optional[str]] = mapped_column(Text)
+    doc_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -319,12 +324,15 @@ class Study(Base):
     signal_evidence: Mapped[List["SignalEvidence"]] = relationship(
         back_populates="source_study", cascade="all, delete-orphan"
     )
+    # Documents are linked through DocumentLink table
+    # documents: Mapped[List["Document"]] = relationship(back_populates="trials")
 
     __table_args__ = (
         Index("idx_studies_trial_id", "trial_id"),
         Index("idx_studies_asset_id", "asset_id"),
+        Index("idx_studies_doc_id", "doc_id"),
         Index("idx_studies_doc_type", "doc_type"),
-        Index("idx_studies_hash_unique", "hash", unique=True, postgresql_where=text("hash IS NOT NULL")),
+        Index("idx_studies_text_hash_unique", "text_hash", unique=True, postgresql_where=text("text_hash IS NOT NULL")),
         Index("idx_studies_extracted_jsonb", "extracted_jsonb", postgresql_using="gin"),
         UniqueConstraint("object_store_key", name="uq_studies_object_store_key"),
     )
@@ -631,4 +639,210 @@ class RunArtifact(Base):
     __table_args__ = (
         Index("idx_run_artifacts_run_id", "run_id"),
         Index("idx_run_artifacts_type", "artifact_type"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Document Staging & Literature
+# ---------------------------------------------------------------------------
+
+class Document(Base):
+    """Documents table - raw document metadata and status tracking."""
+    __tablename__ = "documents"
+
+    doc_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_type: Mapped[str] = mapped_column(Text, nullable=False)
+    source_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    url_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    fetched_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    parsed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    linked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    content_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    doi: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pmid: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pmcid: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    nct_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sponsor_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default='discovered')
+    error_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    storage_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sha256: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    publisher: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    text_pages: Mapped[List["DocumentTextPage"]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    tables: Mapped[List["DocumentTable"]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    citations: Mapped[List["DocumentCitation"]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    entities: Mapped[List["DocumentEntity"]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    links: Mapped[List["DocumentLink"]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    notes: Mapped[List["DocumentNote"]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    # Trials are linked through DocumentLink table
+    # trials: Mapped[List["Trial"]] = relationship(back_populates="documents")
+
+    __table_args__ = (
+        Index("ix_documents_lower_doi", "doi"),
+        Index("ix_documents_lower_pmid", "pmid"),
+        Index("ix_documents_lower_pmcid", "pmcid"),
+        Index("ix_documents_lower_nct_id", "nct_id"),
+        Index("ix_documents_published_at", "published_at"),
+        Index("ix_documents_url_hash", "url_hash", unique=True),
+        Index("ix_documents_sha256", "sha256"),
+        Index("ix_documents_source_url", "source_url"),
+        CheckConstraint("source_type::text = ANY (ARRAY['PR','IR','SEC','Registry','Abstract','Poster','Paper','FDA','Patent']::text[])", name='ck_documents_source_type'),
+        CheckConstraint("status::text = ANY (ARRAY['discovered','fetched','parsed','linked','failed']::text[])", name='ck_documents_status')
+    )
+
+
+class DocumentTextPage(Base):
+    """Document text pages table - extracted text content by page."""
+    __tablename__ = "document_text_pages"
+
+    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    page_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    char_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # Relationships
+    document: Mapped["Document"] = relationship(back_populates="text_pages")
+
+    __table_args__ = (
+        PrimaryKeyConstraint('doc_id', 'page_no'),
+        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE')
+    )
+
+
+class DocumentTable(Base):
+    """Document tables table - extracted table data."""
+    __tablename__ = "document_tables"
+
+    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    page_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    table_idx: Mapped[int] = mapped_column(Integer, nullable=False)
+    caption: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    table_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    detector: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    document: Mapped["Document"] = relationship(back_populates="tables")
+
+    __table_args__ = (
+        PrimaryKeyConstraint('doc_id', 'table_idx'),
+        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE')
+    )
+
+
+class DocumentCitation(Base):
+    """Document citations table - DOI/PMID/PMCID/NCT references."""
+    __tablename__ = "document_citations"
+
+    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    doi: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pmid: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pmcid: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    nct_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    document: Mapped["Document"] = relationship(back_populates="citations")
+
+    __table_args__ = (
+        PrimaryKeyConstraint('doc_id'),
+        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
+    )
+
+
+class DocumentEntity(Base):
+    """Document entities table - LangExtract entity extraction results."""
+    __tablename__ = "document_entities"
+
+    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    ent_type: Mapped[str] = mapped_column(Text, nullable=False)
+    value_text: Mapped[str] = mapped_column(Text, nullable=False)
+    value_norm: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    page_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    char_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    char_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    detector: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    confidence: Mapped[Optional[Decimal]] = mapped_column(Numeric, nullable=True)
+
+    # Relationships
+    document: Mapped["Document"] = relationship(back_populates="entities")
+
+    __table_args__ = (
+        PrimaryKeyConstraint('doc_id', 'ent_type', 'value_text', 'char_start'),
+        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
+        CheckConstraint("ent_type::text = ANY (ARRAY['asset_code','inn','generic','company','ticker','nct','endpoint','indication','moa','target','code']::text[])", name='ck_document_entities_ent_type'),
+    )
+
+
+class DocumentLink(Base):
+    """Document links table - linking between docs and normalized entities."""
+    __tablename__ = "document_links"
+
+    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    nct_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    trial_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    asset_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    company_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    link_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    confidence: Mapped[Optional[Decimal]] = mapped_column(Numeric, nullable=True)
+    heuristics: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    evidence_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+
+    # Relationships
+    document: Mapped["Document"] = relationship(back_populates="links")
+    trial: Mapped[Optional["Trial"]] = relationship()
+    asset: Mapped[Optional["Asset"]] = relationship()
+    company: Mapped[Optional["Company"]] = relationship()
+
+    __table_args__ = (
+        PrimaryKeyConstraint('doc_id', 'nct_id', 'trial_id', 'asset_id', 'company_id'),
+        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
+        ForeignKeyConstraint(['trial_id'], ['trials.trial_id'], ondelete='CASCADE'),
+        ForeignKeyConstraint(['asset_id'], ['assets.asset_id'], ondelete='CASCADE'),
+        ForeignKeyConstraint(['company_id'], ['companies.company_id'], ondelete='CASCADE'),
+        CheckConstraint("confidence IS NULL OR (confidence >= 0 AND confidence <= 1)", name='ck_document_links_confidence_range'),
+    )
+
+
+class DocumentNote(Base):
+    """Document notes table - document annotations and notes."""
+    __tablename__ = "document_notes"
+
+    note_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    note_type: Mapped[str] = mapped_column(Text, nullable=False)
+    note_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    # Relationships
+    document: Mapped["Document"] = relationship(back_populates="notes")
+
+    __table_args__ = (
+        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
+    )
+
+
+class AssetAlias(Base):
+    """Asset aliases table - normalized asset names and codes."""
+    __tablename__ = "asset_aliases"
+
+    asset_alias_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    asset_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    alias: Mapped[str] = mapped_column(Text, nullable=False)
+    alias_norm: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    alias_type: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    asset: Mapped["Asset"] = relationship(back_populates="aliases")
+
+    __table_args__ = (
+        Index("ix_asset_aliases_lower_alias", "alias"),
+        Index("ix_asset_aliases_asset_id", "asset_id"),
+        Index("ix_asset_aliases_alias_norm", "alias_norm"),
+        ForeignKeyConstraint(['asset_id'], ['assets.asset_id'], ondelete='CASCADE'),
+        CheckConstraint("alias_type::text = ANY (ARRAY['inn','internal_code','generic','brand','misspelling','db_id','code']::text[])", name='ck_asset_aliases_alias_type'),
     )
