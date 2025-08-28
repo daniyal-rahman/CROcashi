@@ -22,8 +22,8 @@ from openai import OpenAI
 from openai.types.chat import ChatCompletion
 
 from .models import StudyCardRanking, LLMResolutionScore
-from .enhanced_extractor import EnhancedStudyCardExtractor
-from .reviewer_analyzer import ReviewerNotesAnalyzer
+# from .enhanced_extractor import EnhancedStudyCardExtractor  # DELETED
+# from .reviewer_analyzer import ReviewerNotesAnalyzer  # DELETED
 
 
 @dataclass
@@ -82,8 +82,8 @@ class LLMResolutionService:
     def __init__(self):
         self.client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         self.model = os.getenv('OPENAI_MODEL_RESOLVER', 'gpt-5-mini')
-        self.enhanced_extractor = EnhancedStudyCardExtractor()
-        self.reviewer_analyzer = ReviewerNotesAnalyzer()
+        # self.enhanced_extractor = EnhancedStudyCardExtractor()  # DELETED
+        # self.reviewer_analyzer = ReviewerNotesAnalyzer()  # DELETED
         
         # Configure logging
         logging.basicConfig(level=logging.INFO)

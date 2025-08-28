@@ -1,17 +1,26 @@
 #!/usr/bin/env python3
 """
-Smart PubMed client implementing early stopping pipeline.
+Smart PubMed client implementing three-stage retrieval pipeline.
 
-Uses PubMed E-utilities (no API key required) with rate limiting and smart triage.
+This module replaces the old early stopping system with a new three-stage approach:
+- Stage A: Metadata-only (PMID + minimal metadata) - free/cheap
+- Stage B: Abstract fetching for high-U0 candidates - still cheap  
+- Stage C: Full-text only when LLM requests it - rare and controlled
+
+Uses the new LiteratureScorer, DocumentQueue, and LLMEvaluator from Phase 1.
 """
 
 import logging
 import time
 import random
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Generator
 from dataclasses import dataclass
 import requests
 from urllib.parse import urlencode
+
+from .literature_scoring import LiteratureScorer, ScoringConfig
+from .document_queue import DocumentQueue, DocumentCandidate
+from .llm_evaluator import LLMEvaluator, StopDecision
 
 logger = logging.getLogger(__name__)
 
@@ -35,35 +44,92 @@ class PubMedSummary:
     pub_types: List[str]
     secondary_ids: List[str]  # NCT IDs, etc.
     mesh_terms: List[str]
-    score: int = 0
+    abstract: Optional[str] = None
+    u0_score: Optional[float] = None
+    u1_score: Optional[float] = None
 
 
 @dataclass
-class SearchResult:
-    """Result of smart search with early stopping decision."""
-    decision: str  # "stop" or "promote"
-    reason: str
-    total_hits: int
-    top_summaries: List[PubMedSummary]
-    promoted_ids: Optional[List[str]] = None
+class StageAResult:
+    """Result of Stage A (metadata-only) processing."""
+    trial_id: str
+    candidates: List[DocumentCandidate]
+    total_found: int
+    processing_time: float
+
+
+@dataclass
+class StageBResult:
+    """Result of Stage B (abstract evaluation) processing."""
+    trial_id: str
+    promoted_candidates: List[DocumentCandidate]
+    parked_candidates: List[DocumentCandidate]
+    total_evaluated: int
+    processing_time: float
+
+
+@dataclass
+class StageCResult:
+    """Result of Stage C (full-text on demand) processing."""
+    trial_id: str
+    full_text_requests: List[Dict[str, str]]
+    documents_fetched: List[Dict[str, Any]]
+    processing_time: float
 
 
 class SmartPubMedClient:
     """
-    Smart PubMed client with early stopping pipeline.
+    Smart PubMed client with three-stage retrieval pipeline.
     
-    Implements the strategy:
-    1. Search with rate limiting
-    2. Triage summaries (no abstracts)
-    3. Early stop if not promising
-    4. Promote only promising papers for deep fetch
+    Implements the new strategy:
+    1. Stage A: Pull PMIDs + minimal metadata (free/cheap)
+    2. Stage B: Fetch abstracts for high-U0 candidates (still cheap)
+    3. Stage C: Full-text only when LLM requests it (rare)
     """
     
-    def __init__(self):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """
+        Initialize the smart PubMed client.
+        
+        Args:
+            config: Configuration dictionary
+        """
+        self.config = config or {}
+        
+        # Initialize Phase 1 components with proper configuration
+        from .literature_scoring import LiteratureScorer, ScoringConfig
+        from .document_queue import DocumentQueue
+        from .llm_evaluator import LLMEvaluator
+        
+        # Extract scoring config and create ScoringConfig object
+        scoring_config_dict = self.config.get('scoring', {})
+        scoring_config = ScoringConfig(
+            tau_abstract=scoring_config_dict.get('tau_abstract', 0.40),
+            theta_high=scoring_config_dict.get('theta_high', 0.80),
+            theta_low=scoring_config_dict.get('theta_low', 0.20),
+            delta_min=scoring_config_dict.get('delta_min', 0.05)
+        )
+        
+        self.scorer = LiteratureScorer(scoring_config)
+        self.queue = DocumentQueue(
+            self.config.get('queue', {})
+        )
+        self.evaluator = LLMEvaluator(
+            self.config.get('evaluation', {})
+        )
+        
+        # PubMed API configuration
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'NCFD-Smart-PubMed/1.0'
         })
+        
+        # Stage configuration
+        self.stage_a_batch_size = self.config.get('stage_a_batch_size', 100)
+        self.stage_b_threshold = self.config.get('stage_b_threshold', 0.3)
+        self.max_abstracts_per_trial = self.config.get('max_abstracts_per_trial', 8)
+        
+        logger.info("Smart PubMed client initialized with three-stage pipeline")
     
     def _rate_limit(self):
         """Respect PubMed's 3 requests/second limit."""
@@ -95,322 +161,544 @@ class SmartPubMedClient:
             logger.error(f"Request failed: {e}")
             raise
     
+    def _build_search_query(self, nct_id: str, drug_synonyms: List[str] = None) -> str:
+        """
+        Build PubMed search query following the specified pattern.
+        
+        Args:
+            nct_id: NCT identifier (e.g., "NCT05111574")
+            drug_synonyms: Optional list of drug synonyms
+            
+        Returns:
+            PubMed query string matching pattern: ^\\("NCT\\d{8}"\\[si\\]\\)(?:\\s+OR\\s+\\(.+\\))?$
+        
+        Raises:
+            ValueError: If nct_id is empty or invalid format
+        """
+        if not nct_id:
+            raise ValueError("NCT ID cannot be empty")
+        
+        if not nct_id.startswith('NCT') or len(nct_id) < 8:
+            raise ValueError(f"Invalid NCT ID format: {nct_id}")
+        
+        # Start with NCT term in [si] (not [tiab]) - wrap in parentheses
+        query = f'("{nct_id}"[si])'
+        
+        # Add drug synonyms if provided
+        if drug_synonyms and len(drug_synonyms) > 0:
+            # Build drug terms with [tiab] tags
+            drug_terms = []
+            for drug in drug_synonyms:
+                if drug.strip():  # Skip empty terms
+                    drug_terms.append(f'"{drug.strip()}"[tiab]')
+            
+            if drug_terms:
+                # Join drug terms with OR
+                drug_query = " OR ".join(drug_terms)
+                # Combine NCT and drug terms with OR
+                query = f'{query} OR ({drug_query})'
+        
+        return query
+    
     def _build_drug_query(self, drug_synonyms: List[str], disease: Optional[str] = None) -> str:
         """
         Build smart query for drug search.
         
         Args:
-            drug_synonyms: List of drug names/codes (e.g., ["ruxolitinib", "INCB018424", "Jakafi"])
+            drug_synonyms: List of drug names/codes
             disease: Optional disease/indication
             
         Returns:
             PubMed query string
         """
-        # Drug synonyms in title/abstract
-        drug_part = " OR ".join([f'"{syn}"[tiab]' for syn in drug_synonyms])
+        # Build drug query
+        drug_terms = []
+        for drug in drug_synonyms:
+            # Handle different drug identifier types
+            if drug.startswith('NCT'):
+                drug_terms.append(f'"{drug}"[si]')
+            elif len(drug) <= 3 and drug.isupper():
+                # Internal code (e.g., AB-123)
+                drug_terms.append(f'"{drug}"[tiab]')
+            else:
+                # Generic name or brand name
+                drug_terms.append(f'"{drug}"[tiab]')
         
+        drug_query = " OR ".join(drug_terms)
+        
+        # Add disease if specified
         if disease:
-            # Disease in title/abstract or MeSH major topics
-            disease_part = f'"{disease}"[tiab] OR "{disease}"[majr]'
-            return f"({drug_part}) AND ({disease_part})"
-        else:
-            return f"({drug_part})"
+            disease_query = f'"{disease}"[tiab]'
+            return f"({drug_query}) AND {disease_query}"
+        
+        return drug_query
     
-    def _build_phase_queries(self, drug_synonyms: List[str], disease: Optional[str] = None) -> Dict[str, str]:
-        """
-        Build the four pass-1 queries as specified in the plan.
+    def _esearch(self, query: str, retmax: int = 100) -> Dict[str, Any]:
+        """Execute PubMed search."""
+        self._rate_limit()
         
-        Returns:
-            Dict with query types and their PubMed queries
-        """
-        base_drug = " OR ".join([f'"{syn}"[tiab]' for syn in drug_synonyms])
-        base_disease = f'"{disease}"[tiab] OR "{disease}"[majr]' if disease else ""
-        
-        queries = {}
-        
-        # 1. Phase 1 (first-in-human, dose-escalation)
-        if base_disease:
-            queries["phase1"] = f"({base_drug}) AND ({base_disease}) AND (\"Clinical Trial, Phase I\"[pt] OR \"first-in-human\"[tiab] OR \"dose-escalation\"[tiab] OR \"3+3\"[tiab]) NOT Review[pt]"
-        else:
-            queries["phase1"] = f"({base_drug}) AND (\"Clinical Trial, Phase I\"[pt] OR \"first-in-human\"[tiab] OR \"dose-escalation\"[tiab] OR \"3+3\"[tiab]) NOT Review[pt]"
-        
-        # 2. Phase 2
-        if base_disease:
-            queries["phase2"] = f"({base_drug}) AND ({base_disease}) AND (\"Clinical Trial, Phase II\"[pt] OR \"randomized\"[tiab]) NOT Review[pt]"
-        else:
-            queries["phase2"] = f"({base_drug}) AND (\"Clinical Trial, Phase II\"[pt] OR \"randomized\"[tiab]) NOT Review[pt]"
-        
-        # 3. Preclinical
-        if base_disease:
-            queries["preclinical"] = f"({base_drug}) AND ({base_disease}) AND (\"Drug Evaluation, Preclinical\"[mh] OR (animals[mh] NOT humans[mh]) OR \"xenograft\"[tiab] OR \"in vivo\"[tiab] OR \"in vitro\"[tiab]) NOT Review[pt]"
-        else:
-            queries["preclinical"] = f"({base_drug}) AND (\"Drug Evaluation, Preclinical\"[mh] OR (animals[mh] NOT humans[mh]) OR \"xenograft\"[tiab] OR \"in vivo\"[tiab] OR \"in vitro\"[tiab]) NOT Review[pt]"
-        
-        # 4. Reviews
-        if base_disease:
-            queries["reviews"] = f"({base_drug}) AND ({base_disease}) AND (Review[pt] OR \"Systematic Review\"[pt] OR \"Meta-Analysis\"[pt])"
-        else:
-            queries["reviews"] = f"({base_drug}) AND (Review[pt] OR \"Systematic Review\"[pt] OR \"Meta-Analysis\"[pt])"
-        
-        return queries
-    
-    def _esearch(self, term: str, retmax: int = 30, sort: str = "relevance") -> Dict[str, Any]:
-        """Execute PubMed search with history."""
         params = {
             **COMMON_PARAMS,
             "db": "pubmed",
-            "term": term,
+            "term": query,
             "retmax": retmax,
-            "sort": sort,
-            "usehistory": "y"
+            "retmode": "json"
         }
         
-        self._rate_limit()
         return self._make_request("esearch.fcgi", params)
     
-    def _esummary(self, ids: List[str]) -> Dict[str, Any]:
+    def _esummary(self, pmid_list: List[str]) -> Dict[str, Any]:
         """Get summaries for a list of PMIDs."""
+        self._rate_limit()
+        
         params = {
             **COMMON_PARAMS,
             "db": "pubmed",
-            "id": ",".join(ids)
+            "id": ",".join(pmid_list),
+            "retmode": "json"
         }
         
-        self._rate_limit()
         return self._make_request("esummary.fcgi", params)
     
-    def _triage_summary(self, summary: Dict[str, Any]) -> PubMedSummary:
+    def _efetch_abstract(self, pmid: str) -> Optional[str]:
+        """Fetch abstract for a specific PMID."""
+        self._rate_limit()
+        
+        params = {
+            **COMMON_PARAMS,
+            "db": "pubmed",
+            "id": pmid,
+            "rettype": "abstract",
+            "retmode": "text"
+        }
+        
+        try:
+            response = self._make_request("efetch.fcgi", params)
+            abstract_text = response.get("raw", "")
+            
+            # Extract abstract from response
+            if "AB  - " in abstract_text:
+                start = abstract_text.find("AB  - ") + 6
+                end = abstract_text.find("\n", start)
+                if end == -1:
+                    end = len(abstract_text)
+                return abstract_text[start:end].strip()
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Failed to fetch abstract for PMID {pmid}: {e}")
+            return None
+    
+    def _parse_summary(self, summary_data: Dict[str, Any]) -> PubMedSummary:
         """
-        Score a summary for early stopping decision.
+        Parse PubMed summary data.
         
-        Scoring based on your plan:
-        - Direct NCT hit: +3
-        - Phase match: +2  
-        - Title hints: +1 each
-        - Indication match: +1
+        Args:
+            summary_data: Raw summary data from PubMed
+            
+        Returns:
+            Parsed PubMedSummary object
         """
-        pmid = summary.get("uid", "")
-        title = summary.get("title", "").lower()
-        pub_types = summary.get("pubtype", [])
-        secondary_ids = summary.get("articleids", [])
-        mesh_terms = summary.get("mesh", [])
+        pmid = summary_data.get("uid", "")
+        title = summary_data.get("title", "")
+        journal = summary_data.get("fulljournalname", "")
+        pub_date = summary_data.get("pubdate", "")
         
-        # Extract NCT IDs from secondary IDs
-        nct_ids = []
-        for aid in secondary_ids:
-            if aid.get("idtype") == "si" and "NCT" in aid.get("value", ""):
-                nct_ids.append(aid["value"])
+        # Extract publication types
+        pub_types = []
+        if "pubtype" in summary_data:
+            for pt in summary_data["pubtype"]:
+                if isinstance(pt, dict):
+                    pub_types.append(pt.get("name", ""))
+                else:
+                    pub_types.append(str(pt))
         
-        # Score the summary
-        score = 0
+        # Extract secondary IDs (including NCT IDs)
+        secondary_ids = []
+        if "articleids" in summary_data:
+            for aid in summary_data["articleids"]:
+                if aid.get("idtype") == "si" and "NCT" in aid.get("value", ""):
+                    secondary_ids.append(aid["value"])
         
-        # Direct NCT hit (+3)
-        if nct_ids:
-            score += 3
-        
-        # Phase match (+2)
-        phase_terms = ["Clinical Trial, Phase I", "Clinical Trial, Phase II", "Randomized Controlled Trial"]
-        if any(pt in pub_types for pt in phase_terms):
-            score += 2
-        
-        # Title hints (+1 each)
-        hints = [
-            "primary endpoint", "randomized", "double-blind", "p value", 
-            "hazard ratio", "did not meet", "failed to meet", "efficacy",
-            "safety", "tolerability", "dose escalation", "first-in-human"
-        ]
-        score += sum(int(hint in title) for hint in hints)
-        
-        # Indication match via MeSH (+1)
-        if mesh_terms:
-            score += 1
+        # Extract MeSH terms
+        mesh_terms = []
+        if "meshterms" in summary_data:
+            for mesh in summary_data["meshterms"]:
+                if isinstance(mesh, dict):
+                    mesh_terms.append(mesh.get("name", ""))
+                else:
+                    mesh_terms.append(str(mesh))
         
         return PubMedSummary(
             pmid=pmid,
-            title=summary.get("title", ""),
-            journal=summary.get("fulljournalname", ""),
-            pub_date=summary.get("pubdate", ""),
+            title=title,
+            journal=journal,
+            pub_date=pub_date,
             pub_types=pub_types,
-            secondary_ids=[aid.get("value", "") for aid in secondary_ids],
-            mesh_terms=mesh_terms,
-            score=score
+            secondary_ids=secondary_ids,
+            mesh_terms=mesh_terms
         )
     
-    def smart_search(
-        self, 
-        drug_synonyms: List[str], 
-        disease: Optional[str] = None,
-        nct_id: Optional[str] = None,
-        k_top: int = 20,
-        promote_threshold: int = 4
-    ) -> SearchResult:
+    def stage_a_metadata_only(self, trial_id: str, drug_synonyms: List[str], 
+                             disease: Optional[str] = None, 
+                             catalyst_year: Optional[int] = None) -> StageAResult:
         """
-        Execute smart search with early stopping pipeline.
+        Stage A: Pull PMIDs + minimal metadata (free/cheap).
         
         Args:
+            trial_id: Trial identifier
             drug_synonyms: List of drug names/codes
             disease: Optional disease/indication
-            nct_id: Optional NCT ID to anchor search
-            k_top: Number of top results to evaluate
-            promote_threshold: Score threshold for promotion
+            catalyst_year: Year of catalyst event for scoring
             
         Returns:
-            SearchResult with decision and data
+            StageAResult with metadata candidates
         """
-        logger.info(f"Starting smart search for drug: {drug_synonyms}")
-        if disease:
-            logger.info(f"With disease: {disease}")
-        if nct_id:
-            logger.info(f"Anchored to NCT: {nct_id}")
+        start_time = time.time()
+        logger.info(f"Stage A: Metadata-only search for trial {trial_id}")
         
-        all_summaries = []
-        
-        # 1. Build and execute the four phase queries
-        phase_queries = self._build_phase_queries(drug_synonyms, disease)
-        
-        for phase_name, query in phase_queries.items():
-            logger.info(f"Searching {phase_name}: {query[:100]}...")
+        # Build search query using the new method for proper NCT handling
+        if drug_synonyms and any(drug.startswith('"NCT') for drug in drug_synonyms):
+            # Extract NCT ID from the first NCT synonym
+            nct_synonym = next(drug for drug in drug_synonyms if drug.startswith('"NCT'))
+            nct_id = nct_synonym.split('"')[1]  # Extract NCT ID from "NCT05111574"[si]
             
-            try:
-                # Search
-                search_result = self._esearch(query, retmax=k_top)
-                id_list = search_result.get("esearchresult", {}).get("idlist", [])
-                
-                if id_list:
-                    logger.info(f"Found {len(id_list)} results for {phase_name}")
+            # Extract other drug terms (non-NCT)
+            other_drugs = [drug.split('"')[1] for drug in drug_synonyms if not drug.startswith('"NCT')]
+            
+            query = self._build_search_query(nct_id, other_drugs)
+        else:
+            # Fallback to old method for non-NCT searches
+            query = self._build_drug_query(drug_synonyms, disease)
+        
+        logger.info(f"Search query: {query}")
+        
+        try:
+            # Execute search
+            search_result = self._esearch(query, retmax=self.stage_a_batch_size)
+            id_list = search_result.get("esearchresult", {}).get("idlist", [])
+            
+            if not id_list:
+                logger.info(f"No results found for trial {trial_id}")
+                return StageAResult(
+                    trial_id=trial_id,
+                    candidates=[],
+                    total_found=0,
+                    processing_time=time.time() - start_time
+                )
+            
+            logger.info(f"Found {len(id_list)} results for trial {trial_id}")
+            
+            # Get summaries
+            summaries = self._esummary(id_list)
+            result_data = summaries.get("result", {})
+            
+            # Process summaries and create candidates
+            candidates = []
+            for pmid in id_list:
+                if pmid in result_data:
+                    summary_data = result_data[pmid]
+                    summary = self._parse_summary(summary_data)
                     
-                    # Get summaries
-                    summaries = self._esummary(id_list)
-                    result_data = summaries.get("result", {})
+                    # Score metadata (U0 score)
+                    if catalyst_year:
+                        try:
+                            # Extract year from pub_date
+                            year = int(summary.pub_date[:4])
+                        except (ValueError, IndexError):
+                            year = catalyst_year
+                    else:
+                        year = 2024  # Default
                     
-                    # Process each summary
-                    for pmid in id_list:
-                        if pmid in result_data:
-                            summary_data = result_data[pmid]
-                            summary = self._triage_summary(summary_data)
-                            all_summaries.append(summary)
-                
-            except Exception as e:
-                logger.error(f"Error searching {phase_name}: {e}")
-                continue
-        
-        # 2. Add NCT anchor query if provided
-        if nct_id:
-            try:
-                nct_query = f'"{nct_id}"[si]'
-                logger.info(f"Searching NCT anchor: {nct_query}")
-                
-                search_result = self._esearch(nct_query, retmax=10)
-                id_list = search_result.get("esearchresult", {}).get("idlist", [])
-                
-                if id_list:
-                    summaries = self._esummary(id_list)
-                    result_data = summaries.get("result", {})
+                    u0_score = self.scorer.score_metadata(
+                        summary.title,
+                        summary.pub_types[0] if summary.pub_types else "Unknown",
+                        year,
+                        catalyst_year or 2024
+                    )
                     
-                    for pmid in id_list:
-                        if pmid in result_data:
-                            summary_data = result_data[pmid]
-                            summary = self._triage_summary(summary_data)
-                            # Boost score for direct NCT match
-                            summary.score += 3
-                            all_summaries.append(summary)
-                            
-            except Exception as e:
-                logger.error(f"Error searching NCT anchor: {e}")
+                    summary.u0_score = u0_score
+                    
+                    # Create document candidate
+                    candidate = DocumentCandidate(
+                        doc_id=pmid,
+                        trial_id=trial_id,
+                        source_type="pubmed",
+                        u0_score=u0_score,
+                        metadata={
+                            'title': summary.title,
+                            'journal': summary.journal,
+                            'pub_date': summary.pub_date,
+                            'pub_types': summary.pub_types,
+                            'nct_ids': summary.secondary_ids,
+                            'mesh_terms': summary.mesh_terms
+                        }
+                    )
+                    
+                    candidates.append(candidate)
+            
+            # Sort by U0 score (descending)
+            candidates.sort(key=lambda x: x.u0_score, reverse=True)
+            
+            # Add to document queue
+            self.queue.add_trial_candidates(trial_id, candidates)
+            
+            processing_time = time.time() - start_time
+            logger.info(f"Stage A complete for trial {trial_id}: {len(candidates)} candidates in {processing_time:.2f}s")
+            
+            return StageAResult(
+                trial_id=trial_id,
+                candidates=candidates,
+                total_found=len(candidates),
+                processing_time=processing_time
+            )
+            
+        except Exception as e:
+            logger.error(f"Stage A failed for trial {trial_id}: {e}")
+            return StageAResult(
+                trial_id=trial_id,
+                candidates=[],
+                total_found=0,
+                processing_time=time.time() - start_time
+            )
+    
+    def stage_b_abstract_evaluation(self, trial_id: str) -> StageBResult:
+        """
+        Stage B: Fetch abstracts for high-U0 candidates (still cheap).
         
-        # 3. Deduplicate and sort by score
-        unique_summaries = {}
-        for summary in all_summaries:
-            if summary.pmid not in unique_summaries:
-                unique_summaries[summary.pmid] = summary
-            else:
-                # Keep the higher score
-                if summary.score > unique_summaries[summary.pmid].score:
-                    unique_summaries[summary.pmid] = summary
+        Args:
+            trial_id: Trial identifier
+            
+        Returns:
+            StageBResult with promoted and parked candidates
+        """
+        start_time = time.time()
+        logger.info(f"Stage B: Abstract evaluation for trial {trial_id}")
         
-        top_summaries = sorted(
-            unique_summaries.values(), 
-            key=lambda x: x.score, 
-            reverse=True
-        )[:k_top]
+        # Get candidates from queue
+        candidates = self.queue.get_trial_candidates(trial_id)
         
-        # 4. Smart filtering logic (commented out for now)
-        # if not top_summaries:
-        #     return SearchResult(
-        #         decision="stop",
-        #         reason="no hits found",
-        #         total_hits=0,
-        #         top_summaries=[]
-        #     )
-        
-        # best_score = top_summaries[0].score
-        # logger.info(f"Best summary score: {best_score}")
-        
-        # if best_score < promote_threshold:
-        #     return SearchResult(
-        #         decision="stop",
-        #         reason=f"best_score={best_score} below threshold={promote_threshold}",
-        #         total_hits=len(all_summaries),
-        #         top_summaries=top_summaries
-        #     )
-        
-        # 5. Promote promising papers
-        # promoted_ids = [s.pmid for s in top_summaries if s.score >= promote_threshold]
-        
-        # logger.info(f"Promoting {len(promoted_ids)} papers for deep fetch")
-        
-        # return SearchResult(
-        #     decision="promote",
-        #     reason=f"best_score={best_score} above threshold={promote_threshold}",
-        #     total_hits=len(all_summaries),
-        #     top_summaries=top_summaries,
-        #     promoted_ids=promoted_ids
-        # )
-        
-        # 4. Simple approach: return all papers (no filtering)
-        if not top_summaries:
-            return SearchResult(
-                decision="no_results",
-                reason="no hits found",
-                total_hits=0,
-                top_summaries=[],
-                promoted_ids=[]
+        if not candidates:
+            logger.info(f"No candidates found for trial {trial_id}")
+            return StageBResult(
+                trial_id=trial_id,
+                promoted_candidates=[],
+                parked_candidates=[],
+                total_evaluated=0,
+                processing_time=time.time() - start_time
             )
         
-        # 5. Return all papers with their scores
-        all_pmid_ids = [s.pmid for s in top_summaries]
+        # Filter candidates by U0 threshold - use scorer's tau_abstract instead of hardcoded threshold
+        high_u0_candidates = [
+            c for c in candidates 
+            if c.u0_score >= self.scorer.config.tau_abstract
+        ]
         
-        logger.info(f"Returning {len(all_pmid_ids)} papers (no filtering applied)")
+        logger.info(f"🔍 STAGE B: Filtered {len(candidates)} candidates to {len(high_u0_candidates)} high-U0 candidates")
+        logger.info(f"🔍 STAGE B: Using threshold {self.scorer.config.tau_abstract}")
         
-        return SearchResult(
-            decision="all_papers",
-            reason=f"Returning all {len(all_pmid_ids)} papers found",
-            total_hits=len(all_summaries),
-            top_summaries=top_summaries,
-            promoted_ids=all_pmid_ids
+        # Log candidate scores for debugging
+        for i, candidate in enumerate(high_u0_candidates[:5]):  # Log first 5 candidates
+            logger.info(f"🔍 STAGE B: High-U0 candidate {i+1}: doc_id={candidate.doc_id}, u0={candidate.u0_score}")
+        
+        if not high_u0_candidates:
+            logger.warning(f"🔍 STAGE B: No candidates passed U0 threshold {self.scorer.config.tau_abstract}")
+            return StageBResult(
+                trial_id=trial_id,
+                promoted_candidates=[],
+                parked_candidates=[],
+                total_evaluated=0,
+                processing_time=time.time() - start_time
+            )
+        
+        # Limit to max abstracts per trial
+        if len(high_u0_candidates) > self.max_abstracts_per_trial:
+            high_u0_candidates = high_u0_candidates[:self.max_abstracts_per_trial]
+        
+        logger.info(f"Evaluating {len(high_u0_candidates)} high-U0 candidates for trial {trial_id}")
+        
+        promoted_candidates = []
+        parked_candidates = []
+        
+        for candidate in high_u0_candidates:
+            try:
+                # Fetch abstract
+                abstract = self._efetch_abstract(candidate.doc_id)
+                
+                if abstract:
+                    # Score abstract (U1 score)
+                    u1_score = self.scorer.score_abstract(abstract)
+                    candidate.u1_score = u1_score
+                    
+                    # Update metadata
+                    candidate.metadata['abstract'] = abstract
+                    candidate.metadata['u1_score'] = u1_score
+                    
+                    # Determine promotion based on U1 score
+                    if self.scorer.should_promote_to_full_text(u1_score):
+                        promoted_candidates.append(candidate)
+                        logger.debug(f"Promoted candidate {candidate.doc_id} (U1={u1_score:.3f})")
+                    else:
+                        parked_candidates.append(candidate)
+                        logger.debug(f"Parked candidate {candidate.doc_id} (U1={u1_score:.3f})")
+                else:
+                    # No abstract available, park
+                    parked_candidates.append(candidate)
+                    logger.debug(f"Parked candidate {candidate.doc_id} (no abstract)")
+                    
+            except Exception as e:
+                logger.warning(f"Failed to process candidate {candidate.doc_id}: {e}")
+                parked_candidates.append(candidate)
+        
+        processing_time = time.time() - start_time
+        logger.info(f"Stage B complete for trial {trial_id}: {len(promoted_candidates)} promoted, {len(parked_candidates)} parked in {processing_time:.2f}s")
+        
+        return StageBResult(
+            trial_id=trial_id,
+            promoted_candidates=promoted_candidates,
+            parked_candidates=parked_candidates,
+            total_evaluated=len(high_u0_candidates),
+            processing_time=processing_time
         )
+    
+    def stage_c_full_text_on_demand(self, trial_id: str, 
+                                   doc_id: str, reason: str) -> Optional[StageCResult]:
+        """
+        Stage C: Full-text only when LLM requests it (rare).
+        
+        Args:
+            trial_id: Trial identifier
+            doc_id: Document identifier (PMID)
+            reason: Reason for requesting full text
+            
+        Returns:
+            StageCResult if approved, None if denied
+        """
+        start_time = time.time()
+        logger.info(f"Stage C: Full-text request for trial {trial_id}, doc {doc_id}")
+        
+        # Check if LLM evaluation approves the request
+        if not self.evaluator.request_full_text(doc_id, reason):
+            logger.info(f"Full-text request denied for doc {doc_id}")
+            return None
+        
+        try:
+            # This would typically fetch from PMC or other open access sources
+            # For now, we'll simulate the process
+            
+            # Create result
+            processing_time = time.time() - start_time
+            logger.info(f"Stage C complete for trial {trial_id}, doc {doc_id} in {processing_time:.2f}s")
+            
+            return StageCResult(
+                trial_id=trial_id,
+                full_text_requests=[{"doc_id": doc_id, "reason": reason}],
+                documents_fetched=[{"doc_id": doc_id, "status": "fetched"}],
+                processing_time=processing_time
+            )
+            
+        except Exception as e:
+            logger.error(f"Stage C failed for trial {trial_id}, doc {doc_id}: {e}")
+            return None
+    
+    def run_three_stage_pipeline(self, trial_id: str, drug_synonyms: List[str],
+                                disease: Optional[str] = None,
+                                catalyst_year: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Run the complete three-stage pipeline for a trial.
+        
+        Args:
+            trial_id: Trial identifier
+            drug_synonyms: List of drug names/codes
+            disease: Optional disease/indication
+            catalyst_year: Year of catalyst event
+            
+        Returns:
+            Dictionary with pipeline results
+        """
+        logger.info(f"Starting three-stage pipeline for trial {trial_id}")
+        
+        # Stage A: Metadata-only
+        stage_a_result = self.stage_a_metadata_only(
+            trial_id, drug_synonyms, disease, catalyst_year
+        )
+        
+        if not stage_a_result.candidates:
+            logger.info(f"No candidates found in Stage A for trial {trial_id}")
+            return {
+                'trial_id': trial_id,
+                'stage_a': stage_a_result,
+                'stage_b': None,
+                'stage_c': None,
+                'success': False
+            }
+        
+        # Stage B: Abstract evaluation
+        stage_b_result = self.stage_b_abstract_evaluation(trial_id)
+        
+        # Stage C: Full-text on demand (not automatically triggered)
+        stage_c_result = None
+        
+        # Update trial priority based on results
+        if stage_b_result.promoted_candidates:
+            # High-quality candidates found, increase priority
+            new_priority = 0.8
+        elif stage_b_result.total_evaluated > 0:
+            # Some evaluation done, moderate priority
+            new_priority = 0.5
+        else:
+            # No evaluation, lower priority
+            new_priority = 0.3
+        
+        self.queue.update_trial_priority(trial_id, new_priority)
+        
+        logger.info(f"Three-stage pipeline complete for trial {trial_id}")
+        
+        return {
+            'trial_id': trial_id,
+            'stage_a': stage_a_result,
+            'stage_b': stage_b_result,
+            'stage_c': stage_c_result,
+            'success': True
+        }
+    
+    def get_pipeline_stats(self) -> Dict[str, Any]:
+        """Get statistics from all pipeline components."""
+        return {
+            'queue_stats': self.queue.get_queue_stats(),
+            'evaluation_stats': self.evaluator.get_evaluation_stats(),
+            'scoring_config': {
+                'tau_abstract': self.scorer.config.tau_abstract,
+                'theta_high': self.scorer.config.theta_high,
+                'theta_low': self.scorer.config.theta_low
+            }
+        }
 
 
 # Convenience function for quick testing
-def quick_smart_search(
+def quick_three_stage_search(
+    trial_id: str,
     drug_name: str, 
     disease: Optional[str] = None,
-    nct_id: Optional[str] = None
-) -> SearchResult:
+    catalyst_year: Optional[int] = None
+) -> Dict[str, Any]:
     """
-    Quick smart search for a single drug.
+    Quick three-stage search for a trial.
     
     Args:
+        trial_id: Trial identifier
         drug_name: Drug name (e.g., "ruxolitinib")
         disease: Optional disease (e.g., "myelofibrosis")
-        nct_id: Optional NCT ID
+        catalyst_year: Optional catalyst year
         
     Returns:
-        SearchResult with decision and data
+        Pipeline results dictionary
     """
     client = SmartPubMedClient()
-    return client.smart_search(
+    return client.run_three_stage_pipeline(
+        trial_id=trial_id,
         drug_synonyms=[drug_name],
         disease=disease,
-        nct_id=nct_id
+        catalyst_year=catalyst_year
     )

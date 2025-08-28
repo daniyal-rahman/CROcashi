@@ -24,7 +24,7 @@ from ncfd.db.models import (
 )
 from ncfd.ingest.document_ingest import DocumentIngester
 from ncfd.extract.asset_extractor import extract_all_entities
-from ncfd.mapping.resolver_service import ResolverService
+from ..mapping.resolve_service import ResolverService
 
 logger = logging.getLogger(__name__)
 

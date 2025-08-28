@@ -73,6 +73,12 @@ AssignmentType = SQLEnum("sale", "license", "security", name="assignment_type")
 ArtifactType = SQLEnum("model", "data", "report", "config", name="artifact_type")
 LRScopeEnum = SQLEnum("gate", "signal", name="lr_scope")
 
+# Budget and cost tracking enums
+OperationTypeEnum = PGEnum(
+    "metadata_fetch", "abstract_fetch", "full_text_fetch", "llm_evaluation", 
+    name="operation_type_enum", create_type=True
+)
+
 
 # ---------------------------------------------------------------------------
 # Reference & Identity
@@ -250,6 +256,11 @@ class Trial(Base):
     catalysts: Mapped[List["Catalyst"]] = relationship(back_populates="trial", cascade="all, delete-orphan")
     labels: Mapped[List["Label"]] = relationship(back_populates="trial", cascade="all, delete-orphan")
     disclosures: Mapped[List["Disclosure"]] = relationship(back_populates="trial", cascade="all, delete-orphan")
+    # Literature scoring and budget monitoring relationships
+    evaluations: Mapped[List["TrialEvaluation"]] = relationship(back_populates="trial", cascade="all, delete-orphan")
+    document_utilities: Mapped[List["DocumentUtility"]] = relationship(back_populates="trial", cascade="all, delete-orphan")
+    priority_queue: Mapped[List["TrialPriorityQueue"]] = relationship(back_populates="trial", cascade="all, delete-orphan")
+    cost_records: Mapped[List["CostRecord"]] = relationship(back_populates="trial", cascade="all, delete-orphan")
     # Documents are linked through DocumentLink table
     # documents: Mapped[List["Document"]] = relationship(back_populates="trials")
 
@@ -679,6 +690,8 @@ class Document(Base):
     entities: Mapped[List["DocumentEntity"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     links: Mapped[List["DocumentLink"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     notes: Mapped[List["DocumentNote"]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    # Literature scoring relationship
+    utilities: Mapped[List["DocumentUtility"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     # Trials are linked through DocumentLink table
     # trials: Mapped[List["Trial"]] = relationship(back_populates="documents")
 
@@ -846,3 +859,158 @@ class AssetAlias(Base):
         ForeignKeyConstraint(['asset_id'], ['assets.asset_id'], ondelete='CASCADE'),
         CheckConstraint("alias_type::text = ANY (ARRAY['inn','internal_code','generic','brand','misspelling','db_id','code']::text[])", name='ck_asset_aliases_alias_type'),
     )
+
+
+# ---------------------------------------------------------------------------
+# Literature Scoring & Budget Monitoring (Phase 5)
+# ---------------------------------------------------------------------------
+
+class TrialEvaluation(Base):
+    """Trial evaluations table - Store LLM evaluation results and trial-level posterior probabilities."""
+    __tablename__ = "trial_evaluations"
+
+    evaluation_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    trial_id: Mapped[int] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"), nullable=False)
+    run_id: Mapped[str] = mapped_column(Text, nullable=False)  # Links to runs table for lineage tracking
+    evaluation_status: Mapped[str] = mapped_column(Text, nullable=False, server_default='active')  # active, promoted, parked, stopped, completed
+    prior_p_short: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 4))  # Prior probability of short trial
+    posterior_p_short: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 4))  # Current posterior probability
+    llm_evaluation_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))  # Number of LLM evaluations performed
+    last_evaluation_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))  # Timestamp of last LLM evaluation
+    evaluation_summary: Mapped[Optional[str]] = mapped_column(Text)  # Summary of LLM evaluation results
+    metadata_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB)  # Additional metadata from evaluations
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    trial: Mapped["Trial"] = relationship(back_populates="evaluations")
+
+    __table_args__ = (
+        Index("idx_trial_evaluations_trial_id", "trial_id"),
+        Index("idx_trial_evaluations_run_id", "run_id"),
+        Index("idx_trial_evaluations_status", "evaluation_status"),
+        Index("idx_trial_evaluations_posterior", "posterior_p_short"),
+        UniqueConstraint("trial_id", "run_id", name="uq_trial_evaluations_trial_run"),
+        CheckConstraint("prior_p_short BETWEEN 0 AND 1", name="ck_trial_evaluations_prior_range"),
+        CheckConstraint("posterior_p_short BETWEEN 0 AND 1", name="ck_trial_evaluations_posterior_range"),
+    )
+
+
+class DocumentUtility(Base):
+    """Document utilities table - Store U0 and U1 scores for documents."""
+    __tablename__ = "document_utilities"
+
+    utility_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    doc_id: Mapped[int] = mapped_column(ForeignKey("documents.doc_id", ondelete="CASCADE"), nullable=False)
+    trial_id: Mapped[int] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"), nullable=False)
+    run_id: Mapped[str] = mapped_column(Text, nullable=False)  # Links to runs table for lineage tracking
+    u0_score: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)  # Metadata-only utility score (0-1)
+    u1_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 4))  # Abstract-based utility score (0-1)
+    uncertainty: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 4))  # Uncertainty in U1 score
+    scoring_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB)  # Detailed scoring breakdown
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    document: Mapped["Document"] = relationship(back_populates="utilities")
+    trial: Mapped["Trial"] = relationship(back_populates="document_utilities")
+
+    __table_args__ = (
+        Index("idx_document_utilities_doc_id", "doc_id"),
+        Index("idx_document_utilities_trial_id", "trial_id"),
+        Index("idx_document_utilities_run_id", "run_id"),
+        Index("idx_document_utilities_u0_score", "u0_score"),
+        Index("idx_document_utilities_u1_score", "u1_score"),
+        Index("idx_document_utilities_combined_score", "trial_id", "u0_score", "u1_score"),
+        UniqueConstraint("doc_id", "trial_id", "run_id", name="uq_document_utilities_doc_trial_run"),
+        CheckConstraint("u0_score BETWEEN 0 AND 1", name="ck_document_utilities_u0_range"),
+        CheckConstraint("u1_score BETWEEN 0 AND 1 OR u1_score IS NULL", name="ck_document_utilities_u1_range"),
+        CheckConstraint("uncertainty BETWEEN 0 AND 1 OR uncertainty IS NULL", name="ck_document_utilities_uncertainty_range"),
+    )
+
+
+class TrialPriorityQueue(Base):
+    """Trial priority queue table - Store trial priority and status information."""
+    __tablename__ = "trial_priority_queue"
+
+    queue_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    trial_id: Mapped[int] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"), nullable=False)
+    run_id: Mapped[str] = mapped_column(Text, nullable=False)  # Links to runs table for lineage tracking
+    priority_score: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)  # Computed priority score
+    queue_status: Mapped[str] = mapped_column(Text, nullable=False, server_default='active')  # active, promoted, parked, stopped, completed
+    last_processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))  # When trial was last processed
+    processing_stage: Mapped[Optional[str]] = mapped_column(Text)  # Current stage: 'stage_a', 'stage_b', 'stage_c'
+    stage_a_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    stage_b_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    stage_c_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    queue_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB)  # Additional queue management data
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    trial: Mapped["Trial"] = relationship(back_populates="priority_queue")
+
+    __table_args__ = (
+        Index("idx_trial_priority_queue_trial_id", "trial_id"),
+        Index("idx_trial_priority_queue_run_id", "run_id"),
+        Index("idx_trial_priority_queue_priority", "priority_score"),
+        Index("idx_trial_priority_queue_status", "queue_status"),
+        Index("idx_trial_priority_queue_stage", "processing_stage"),
+        Index("idx_trial_priority_queue_active", "queue_status", "priority_score"),
+        UniqueConstraint("trial_id", "run_id", name="uq_trial_priority_queue_trial_run"),
+    )
+
+
+class CostRecord(Base):
+    """Cost records table - Store budget monitoring data."""
+    __tablename__ = "cost_records"
+
+    cost_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    transaction_id: Mapped[str] = mapped_column(Text, nullable=False)  # Unique transaction identifier
+    trial_id: Mapped[int] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"), nullable=False)
+    run_id: Mapped[str] = mapped_column(Text, nullable=False)  # Links to runs table for lineage tracking
+    operation_type: Mapped[OperationTypeEnum] = mapped_column(OperationTypeEnum, nullable=False)  # metadata_fetch, abstract_fetch, full_text_fetch, llm_evaluation
+    cost_amount: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)  # Cost in dollars
+    operation_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB)  # Additional operation details
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    trial: Mapped["Trial"] = relationship(back_populates="cost_records")
+
+    __table_args__ = (
+        Index("idx_cost_records_trial_id", "trial_id"),
+        Index("idx_cost_records_run_id", "run_id"),
+        Index("idx_cost_records_operation_type", "operation_type"),
+        Index("idx_cost_records_recorded_at", "recorded_at"),
+        Index("idx_cost_records_transaction_id", "transaction_id", unique=True),
+        CheckConstraint("cost_amount > 0", name="ck_cost_records_amount_positive"),
+    )
+
+
+class BudgetPeriod(Base):
+    """Budget periods table - Store budget period information and limits."""
+    __tablename__ = "budget_periods"
+
+    period_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    period_type: Mapped[str] = mapped_column(Text, nullable=False)  # daily, weekly, monthly
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    daily_limit: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)  # Daily cost limit
+    monthly_limit: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)  # Monthly cost limit
+    trial_limit: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)  # Per-trial cost limit
+    total_spent: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default=text("0.00"))  # Total spent in period
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default='ok')  # ok, warning, critical, emergency, exceeded
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("idx_budget_periods_type_start", "period_type", "period_start"),
+        Index("idx_budget_periods_status", "status"),
+        Index("idx_budget_periods_current", "period_type", "period_start", "period_end"),
+        UniqueConstraint("period_type", "period_start", name="uq_budget_periods_type_start"),
+        CheckConstraint("daily_limit > 0 AND monthly_limit > 0 AND trial_limit > 0", name="ck_budget_periods_limits_positive"),
+        CheckConstraint("total_spent >= 0", name="ck_budget_periods_spent_positive"),
+    )
+
+
+

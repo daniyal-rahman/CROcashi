@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from ncfd.db.models import Document, DocumentTextPage, DocumentCitation, DocumentEntity
 from ncfd.config import get_config
+from .document_queue import DocumentCandidate
 
 logger = logging.getLogger(__name__)
 
@@ -586,7 +587,7 @@ class UnpaywallClient:
 
 
 class LiteratureIngester:
-    """Main literature ingestion orchestrator."""
+    """Main literature ingestion orchestrator with new scoring system."""
     
     def __init__(self, db_session: Session, config: Dict[str, Any] = None):
         self.db_session = db_session
@@ -605,11 +606,26 @@ class LiteratureIngester:
             email=self.config.get('unpaywall_email')
         )
         
-        logger.info("Literature ingester initialized")
+        # Initialize Phase 1 components
+        from .literature_scoring import LiteratureScorer
+        from .document_queue import DocumentQueue
+        from .llm_evaluator import LLMEvaluator
+        
+        self.scorer = LiteratureScorer(
+            self.config.get('scoring', {})
+        )
+        self.queue = DocumentQueue(
+            self.config.get('queue', {})
+        )
+        self.evaluator = LLMEvaluator(
+            self.config.get('evaluation', {})
+        )
+        
+        logger.info("Literature ingester initialized with new scoring system")
     
     def ingest_trial_literature(self, nct_id: str, max_pubs: int = 50) -> Dict[str, Any]:
         """
-        Main method: ingest all literature for a clinical trial.
+        Main method: ingest literature for a clinical trial using new scoring system.
         
         Args:
             nct_id: Clinical trial identifier
@@ -636,13 +652,21 @@ class LiteratureIngester:
             
             logger.info(f"Found {len(publications)} publications for trial {nct_id}")
             
-            # Step 2: Process each publication
-            for pub in publications:
+            # Step 2: Score and prioritize publications using new system
+            scored_publications = self._score_publications(publications, nct_id)
+            
+            # Step 3: Add to document queue
+            candidates = self._create_document_candidates(scored_publications, nct_id)
+            self.queue.add_trial_candidates(nct_id, candidates)
+            
+            # Step 4: Process high-priority publications
+            high_priority = [c for c in candidates if c.u0_score >= 0.3]
+            for candidate in high_priority[:max_pubs]:
                 try:
-                    self._process_publication(pub, nct_id)
+                    self._process_publication_with_scoring(candidate, nct_id)
                     results['publications_processed'] += 1
                 except Exception as e:
-                    error_msg = f"Failed to process publication {pub.pmid}: {e}"
+                    error_msg = f"Failed to process publication {candidate.doc_id}: {e}"
                     logger.error(error_msg)
                     results['errors'].append(error_msg)
                     continue
@@ -656,9 +680,108 @@ class LiteratureIngester:
             results['errors'].append(error_msg)
             return results
     
+    def _score_publications(self, publications: List[PubRecord], trial_id: str) -> List[Dict[str, Any]]:
+        """
+        Score publications using the new LiteratureScorer.
+        
+        Args:
+            publications: List of publication records
+            trial_id: Trial identifier
+            
+        Returns:
+            List of scored publications with metadata
+        """
+        scored_publications = []
+        
+        for pub in publications:
+            try:
+                # Extract publication year
+                year = 2024  # Default
+                if pub.publication_date:
+                    year = pub.publication_date.year
+                
+                # Score metadata (U0 score)
+                u0_score = self.scorer.score_metadata(
+                    pub.title,
+                    "Unknown",  # Article type not available in PubRecord
+                    year,
+                    2024  # Default catalyst year
+                )
+                
+                # Create scored publication
+                scored_pub = {
+                    'pub_record': pub,
+                    'u0_score': u0_score,
+                    'metadata': {
+                        'title': pub.title,
+                        'journal': pub.journal,
+                        'publication_date': pub.publication_date,
+                        'abstract': pub.abstract,
+                        'nct_ids': pub.nct_ids
+                    }
+                }
+                
+                scored_publications.append(scored_pub)
+                
+            except Exception as e:
+                logger.warning(f"Failed to score publication: {e}")
+                continue
+        
+        # Sort by U0 score (descending)
+        scored_publications.sort(key=lambda x: x['u0_score'], reverse=True)
+        
+        return scored_publications
+    
+    def _create_document_candidates(self, scored_publications: List[Dict[str, Any]], 
+                                  trial_id: str) -> List[DocumentCandidate]:
+        """
+        Create document candidates from scored publications.
+        
+        Args:
+            scored_publications: List of scored publications
+            trial_id: Trial identifier
+            
+        Returns:
+            List of document candidates
+        """
+        candidates = []
+        
+        for scored_pub in scored_publications:
+            pub = scored_pub['pub_record']
+            
+            candidate = DocumentCandidate(
+                doc_id=pub.pmid or pub.doi or f"doc_{len(candidates)}",
+                trial_id=trial_id,
+                source_type="pubmed",
+                u0_score=scored_pub['u0_score'],
+                metadata=scored_pub['metadata']
+            )
+            
+            candidates.append(candidate)
+        
+        return candidates
+    
+    def _process_publication_with_scoring(self, candidate: DocumentCandidate, trial_id: str) -> None:
+        """
+        Process a publication using the new scoring system.
+        
+        Args:
+            candidate: Document candidate to process
+            trial_id: Trial identifier
+        """
+        # This method would implement the actual processing logic
+        # For now, we'll just log the processing
+        logger.info(f"Processing publication {candidate.doc_id} for trial {trial_id} (U0={candidate.u0_score:.3f})")
+        
+        # TODO: Implement actual publication processing
+        # - Store in database
+        # - Extract entities
+        # - Create document links
+        pass
+    
     def ingest_drug_literature(self, drug_name: str, max_pubs: int = 100) -> Dict[str, Any]:
         """
-        Main method: ingest all literature for a specific drug.
+        Main method: ingest literature for a specific drug using new scoring system.
         
         Args:
             drug_name: Drug name (e.g., "Ruxolitinib")
@@ -679,19 +802,33 @@ class LiteratureIngester:
         }
         
         try:
-            # Step 1: Search PubMed for publications about this drug
+            # Step 1: Search PubMed for drug-related publications
             publications = self.pubmed_client.search_by_drug(drug_name, max_pubs)
             results['publications_found'] = len(publications)
             
             logger.info(f"Found {len(publications)} publications for drug {drug_name}")
             
-            # Step 2: Process each publication
-            for pub in publications:
+            # Step 2: Score and prioritize publications
+            scored_publications = self._score_publications(publications, f"drug_{drug_name}")
+            
+            # Step 3: Process high-priority publications
+            high_priority = [p for p in scored_publications if p['u0_score'] >= 0.3]
+            for scored_pub in high_priority[:max_pubs]:
                 try:
-                    self._process_publication_for_drug(pub, drug_name)
+                    # Create candidate and process
+                    candidate = DocumentCandidate(
+                        doc_id=scored_pub['pub_record'].pmid or scored_pub['pub_record'].doi,
+                        trial_id=f"drug_{drug_name}",
+                        source_type="pubmed",
+                        u0_score=scored_pub['u0_score'],
+                        metadata=scored_pub['metadata']
+                    )
+                    
+                    self._process_publication_with_scoring(candidate, f"drug_{drug_name}")
                     results['publications_processed'] += 1
+                    
                 except Exception as e:
-                    error_msg = f"Failed to process publication {pub.pmid}: {e}"
+                    error_msg = f"Failed to process publication: {e}"
                     logger.error(error_msg)
                     results['errors'].append(error_msg)
                     continue
@@ -705,190 +842,17 @@ class LiteratureIngester:
             results['errors'].append(error_msg)
             return results
     
-    def _process_publication_for_drug(self, pub: PubRecord, drug_name: str) -> None:
-        """Process a single publication for drug literature and store in database."""
-        
-        # Check if document already exists
-        existing_doc = self.db_session.query(Document).filter(
-            Document.pmid == pub.pmid
-        ).first()
-        
-        if existing_doc:
-            logger.info(f"Document already exists for PMID {pub.pmid}")
-            return
-        
-        # Create document record
-        doc = Document(
-            source_type='Abstract' if pub.abstract else 'Paper',
-            source_url=f"https://pubmed.ncbi.nlm.nih.gov/{pub.pmid}/" if pub.pmid else None,
-            title=pub.title,
-            pmid=pub.pmid,
-            pmcid=pub.pmcid,
-            doi=pub.doi,
-            published_at=pub.publication_date,
-            status='discovered',
-            discovered_at=datetime.utcnow()
-        )
-        
-        self.db_session.add(doc)
-        self.db_session.flush()  # Get the doc_id
-        
-        # Create citation record
-        if pub.pmid or pub.doi:
-            citation = DocumentCitation(
-                doc_id=doc.doc_id,
-                doi=pub.doi,
-                pmid=pub.pmid,
-                pmcid=pub.pmcid
-            )
-            self.db_session.add(citation)
-        
-        # Try to get full text if available
-        if pub.pmcid:
-            try:
-                fulltext_doc = self.pmc_client.fetch_fulltext(pub.pmcid)
-                if fulltext_doc:
-                    # Store text pages
-                    for i, text in enumerate(fulltext_doc.text_pages):
-                        text_page = DocumentTextPage(
-                            doc_id=doc.doc_id,
-                            page_no=i + 1,
-                            text=text,
-                            char_count=len(text)
-                        )
-                        self.db_session.add(text_page)
-                    # Note: results is not accessible here, this is just for logging
-                    logger.info(f"Retrieved full text for PMID {pub.pmid}")
-            except Exception as e:
-                logger.warning(f"Failed to retrieve full text for PMID {pub.pmid}: {e}")
-        
-        # Store abstract as text page if no full text
-        if not pub.pmcid and pub.abstract:
-            text_page = DocumentTextPage(
-                doc_id=doc.doc_id,
-                page_no=1,
-                text=pub.abstract,
-                char_count=len(pub.abstract)
-            )
-            self.db_session.add(text_page)
-        
-        self.db_session.commit()
-        logger.info(f"Created document for PMID {pub.pmid}")
-    
-    def _process_publication(self, pub: PubRecord, nct_id: str) -> None:
-        """Process a single publication and store in database."""
-        
-        # Check if document already exists
-        existing_doc = self.db_session.query(Document).filter(
-            Document.pmid == pub.pmid
-        ).first()
-        
-        if existing_doc:
-            logger.info(f"Document already exists for PMID {pub.pmid}")
-            return
-        
-        # Create document record
-        doc = Document(
-            source_type='Abstract' if pub.abstract else 'Paper',
-            source_url=f"https://pubmed.ncbi.nlm.nih.gov/{pub.pmid}/" if pub.pmid else None,
-            title=pub.title,
-            pmid=pub.pmid,
-            pmcid=pub.pmcid,
-            doi=pub.doi,
-            nct_id=nct_id,
-            published_at=pub.publication_date,
-            status='discovered',
-            discovered_at=datetime.utcnow()
-        )
-        
-        self.db_session.add(doc)
-        self.db_session.flush()  # Get the doc_id
-        
-        # Create citation record
-        if pub.pmid or pub.doi:
-            citation = DocumentCitation(
-                doc_id=doc.doc_id,
-                doi=pub.doi,
-                pmid=pub.pmid,
-                pmcid=pub.pmcid,
-                nct_id=nct_id
-            )
-            self.db_session.add(citation)
-        
-        # Try to get full text if available
-        if pub.pmcid:
-            try:
-                fulltext_doc = self.pmc_client.fetch_fulltext(pub.pmcid)
-                if fulltext_doc:
-                    # Store text pages
-                    for i, text in enumerate(fulltext_doc.text_pages):
-                        text_page = DocumentTextPage(
-                            doc_id=doc.doc_id,
-                            page_no=i + 1,
-                            text=text,
-                            char_count=len(text)
-                        )
-                        self.db_session.add(text_page)
-                    
-                    # Update document status
-                    doc.status = 'fetched'
-                    doc.fetched_at = datetime.utcnow()
-                    doc.storage_uri = fulltext_doc.url
-                    doc.content_type = fulltext_doc.content_type
-                    
-                    logger.info(f"Retrieved fulltext for PMID {pub.pmid}")
-                    
-            except Exception as e:
-                logger.warning(f"Failed to retrieve fulltext for PMID {pub.pmid}: {e}")
-        
-        # Try to get Crossref metadata if DOI available
-        if pub.doi:
-            try:
-                crossref_meta = self.crossref_client.get_metadata(pub.doi)
-                if crossref_meta:
-                    # Update document with Crossref metadata
-                    doc.title = crossref_meta.title or doc.title
-                    doc.published_at = crossref_meta.publication_date or doc.published_at
-                    
-                    # Check OA status
-                    oa_record = self.unpaywall_client.get_oa_status(pub.doi)
-                    if oa_record:
-                        doc.oa_status = oa_record.oa_status
-                        
-                        # If PMC URL available, try to get full text
-                        if oa_record.pmc_url and not doc.storage_uri:
-                            try:
-                                # Extract PMC ID from URL
-                                pmc_match = re.search(r'PMC\d+', oa_record.pmc_url)
-                                if pmc_match:
-                                    pmc_id = pmc_match.group(0)
-                                    fulltext_doc = self.pmc_client.fetch_fulltext(pmc_id)
-                                    if fulltext_doc:
-                                        # Store text pages
-                                        for i, text in enumerate(fulltext_doc.text_pages):
-                                            text_page = DocumentTextPage(
-                                                doc_id=doc.doc_id,
-                                                page_no=i + 1,
-                                                text=text,
-                                                char_count=len(text)
-                                            )
-                                            self.db_session.add(text_page)
-                                        
-                                        doc.status = 'fetched'
-                                        doc.fetched_at = datetime.utcnow()
-                                        doc.storage_uri = fulltext_doc.url
-                                        doc.content_type = fulltext_doc.content_type
-                                        
-                                        logger.info(f"Retrieved fulltext via Unpaywall for DOI {pub.doi}")
-                            except Exception as e:
-                                logger.warning(f"Failed to retrieve fulltext via Unpaywall for DOI {pub.doi}: {e}")
-                    
-            except Exception as e:
-                logger.warning(f"Failed to get Crossref metadata for DOI {pub.doi}: {e}")
-        
-        # Commit the document
-        self.db_session.commit()
-        logger.info(f"Stored document for PMID {pub.pmid} (doc_id: {doc.doc_id})")
+    def get_ingestion_stats(self) -> Dict[str, Any]:
+        """Get statistics from all ingestion components."""
+        return {
+            'queue_stats': self.queue.get_queue_stats(),
+            'evaluation_stats': self.evaluator.get_evaluation_stats(),
+            'scoring_config': {
+                'tau_abstract': self.scorer.config.tau_abstract,
+                'theta_high': self.scorer.config.theta_high,
+                'theta_low': self.scorer.config.theta_low
+            }
+        }
 
 
 # Convenience functions as specified in the document

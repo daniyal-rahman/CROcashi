@@ -1,0 +1,197 @@
+# Literature Pipeline Configuration
+# This file configures the three-stage literature processing pipeline
+
+# Scoring Configuration
+scoring:
+  # Metadata scoring weights (U0 scores)
+  phase_3_weight: 0.25
+  randomization_weight: 0.20
+  double_blind_weight: 0.10
+  nct_mention_weight: 0.10
+  rct_type_weight: 0.20
+  recency_weight: 0.15
+  
+  # Abstract scoring weights (U1 scores)
+  negative_signal_weight: 0.45
+  positive_signal_weight: 0.00
+  sample_size_weight: 0.15
+  structural_weight: 0.10
+  
+  # Recency parameters
+  recency_months: 18
+  
+  # Thresholds
+  tau_abstract: 0.10      # Lowered from 0.40 so U0=0.15 docs can pass through
+  theta_high: 0.80        # High threshold for LLM stopping
+  theta_low: 0.20         # Low threshold for LLM stopping
+  delta_min: 0.05         # Minimum change for plateau detection
+
+# Queue Management Configuration
+queue:
+  max_trials_per_batch: 10
+  max_candidates_per_trial: 20
+  priority_update_interval: 300  # seconds
+  trial_cleanup_interval: 86400  # 24 hours in seconds
+  max_parked_trials: 100
+  max_failed_trials: 50
+
+# LLM Evaluation Configuration
+evaluation:
+  eval_every_docs: 3              # Evaluate every N documents
+  theta_high: 0.80               # High confidence threshold
+  theta_low: 0.20                # Low confidence threshold
+  max_evaluation_rounds: 10      # Maximum evaluation rounds per trial
+  plateau_detection_threshold: 0.05  # Minimum change for plateau detection
+  confidence_threshold: 0.75     # Minimum confidence for decisions
+  
+  # LLM API Configuration
+  llm_provider: "openai"         # openai, anthropic, local
+  llm_model: "gpt-4"            # Model to use for evaluation
+  max_tokens_per_eval: 1000     # Maximum tokens per evaluation
+  temperature: 0.1               # LLM temperature for evaluation
+  
+  # Rate Limiting
+  max_evaluations_per_hour: 100
+  evaluation_cooldown: 60        # seconds between evaluations
+
+# Smart PubMed Client Configuration
+smart_pubmed:
+  # Stage A: Metadata-only
+  stage_a_batch_size: 100        # Number of PMIDs to fetch per batch
+  stage_a_max_retries: 3         # Maximum retries for failed requests
+  stage_a_rate_limit: 0.45       # Rate limit in seconds (PubMed API limit)
+  
+  # Stage B: Abstract evaluation
+  stage_b_threshold: 0.3         # U0 threshold for abstract fetching
+  max_abstracts_per_trial: 8     # Maximum abstracts to fetch per trial
+  stage_b_rate_limit: 0.5        # Rate limit for abstract fetching
+  
+  # Stage C: Full-text (conditional)
+  enable_stage_c: true           # Enable full-text retrieval
+  max_full_text_per_trial: 2     # Maximum full-text requests per trial
+  full_text_approval_required: true  # Require LLM approval for full-text
+  
+  # PubMed API Configuration
+  base_url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+  tool_name: "ncfd"
+  email: "ncfd@example.com"
+  user_agent: "NCFD-Smart-PubMed/1.0"
+
+# Pipeline Configuration
+pipeline:
+  enable_stage_c: true           # Enable Stage C (full-text)
+  auto_evaluation: true          # Enable automatic LLM evaluation
+  evaluation_interval: 3         # Evaluate every N documents
+  max_pipeline_retries: 3        # Maximum retries for failed stages
+  stage_timeout: 300             # Timeout for each stage in seconds
+  
+  # Batch Processing
+  batch_size: 5                  # Number of trials to process in batch
+  batch_delay: 1                 # Delay between batches in seconds
+  max_concurrent_pipelines: 3    # Maximum concurrent pipeline executions
+  
+  # Error Handling
+  continue_on_stage_failure: false  # Continue pipeline if stage fails
+  log_failed_stages: true        # Log details of failed stages
+  retry_failed_stages: true      # Retry failed stages
+
+# Budget Management Configuration
+budget:
+  # Cost Limits
+  daily_cost_limit: 100.00       # Daily cost limit in USD
+  monthly_cost_limit: 2500.00    # Monthly cost limit in USD
+  trial_cost_limit: 10.00        # Maximum cost per trial
+  
+  # Cost Estimates (per operation)
+  costs:
+    metadata_fetch: 0.001        # Cost per metadata fetch
+    abstract_fetch: 0.01         # Cost per abstract fetch
+    full_text_fetch: 0.50        # Cost per full-text fetch
+    llm_evaluation: 0.05         # Cost per LLM evaluation
+  
+  # Budget Alerts
+  alert_thresholds:
+    warning: 0.75                # Warning at 75% of limit
+    critical: 0.90               # Critical at 90% of limit
+    emergency: 0.95              # Emergency at 95% of limit
+  
+  # Budget Reset
+  reset_schedule: "monthly"      # monthly, weekly, daily
+  reset_day: 1                   # Day of month/week for reset
+
+# Storage Configuration
+storage:
+  # Document Storage
+  max_metadata_size: 1024        # Maximum metadata size in bytes
+  max_abstract_size: 10000       # Maximum abstract size in bytes
+  max_full_text_size: 1048576    # Maximum full-text size in bytes (1MB)
+  
+  # Retention Policies
+  metadata_retention_days: 365   # Keep metadata for 1 year
+  abstract_retention_days: 180   # Keep abstracts for 6 months
+  full_text_retention_days: 90   # Keep full-text for 3 months
+  
+  # Storage Backends
+  primary_backend: "local"       # local, s3, gcs
+  backup_backend: "s3"           # Backup storage backend
+  compression_enabled: true      # Enable compression for full-text
+  
+  # S3 Configuration (if using S3)
+  s3:
+    bucket_name: "ncfd-literature"
+    region: "us-east-1"
+    prefix: "literature/"
+    lifecycle_policy: true
+
+# Monitoring Configuration
+monitoring:
+  # Metrics Collection
+  collect_metrics: true           # Enable metrics collection
+  metrics_interval: 60           # Metrics collection interval in seconds
+  
+  # Performance Monitoring
+  track_response_times: true     # Track API response times
+  track_error_rates: true        # Track error rates
+  track_cost_per_trial: true     # Track cost per trial
+  
+  # Alerting
+  enable_alerts: true            # Enable alerting
+  alert_channels: ["email", "slack"]  # Alert channels
+  
+  # Logging
+  log_level: "INFO"              # Logging level
+  log_format: "json"             # Log format
+  log_retention_days: 30         # Log retention period
+
+# Security Configuration
+security:
+  # API Keys
+  encrypt_api_keys: true         # Encrypt API keys in storage
+  key_rotation_days: 90          # Rotate API keys every 90 days
+  
+  # Access Control
+  require_authentication: true   # Require authentication for pipeline
+  allowed_ips: []                # List of allowed IP addresses
+  
+  # Data Privacy
+  anonymize_patient_data: true   # Anonymize any patient data
+  data_encryption: true          # Encrypt sensitive data
+  audit_logging: true            # Enable audit logging
+
+# Development Configuration
+development:
+  # Debug Mode
+  debug_mode: false              # Enable debug mode
+  verbose_logging: false         # Enable verbose logging
+  
+  # Testing
+  mock_llm_responses: false      # Mock LLM responses for testing
+  mock_pubmed_responses: false   # Mock PubMed responses for testing
+  
+  # Performance Testing
+  enable_profiling: false        # Enable performance profiling
+  profile_output_file: "pipeline_profile.json"
+  
+  # Feature Flags
+  experimental_features: false   # Enable experimental features
+  beta_features: false           # Enable beta features

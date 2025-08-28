@@ -78,6 +78,91 @@ class DocumentIngester:
         self.session.headers.update({
             'User-Agent': 'NCFD-Document-Ingester/1.0'
         })
+        
+        # Initialize literature pipeline if available
+        self.literature_pipeline = None
+        try:
+            from .literature_pipeline import LiteraturePipeline
+            pipeline_config = self.storage_config.get('literature_pipeline', {})
+            if pipeline_config:
+                self.literature_pipeline = LiteraturePipeline(pipeline_config)
+                logger.info("Literature pipeline initialized")
+        except ImportError:
+            logger.info("Literature pipeline not available")
+        except Exception as e:
+            logger.warning(f"Failed to initialize literature pipeline: {e}")
+    
+    def run_literature_pipeline(self, trial_id: str, drug_synonyms: List[str],
+                               disease: Optional[str] = None,
+                               catalyst_year: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Run the literature pipeline for a trial using the new three-stage system.
+        
+        Args:
+            trial_id: Trial identifier
+            drug_synonyms: List of drug names/codes
+            disease: Optional disease/indication
+            catalyst_year: Year of catalyst event
+            
+        Returns:
+            Dictionary with pipeline results
+        """
+        if not self.literature_pipeline:
+            logger.error("Literature pipeline not available")
+            return {'error': 'Literature pipeline not available'}
+        
+        try:
+            logger.info(f"Running literature pipeline for trial {trial_id}")
+            
+            # Run the complete pipeline
+            result = self.literature_pipeline.run_pipeline(
+                trial_id=trial_id,
+                drug_synonyms=drug_synonyms,
+                disease=disease,
+                catalyst_year=catalyst_year
+            )
+            
+            # Convert to dictionary format for backward compatibility
+            pipeline_dict = {
+                'trial_id': result.trial_id,
+                'success': result.overall_success,
+                'total_duration': result.total_duration,
+                'final_decision': result.final_decision.value,
+                'stages': [
+                    {
+                        'name': stage.stage_name,
+                        'success': stage.success,
+                        'duration': stage.duration,
+                        'results': stage.results,
+                        'error': stage.error_message
+                    }
+                    for stage in result.stages
+                ],
+                'metadata': result.metadata
+            }
+            
+            logger.info(f"Literature pipeline completed for trial {trial_id}")
+            return pipeline_dict
+            
+        except Exception as e:
+            logger.error(f"Literature pipeline failed for trial {trial_id}: {e}")
+            return {'error': str(e)}
+    
+    def get_literature_pipeline_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics from the literature pipeline.
+        
+        Returns:
+            Dictionary with pipeline statistics
+        """
+        if not self.literature_pipeline:
+            return {'error': 'Literature pipeline not available'}
+        
+        try:
+            return self.literature_pipeline.get_pipeline_stats()
+        except Exception as e:
+            logger.error(f"Failed to get pipeline stats: {e}")
+            return {'error': str(e)}
     
     def discover_company_pr_ir(self, company_domains: List[str]) -> List[Dict[str, Any]]:
         """

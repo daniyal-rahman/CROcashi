@@ -7,6 +7,16 @@ from ncfd.mapping.normalize import norm_name
 from ncfd.mapping.candidates import candidate_retrieval
 from ncfd.mapping.probabilistic import score_candidates, decide_probabilistic
 
+class ResolverService:
+    """Simple stub for ResolverService - will be replaced by new architecture."""
+    
+    def __init__(self, session: Session):
+        self.session = session
+    
+    def resolve_sponsor(self, sponsor_text: str, cfg: Dict[str, Any], context: Optional[Dict[str, Any]] = None):
+        """Stub method for sponsor resolution."""
+        return resolve_sponsor(self.session, sponsor_text, cfg, context)
+
 def resolve_sponsor(session: Session, sponsor_text: str, cfg: Dict[str, Any], context: Optional[Dict[str, Any]] = None):
     det = resolve_company(session, sponsor_text)
     if det:
