@@ -1,8 +1,14 @@
 {
-  "last_scan_date": "2025-08-26T01:26:30.235609",
+  "last_scan_date": "2025-08-28T23:16:09.370563",
   "company_last_check": {},
   "daily_stats": {
     "2025-08-26": {
+      "filings_processed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "errors": 0
+    },
+    "2025-08-28": {
       "filings_processed": 0,
       "new_filings": 0,
       "updated_filings": 0,
