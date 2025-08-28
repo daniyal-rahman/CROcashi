@@ -682,6 +682,22 @@ class Document(Base):
     storage_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     sha256: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     publisher: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # Checkpoint 2: Abstract and publication metadata fields
+    abstract_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Abstract content
+    abstract_storage_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # External abstract storage URI
+    abstract_fetched_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)  # When abstract was fetched
+    pub_types: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text), nullable=True)  # PubMed publication types
+    article_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Canonical article type
+    journal: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Journal name
+    pub_year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # Publication year
+    is_open_access: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)  # Open access status
+    
+    # Checkpoint 4: Full text fields
+    fulltext_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Full text content (OA only)
+    fulltext_storage_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # External full text storage URI
+    fulltext_fetched_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)  # When full text was fetched
+    ttl_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)  # TTL expiration date
 
     # Relationships
     text_pages: Mapped[List["DocumentTextPage"]] = relationship(back_populates="document", cascade="all, delete-orphan")
@@ -704,6 +720,14 @@ class Document(Base):
         Index("ix_documents_url_hash", "url_hash", unique=True),
         Index("ix_documents_sha256", "sha256"),
         Index("ix_documents_source_url", "source_url"),
+        # Checkpoint 2: New indexes for abstract and publication metadata
+        Index("ix_documents_abstract_fetched_at", "abstract_fetched_at"),
+        Index("ix_documents_pub_year", "pub_year"),
+        Index("ix_documents_is_open_access", "is_open_access"),
+        Index("ix_documents_article_type", "article_type"),
+        # Checkpoint 4: New indexes for full text fields
+        Index("ix_documents_fulltext_fetched_at", "fulltext_fetched_at"),
+        Index("ix_documents_ttl_expires_at", "ttl_expires_at"),
         CheckConstraint("source_type::text = ANY (ARRAY['PR','IR','SEC','Registry','Abstract','Poster','Paper','FDA','Patent']::text[])", name='ck_documents_source_type'),
         CheckConstraint("status::text = ANY (ARRAY['discovered','fetched','parsed','linked','failed']::text[])", name='ck_documents_status')
     )
@@ -908,6 +932,17 @@ class DocumentUtility(Base):
     u1_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 4))  # Abstract-based utility score (0-1)
     uncertainty: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 4))  # Uncertainty in U1 score
     scoring_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB)  # Detailed scoring breakdown
+    
+    # Checkpoint 2: Stage tracking and selection fields
+    stage: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))  # 0=metadata, 1=abstract, 2=fulltext
+    selected: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)  # True if document selected for next stage
+    dropped_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Reason if document was dropped
+    abstract_fetched_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)  # When abstract was fetched for this utility
+    
+    # Checkpoint 4: Full text request fields
+    needs_fulltext: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))  # Flag to request full text
+    fulltext_requested_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)  # When full text was requested
+    
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -922,10 +957,18 @@ class DocumentUtility(Base):
         Index("idx_document_utilities_u0_score", "u0_score"),
         Index("idx_document_utilities_u1_score", "u1_score"),
         Index("idx_document_utilities_combined_score", "trial_id", "u0_score", "u1_score"),
+        # Checkpoint 2: New indexes for stage tracking and selection
+        Index("idx_document_utilities_stage", "stage"),
+        Index("idx_document_utilities_selected", "selected"),
+        Index("idx_document_utilities_stage_trial", "trial_id", "stage"),
+        # Checkpoint 4: New indexes for full text requests
+        Index("idx_document_utilities_needs_fulltext", "needs_fulltext"),
+        Index("idx_document_utilities_fulltext_requested", "fulltext_requested_at"),
         UniqueConstraint("doc_id", "trial_id", "run_id", name="uq_document_utilities_doc_trial_run"),
         CheckConstraint("u0_score BETWEEN 0 AND 1", name="ck_document_utilities_u0_range"),
         CheckConstraint("u1_score BETWEEN 0 AND 1 OR u1_score IS NULL", name="ck_document_utilities_u1_range"),
         CheckConstraint("uncertainty BETWEEN 0 AND 1 OR uncertainty IS NULL", name="ck_document_utilities_uncertainty_range"),
+        CheckConstraint("stage IN (0, 1, 2)", name="ck_document_utilities_stage_range"),  # 0=metadata, 1=abstract, 2=fulltext
     )
 
 

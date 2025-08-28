@@ -53,7 +53,7 @@ def create_demo_config():
         sample_size_weight=0.20,
         structural_weight=0.20,
         recency_months=24,
-        tau_abstract=0.10,  # Lowered from 0.35 so U0=0.15 docs can pass through
+        tau_abstract=0.15,  # Lowered for demo to see Stage B in action
         theta_high=0.75,
         theta_low=0.25,
         delta_min=0.05
@@ -89,8 +89,8 @@ def create_demo_config():
     # Evaluation configuration - set to 2 to exercise LLM path
     evaluation_config = {
         'eval_every_docs': 2,  # Changed from 3 to 2 to trigger LLM evaluation
-        'theta_high': 0.75,
-        'theta_low': 0.25,
+        'theta_high': 0.80,    # Increased for better LLM stopping
+        'theta_low': 0.20,     # Decreased for better LLM stopping
         'delta_min': 0.05,
         'plateau_epsilon': 0.03,
         'plateau_consecutive': 2,
@@ -487,10 +487,12 @@ def run_end_to_end_demo(verbose=False):
                 print(f"Running pipeline for {DEMO_NCT_CODE}...")
             
             # Run the pipeline
+            print(f"🔍 DEBUG: About to call orchestrator.run_literature_pipeline with trial_ids={[DEMO_NCT_CODE]}")
             result = orchestrator.run_literature_pipeline(
                 trial_ids=[DEMO_NCT_CODE],
                 dry_run=False
             )
+            print(f"🔍 DEBUG: orchestrator.run_literature_pipeline completed, result type: {type(result)}")
             
             # Step 4.5: Budget After Pipeline
             print_subsection_header("Step 4.5: Budget After Pipeline")

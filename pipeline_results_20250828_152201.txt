@@ -1,0 +1,22 @@
+================================================================================
+LITERATURE PIPELINE DETAILED RESULTS
+================================================================================
+Generated: 2025-08-28 15:22:01
+Execution ID: lit_pipeline_20250828_152142
+Run ID: e33f32b2-e788-4509-93ed-20f4d7d443c7
+Status: Success
+Total Cost: $0.2300
+Execution Time: 19.58s
+
+📊 PIPELINE STATISTICS
+----------------------------------------
+Trials Processed: 1
+Documents Scored: 100
+Documents Evaluated: 8
+LLM Evaluations: 1
+
+🤖 TRIAL EVALUATIONS
+----------------------------------------
+Trial ID: 1
+  Status: active
+  Prior P(short): 0.300

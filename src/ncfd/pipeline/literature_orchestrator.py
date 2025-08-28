@@ -215,7 +215,7 @@ class LiteratureOrchestrator:
                 sample_size_weight=scoring_config_dict.get('sample_size_weight', 0.15),
                 structural_weight=scoring_config_dict.get('structural_weight', 0.10),
                 recency_months=scoring_config_dict.get('recency_months', 18),
-                tau_abstract=scoring_config_dict.get('tau_abstract', 0.10),  # Lowered from 0.40 so U0=0.15 docs can pass through
+                tau_abstract=scoring_config_dict.get('tau_abstract', 0.40),  # Recommended value for 30-60% drop rate
                 theta_high=scoring_config_dict.get('theta_high', 0.80),
                 theta_low=scoring_config_dict.get('theta_low', 0.20),
                 delta_min=scoring_config_dict.get('delta_min', 0.05)
@@ -536,13 +536,34 @@ class LiteratureOrchestrator:
         if hasattr(pipeline_result, 'stages'):
             # PipelineResult object
             stages = pipeline_result.stages
-            for stage in stages:
+            for i, stage in enumerate(stages):
                 if stage.stage_name == "Stage A: Metadata Discovery" and stage.success:
                     self.pipeline_stats['stage_a_completed'] += 1
+                    # Extract documents scored from Stage A
+                    if hasattr(stage, 'results') and stage.results:
+                        total_found = stage.results.get('total_found', 0)
+                        self.pipeline_stats['documents_scored'] += total_found
                 elif stage.stage_name == "Stage B: Abstract Evaluation" and stage.success:
                     self.pipeline_stats['stage_b_completed'] += 1
+                    # Extract documents evaluated from Stage B
+                    if hasattr(stage, 'results') and stage.results:
+                        total_evaluated = stage.results.get('total_evaluated', 0)
+                        self.pipeline_stats['documents_evaluated'] += total_evaluated
                 elif stage.stage_name == "Stage C: Full-Text Retrieval" and stage.success:
                     self.pipeline_stats['stage_c_completed'] += 1
+            
+            # Check if LLM evaluation was performed by looking at final_decision
+            if hasattr(pipeline_result, 'final_decision') and pipeline_result.final_decision:
+                # If we have a final decision, LLM evaluation was performed
+                self.pipeline_stats['llm_evaluations'] += 1
+            
+            # Extract document counts from metadata (but don't double-count)
+            if hasattr(pipeline_result, 'metadata') and pipeline_result.metadata:
+                # Only use metadata for LLM evaluation detection, not for document counts
+                if 'llm_evaluation_performed' in pipeline_result.metadata:
+                    self.pipeline_stats['llm_evaluations'] += 1
+                elif 'evaluation_result' in pipeline_result.metadata:
+                    self.pipeline_stats['llm_evaluations'] += 1
             
             if hasattr(pipeline_result, 'total_cost'):
                 self.pipeline_stats['total_cost'] += pipeline_result.total_cost
@@ -550,12 +571,28 @@ class LiteratureOrchestrator:
             # Dict object (fallback)
             if 'stage_a' in pipeline_result and pipeline_result['stage_a']:
                 self.pipeline_stats['stage_a_completed'] += 1
+                # Extract documents scored
+                if 'documents_scored' in pipeline_result:
+                    self.pipeline_stats['documents_scored'] += pipeline_result['documents_scored']
+                elif 'candidates_found' in pipeline_result:
+                    self.pipeline_stats['documents_scored'] += pipeline_result['candidates_scored']
             
             if 'stage_b' in pipeline_result and pipeline_result['stage_b']:
                 self.pipeline_stats['stage_b_completed'] += 1
+                # Extract documents evaluated
+                if 'documents_evaluated' in pipeline_result:
+                    self.pipeline_stats['documents_evaluated'] += pipeline_result['documents_evaluated']
+                elif 'candidates_evaluated' in pipeline_result:
+                    self.pipeline_stats['documents_evaluated'] += pipeline_result['candidates_evaluated']
             
             if 'stage_c' in pipeline_result and pipeline_result['stage_c']:
                 self.pipeline_stats['stage_c_completed'] += 1
+            
+            # Extract LLM evaluations count
+            if 'llm_evaluations' in pipeline_result:
+                self.pipeline_stats['llm_evaluations'] += pipeline_result['llm_evaluations']
+            elif 'evaluation_count' in pipeline_result:
+                self.pipeline_stats['llm_evaluations'] += pipeline_result['evaluation_count']
             
             if 'total_cost' in pipeline_result:
                 self.pipeline_stats['total_cost'] += pipeline_result['total_cost']
@@ -644,36 +681,8 @@ class LiteratureOrchestrator:
             # Get budget summary
             budget_summary = self.budget_monitor.get_budget_summary()
             
-            # Get actual document counts from database for current run
-            from sqlalchemy import text
-            
-            # Count documents with U0 scores for current run
-            u0_count_query = text("""
-                SELECT COUNT(*) as u0_count, COUNT(CASE WHEN u1_score IS NOT NULL THEN 1 END) as u1_count
-                FROM document_utilities 
-                WHERE run_id = :run_id
-            """)
-            
-            result = self.db_session.execute(u0_count_query, {'run_id': self.run_id}).fetchone()
-            u0_count = result[0] if result else 0
-            u1_count = result[1] if result else 0
-            
-            # Get actual cost for current run
-            cost_query = text("""
-                SELECT SUM(cost_amount) as total_cost
-                FROM cost_records 
-                WHERE run_id = :run_id
-            """)
-            
-            cost_result = self.db_session.execute(cost_query, {'run_id': self.run_id}).fetchone()
-            actual_cost = float(cost_result[0]) if cost_result and cost_result[0] else 0.0
-            
-            # Update orchestrator stats with real data
-            self.pipeline_stats.update({
-                'documents_scored': u0_count,
-                'documents_evaluated': u1_count,
-                'total_cost': actual_cost
-            })
+            # Don't overwrite the pipeline stats that were correctly calculated from stage results
+            # The pipeline_stats already contain the correct counts from _update_pipeline_stats
             
             return {
                 'budget_summary': budget_summary,

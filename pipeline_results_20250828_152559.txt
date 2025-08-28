@@ -1,0 +1,95 @@
+================================================================================
+LITERATURE PIPELINE DETAILED RESULTS
+================================================================================
+Generated: 2025-08-28 15:25:59
+Execution ID: lit_pipeline_20250828_152536
+Run ID: 2ac0da2b-ba7d-4a40-aee1-28b21d147d4c
+Status: Success
+Total Cost: $0.2300
+Execution Time: 22.79s
+
+📊 PIPELINE STATISTICS
+----------------------------------------
+Trials Processed: 1
+Documents Scored: 100
+Documents Evaluated: 8
+LLM Evaluations: 1
+
+🤖 TRIAL EVALUATIONS
+----------------------------------------
+Trial ID: 1
+  Status: active
+  Prior P(short): 0.300
+  Posterior P(short): N/A
+  LLM Evaluations: 0
+  Created: 2025-08-28T22:25:36.660034+00:00
+
+📄 DOCUMENT STAGE PROGRESSION
+----------------------------------------
+🟢 STAGE A (Metadata Only): 100 documents
+------------------------------
+ 1. Doc ID: 40873176
+    U0 Score: 0.150
+    Trial ID: 1
+    Created: 2025-08-28T22:25:36.695559+00:00
+
+ 2. Doc ID: 40872096
+    U0 Score: 0.150
+    Trial ID: 1
+    Created: 2025-08-28T22:25:36.695559+00:00
+
+ 3. Doc ID: 40869993
+    U0 Score: 0.150
+    Trial ID: 1
+    Created: 2025-08-28T22:25:36.695559+00:00
+
+ 4. Doc ID: 40869989
+    U0 Score: 0.150
+    Trial ID: 1
+    Created: 2025-08-28T22:25:36.695559+00:00
+
+ 5. Doc ID: 40867033
+    U0 Score: 0.150
+    Trial ID: 1
+    Created: 2025-08-28T22:25:36.695559+00:00
+
+ 6. Doc ID: 40865386
+    U0 Score: 0.150
+    Trial ID: 1
+    Created: 2025-08-28T22:25:36.695559+00:00
+
+ 7. Doc ID: 40864667
+    U0 Score: 0.150
+    Trial ID: 1
+    Created: 2025-08-28T22:25:36.695559+00:00
+
+ 8. Doc ID: 40864443
+    U0 Score: 0.150
+    Trial ID: 1
+    Created: 2025-08-28T22:25:36.695559+00:00
+
+ 9. Doc ID: 40863722
+    U0 Score: 0.150
+    Trial ID: 1
+    Created: 2025-08-28T22:25:36.695559+00:00
+
+10. Doc ID: 40860065
+    U0 Score: 0.150
+    Trial ID: 1
+    Created: 2025-08-28T22:25:36.695559+00:00
+
+... and 90 more Stage A documents
+
+🟡 STAGE B (Abstract Evaluated): 0 documents
+------------------------------
+💰 BUDGET SUMMARY
+----------------------------------------
+Daily Spent: $0.0000
+Daily Limit: $0.0000
+Monthly Spent: $0.0000
+Monthly Limit: $0.0000
+Status: BudgetStatus.OK
+
+================================================================================
+EXPORT COMPLETE
+================================================================================

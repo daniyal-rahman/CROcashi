@@ -36,7 +36,7 @@ class ScoringConfig:
     recency_months: int = 18
     
     # Thresholds
-    tau_abstract: float = 0.10  # Lowered from 0.40 so U0=0.15 docs can pass through
+    tau_abstract: float = 0.40  # Recommended value for 30-60% drop rate
     theta_high: float = 0.80
     theta_low: float = 0.20
     delta_min: float = 0.05
@@ -55,7 +55,7 @@ class LiteratureScorer:
     
     def __init__(self, config: Optional[ScoringConfig] = None):
         """
-        Initialize the literature scorer.
+        Initialize literature scorer.
         
         Args:
             config: Scoring configuration, uses defaults if None
@@ -69,16 +69,29 @@ class LiteratureScorer:
     
     def _compile_patterns(self):
         """Compile regex patterns for document analysis."""
-        # Abstract scoring patterns
+        # Abstract scoring patterns - expanded for Checkpoint 2
         self._neg_pattern = re.compile(
             r"(did not meet|no (?:significant|statistical) (?:difference|benefit)|"
-            r"failed to|non-?significant|ns[,\. ]|futility)", 
+            r"failed to|non-?significant|ns[,\. ]|futility|"
+            r"primary endpoint was not met|primary endpoint not met|"
+            r"failed to achieve|did not achieve|"
+            r"did not demonstrate superiority|superiority not demonstrated|"
+            r"non-inferiority not shown|non-inferiority not demonstrated|"
+            r"stopped early for futility|stopped early due to futility|"
+            r"confidence interval.*crossed 1\.0|hazard ratio.*~1|"
+            r"subgroup.*only.*significant|post.?hoc.*only.*significant|"
+            r"primary endpoint.*not met|endpoint.*not met|"
+            r"not met.*primary endpoint|not met.*endpoint)", 
             re.IGNORECASE
         )
         
         self._pos_pattern = re.compile(
             r"(met (?:the )?primary endpoint|statistically significant|"
-            r"significant improvement|superior(?:ity)?)", 
+            r"significant improvement|superior(?:ity)?|"
+            r"primary endpoint was met|primary endpoint met|"
+            r"demonstrated superiority|achieved superiority|"
+            r"demonstrated non-inferiority|achieved non-inferiority|"
+            r"met.*primary endpoint|met.*endpoint)", 
             re.IGNORECASE
         )
         

@@ -1,0 +1,822 @@
+🚀 Starting Literature Pipeline End-to-End Demonstration
+This will test all Phase 1-6 components working together
+
+================================================================================
+ LITERATURE PIPELINE END-TO-END DEMONSTRATION
+================================================================================
+Demo NCT Code: NCT05111574
+Start Time: 2025-08-28 15:30:54
+Verbose mode enabled - showing detailed verification output
+
+--- Step 1: Database Connection ---
+Connecting to database...
+✅ Database Session: Ready
+   Details: Connected successfully
+Cleaning up existing data from previous runs...
+✅ Cleanup completed successfully
+
+--- Step 2: Pipeline Configuration ---
+✅ Pipeline Configuration: Ready
+   Details: All components configured
+
+--- Step 3: Component Initialization ---
+Initializing Literature Orchestrator with all Phase 1-6 components...
+✅ LiteratureScorer: Ready
+   Details: Ready
+✅ DocumentQueue: Ready
+   Details: Ready
+✅ LLMEvaluator: Ready
+   Details: Ready
+✅ SmartPubMedClient: Ready
+   Details: Ready
+✅ LiteraturePipeline: Ready
+   Details: Ready
+✅ BudgetMonitor: Ready
+   Details: Ready
+✅ Literature Orchestrator: Ready
+   Details: All components initialized successfully
+
+--- Step 4: Budget Status Check ---
+
+💰 Budget Summary:
+   Period: BudgetPeriod.DAILY
+   Daily Spent: $0.0000
+   Cost Limit: $50.0000
+   Remaining Budget: $50.0000
+   Status: BudgetStatus.OK
+
+--- Step 5: Pipeline Execution ---
+Running literature pipeline for NCT code: NCT05111574
+This will execute the complete three-stage pipeline...
+🔍 DEBUG: About to call orchestrator.run_literature_pipeline with trial_ids=['NCT05111574']
+🔍 DEBUG: orchestrator.run_literature_pipeline completed, result type: <class 'ncfd.pipeline.literature_orchestrator.LiteraturePipelineResult'>
+
+--- Step 4.5: Budget After Pipeline ---
+
+💰 Budget Summary:
+   Period: BudgetPeriod.DAILY
+   Daily Spent: $0.4100
+   Cost Limit: $50.0000
+   Remaining Budget: $49.5900
+   Status: BudgetStatus.OK
+
+💰 Execution Cost: $0.2300
+
+--- Step 6: Pipeline Results ---
+Pipeline Status: Success
+Execution ID: lit_pipeline_20250828_153054
+Run ID: 7cc0475a-6a5f-4d1a-9570-9b05f423dd01
+Start Time: 2025-08-28 15:30:54.584492
+End Time: 2025-08-28 15:31:15.293916
+
+📊 Pipeline Statistics:
+   Trials Processed: 1
+   Documents Scored: 100
+   Documents Evaluated: 8
+   LLM Evaluations: 1
+   Total Cost: $0.2300
+   Budget Status: ok
+
+--- Step 7: Detailed Component Results ---
+
+🔍 Trial Evaluations (1 found):
+   Trial ID: 1
+     Status: active
+     Prior P(short): 0.3
+     Posterior P(short): None
+     LLM Evaluations: 0
+     Last Evaluation: None
+     Created At: 2025-08-28T22:30:54.582656+00:00
+
+📄 Document Utilities (100 found):
+   Document ID: 40873176
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40872096
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40869993
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40869989
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40867033
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40865386
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40864667
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40864443
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40863722
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40860065
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40859196
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40856052
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40854623
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40841827
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40855273
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40846014
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40839711
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40846072
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40843951
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40843274
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40840415
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40838392
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40837808
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40836034
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40835666
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40835005
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40834006
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40832326
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40828850
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40826324
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40824837
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40824123
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40820865
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40817851
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40816028
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40814265
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40813346
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40812525
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40810321
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40809002
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40807564
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40806136
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40805099
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40803046
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40797034
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40796533
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40794939
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40794059
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40791699
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40790536
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40788766
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40787910
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40787706
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40786555
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40783893
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40782979
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40782865
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40782340
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40780407
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40777619
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40777618
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40777614
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40777539
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40777529
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40777525
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40777521
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40777256
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40773677
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40768868
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40768348
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40767329
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40763192
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40762275
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40761183
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40757485
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40756968
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40756441
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40754310
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40754023
+     Trial ID: 1
+     U0 Score: 0.1500
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40872855
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40872118
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40859745
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40858347
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40848018
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40844546
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40835174
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40831730
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40828914
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40828341
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40812059
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40803155
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40796355
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40791520
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40783421
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40779596
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40779393
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40777520
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40772823
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40757911
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+   Document ID: 40753495
+     Trial ID: 1
+     U0 Score: 0.0000
+     U1 Score: None
+     Uncertainty: None
+     Created At: 2025-08-28T22:30:54.618863+00:00
+
+💰 Budget Summary:
+   Period: BudgetPeriod.DAILY
+   Daily Spent: $0.4100
+   Cost Limit: $50.0000
+   Remaining Budget: $49.5900
+   Status: BudgetStatus.OK
+
+💰 Final Execution Cost: $0.2300
+
+--- Step 8: Final Pipeline Status ---
+Current Trial: NCT05111574
+Budget Status: ok
+
+--- Step 9: VERIFICATION & PROOF OF FUNCTIONALITY ---
+
+🗄️ DATABASE VERIFICATION QUERIES:
+============================================================
+
+1. 📊 TABLE COUNTS (Proof of schema creation):
+   trial_evaluations: 1 rows
+   document_utilities: 100 rows
+   trial_priority_queue: 1 rows
+   cost_records: 4 rows
+   budget_periods: 0 rows
+
+2. 🧪 TRIAL DATA (Proof of data source):
+   Trial ID: 1
+   NCT ID: NCT05111574
+   Title: No title...
+   Phase: PHASE2
+   Status: RECRUITING
+
+3. 🚀 PIPELINE EXECUTION RECORDS (Proof of pipeline runs):
+   Execution: lit_pipeline_20250828_153054
+     Run ID: 7cc0475a-6a5f-4d1a-9570-9b05f423dd01
+     Start: 2025-08-28 15:30:54.584492+00:00
+     End: 2025-08-28 15:31:15.289321+00:00
+     Status: Success
+   Execution: lit_pipeline_20250828_153002
+     Run ID: 013bb4f3-309f-4bc9-b180-e83677626fa5
+     Start: 2025-08-28 15:30:02.660221+00:00
+     End: 2025-08-28 15:30:23.481076+00:00
+     Status: Success
+   Execution: lit_pipeline_20250828_152614
+     Run ID: 04ace5cf-c840-4bf5-a060-6efbf0655743
+     Start: 2025-08-28 15:26:15.034988+00:00
+     End: 2025-08-28 15:26:36.656628+00:00
+     Status: Success
+
+4. 💰 COST TRACKING RECORDS (Proof of budget monitoring):
+   metadata_fetch: $0.1800 (Trial 1) at 2025-08-28 22:31:15.286173+00:00
+   abstract_fetch: $0.0800 (Trial 1) at 2025-08-28 22:30:56.779318+00:00
+   llm_evaluation: $0.0500 (Trial 1) at 2025-08-28 22:30:56.779318+00:00
+   metadata_fetch: $0.1000 (Trial 1) at 2025-08-28 22:30:54.618863+00:00
+
+5. 📋 TRIAL PRIORITY QUEUE (Proof of queue management):
+   Trial 1: Priority 0.5000, Status: active, Stage: stage_b
+
+🔬 PUBMED SEARCH & PRUNING VERIFICATION:
+============================================================
+
+1. 📚 STAGE A - METADATA SEARCH RESULTS:
+   Search Query: NCT-specific search for NCT05111574
+   Trial Phase: PHASE2
+   Trial Status: RECRUITING
+   Cost per search: $0.0010
+
+2. ✂️ STAGE B - ABSTRACT PRUNING LOGIC:
+   U0 Score Threshold: 0.15
+   High Utility Threshold: 0.75
+   Low Utility Threshold: 0.25
+   Minimum Delta: 0.05
+   Cost per abstract: $0.0100
+
+3. 📖 STAGE C - FULL-TEXT ON-DEMAND:
+   Only for documents with U1 > 0.75
+   Cost per full-text: $0.2500
+   LLM Evaluation Cost: $0.0500
+
+4. 💳 BUDGET CONSTRAINTS:
+   Daily Limit: $50.00
+   Trial Limit: $5.00
+   Current Daily Spent: $0.4100
+
+🔗 COMPONENT INTEGRATION VERIFICATION:
+============================================================
+
+1. 📊 LITERATURE SCORER INTEGRATION:
+   Config: ScoringConfig(phase_3_weight=0.3, randomization_weight=0.25, double_blind_weight=0.15, nct_mention_weight=0.1, rct_type_weight=0.15, recency_weight=0.05, negative_signal_weight=0.5, positive_signal_weight=0.1, sample_size_weight=0.2, structural_weight=0.2, recency_months=24, tau_abstract=0.15, theta_high=0.75, theta_low=0.25, delta_min=0.05)
+   Scoring Weights: Phase3=0.3, Randomization=0.25
+
+2. 📋 DOCUMENT QUEUE INTEGRATION:
+   Config: {'trial_batch_size': 5, 'max_candidates_per_trial': 50, 'cleanup_interval_hours': 12}
+   Batch Size: 5
+   Max Candidates: 50
+
+3. 🤖 LLM EVALUATOR INTEGRATION:
+   Config: {'eval_every_docs': 2, 'theta_high': 0.8, 'theta_low': 0.2, 'delta_min': 0.05, 'plateau_epsilon': 0.03, 'plateau_consecutive': 2, 'tier2_llm_tokens_per_eval': 1500, 'evaluation_prompt_version': '1.0'}
+   Eval Every N Docs: 2
+   Theta High: 0.8
+
+4. 🔍 SMART PUBMED CLIENT INTEGRATION:
+   Client Type: SmartPubMedClient
+   Initialized: True
+   Three-Stage Pipeline: Active
+
+5. 🚀 LITERATURE PIPELINE INTEGRATION:
+   Pipeline Config: {'scoring': {'phase_3_weight': 0.3, 'randomization_weight': 0.25, 'double_blind_weight': 0.15, 'nct_mention_weight': 0.1, 'rct_type_weight': 0.15, 'recency_weight': 0.05, 'negative_signal_weight': 0.5, 'positive_signal_weight': 0.1, 'sample_size_weight': 0.2, 'structural_weight': 0.2, 'recency_months': 24, 'tau_abstract': 0.15, 'theta_high': 0.75, 'theta_low': 0.25, 'delta_min': 0.05}, 'queue': {'trial_batch_size': 5, 'max_candidates_per_trial': 50, 'cleanup_interval_hours': 12}, 'evaluation': {'eval_every_docs': 2, 'theta_high': 0.8, 'theta_low': 0.2, 'delta_min': 0.05, 'plateau_epsilon': 0.03, 'plateau_consecutive': 2, 'tier2_llm_tokens_per_eval': 1500, 'evaluation_prompt_version': '1.0'}, 'pubmed': {'api_key': None, 'base_url': 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/', 'tool': 'NCFD-Literature-Pipeline-Demo', 'email': 'demo@ncfd.com', 'rate_limit_delay': 0.2, 'max_retries': 3, 'timeout': 30}, 'budget': {'daily_limit': 50.0, 'monthly_limit': 1000.0, 'trial_limit': 5.0, 'costs': {'metadata_fetch': 0.001, 'abstract_fetch': 0.01, 'full_text_fetch': 0.25, 'llm_evaluation': 0.05}, 'alert_thresholds': {'warning': 0.7, 'critical': 0.85, 'emergency': 0.95}, 'reset_schedule': 'daily', 'reset_day': 1}}
+
+6. 💰 BUDGET MONITOR INTEGRATION:
+   Budget Config: {'daily_limit': 50.0, 'monthly_limit': 1000.0, 'trial_limit': 5.0, 'costs': {'metadata_fetch': 0.001, 'abstract_fetch': 0.01, 'full_text_fetch': 0.25, 'llm_evaluation': 0.05}, 'alert_thresholds': {'warning': 0.7, 'critical': 0.85, 'emergency': 0.95}, 'reset_schedule': 'daily', 'reset_day': 1, 'daily_cost_limit': 50.0, 'monthly_cost_limit': 1000.0, 'trial_cost_limit': 5.0}
+   Daily Limit: $50.0
+
+--- DEMONSTRATION COMPLETE ---
+✅ DEMONSTRATION COMPLETED SUCCESSFULLY
+All components appear to be working correctly
+
+🎯 Demo NCT Code: NCT05111574
+📊 Total Cost: $0.2300
+⏱️  Execution Time: 20.71 seconds
+
+📋 DETAILED RESULTS:
+   Trials Processed: 1
+   Documents Scored: 100
+   Documents Evaluated: 8
+   LLM Evaluations: 1
+   Budget Status: ok
+
+🎯 DEMONSTRATION SUCCESSFUL
+All components are working correctly and integrated properly

@@ -21,7 +21,7 @@ scoring:
   recency_months: 18
   
   # Thresholds
-  tau_abstract: 0.10      # Lowered from 0.40 so U0=0.15 docs can pass through
+  tau_abstract: 0.40      # Recommended value for 30-60% drop rate
   theta_high: 0.80        # High threshold for LLM stopping
   theta_low: 0.20         # Low threshold for LLM stopping
   delta_min: 0.05         # Minimum change for plateau detection

@@ -170,10 +170,7 @@ class SmartPubMedClient:
             drug_synonyms: Optional list of drug synonyms
             
         Returns:
-            PubMed query string matching pattern: ^\\("NCT\\d{8}"\\[si\\]\\)(?:\\s+OR\\s+\\(.+\\))?$
-        
-        Raises:
-            ValueError: If nct_id is empty or invalid format
+            PubMed query string with multi-stage fallback approach
         """
         if not nct_id:
             raise ValueError("NCT ID cannot be empty")
@@ -181,8 +178,13 @@ class SmartPubMedClient:
         if not nct_id.startswith('NCT') or len(nct_id) < 8:
             raise ValueError(f"Invalid NCT ID format: {nct_id}")
         
-        # Start with NCT term in [si] (not [tiab]) - wrap in parentheses
-        query = f'("{nct_id}"[si])'
+        # Multi-stage NCT query approach for better coverage
+        # Stage 1: Try Secondary Source ID (most specific)
+        # Stage 2: Fallback to Title/Abstract (broader)
+        # Stage 3: Fallback to All Fields (most comprehensive)
+        
+        # Start with the most specific search
+        query = f'"{nct_id}"[si]'
         
         # Add drug synonyms if provided
         if drug_synonyms and len(drug_synonyms) > 0:
@@ -199,6 +201,174 @@ class SmartPubMedClient:
                 query = f'{query} OR ({drug_query})'
         
         return query
+    
+    def _build_nct_query_with_fallback(self, nct_id: str, use_filters: bool = True) -> List[Tuple[str, str]]:
+        """
+        Build multi-stage NCT query with fallbacks for better coverage.
+        
+        Args:
+            nct_id: NCT identifier
+            use_filters: Whether to apply clinical trial filters
+            
+        Returns:
+            List of (query, description) tuples to try in order
+        """
+        if not nct_id:
+            raise ValueError("NCT ID cannot be empty")
+        
+        queries = []
+        
+        # Stage 1: Most specific - Secondary Source ID
+        queries.append((f'"{nct_id}"[si]', 'Secondary Source ID'))
+        
+        # Stage 2: Broader - Title/Abstract
+        queries.append((f'"{nct_id}"[tiab]', 'Title/Abstract'))
+        
+        # Stage 3: Most comprehensive - All Fields
+        queries.append((f'"{nct_id}"[All Fields]', 'All Fields'))
+        
+        # Stage 4: With clinical trial filters if enabled
+        if use_filters:
+            # Try with clinical trial publication type filter
+            queries.append((
+                f'"{nct_id}"[tiab] AND ("Clinical Trial"[ptyp] OR "Randomized Controlled Trial"[ptyp])',
+                'Title/Abstract + Clinical Trial Filter'
+            ))
+            
+            # Try with phase-specific terms
+            queries.append((
+                f'"{nct_id}"[tiab] AND ("phase 3"[tiab] OR "phase iii"[tiab] OR "randomized"[tiab])',
+                'Title/Abstract + Phase/Randomized Filter'
+            ))
+        
+        return queries
+    
+    def _search_nct_with_fallback(self, nct_id: str, retmax: int = 100, use_filters: bool = True) -> Dict[str, Any]:
+        """
+        Search for NCT with automatic fallback through multiple query strategies.
+        
+        Args:
+            nct_id: NCT identifier
+            retmax: Maximum results to return
+            use_filters: Whether to use clinical trial filters
+            
+        Returns:
+            Search results from the first successful query, or empty results if all fail
+        """
+        queries = self._build_nct_query_with_fallback(nct_id, use_filters)
+        
+        for query, description in queries:
+            try:
+                logger.info(f"Trying NCT search: {description}")
+                results = self._esearch(query, retmax)
+                count = int(results.get('esearchresult', {}).get('count', '0'))
+                
+                if count > 0:
+                    logger.info(f"✅ NCT search successful with {description}: {count} results")
+                    return results
+                else:
+                    logger.info(f"⚠️ NCT search returned 0 results with {description}")
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ NCT search failed with {description}: {e}")
+                continue
+        
+        # If all queries fail, return empty results
+        logger.warning(f"❌ All NCT search strategies failed for {nct_id}")
+        return {
+            'esearchresult': {
+                'count': '0',
+                'retmax': '0',
+                'retstart': '0',
+                'idlist': [],
+                'translationset': [],
+                'querytranslation': f'"{nct_id}"',
+                'warninglist': {
+                    'phrasesignored': [],
+                    'quotedphrasesnotfound': [f'"{nct_id}"'],
+                    'outputmessages': ['All search strategies failed']
+                }
+            }
+        }
+    
+    def _search_trial_with_automatic_pivot(self, nct_id: str, drug_terms: List[str] = None, 
+                                         disease_terms: List[str] = None, retmax: int = 100) -> Dict[str, Any]:
+        """
+        Search for trial with automatic pivot from NCT to drug/condition when NCT fails.
+        
+        This implements the strategy: try NCT first, then automatically pivot to drug+disease
+        search if NCT returns no results (treating it as "not indexed yet").
+        
+        Args:
+            nct_id: NCT identifier
+            drug_terms: List of drug names/synonyms
+            disease_terms: List of disease/indication terms
+            retmax: Maximum results to return
+            
+        Returns:
+            Search results with metadata about which strategy succeeded
+        """
+        # Stage 1: Try NCT search with all fallbacks
+        logger.info(f"🔍 Stage 1: NCT search for {nct_id}")
+        nct_results = self._search_nct_with_fallback(nct_id, retmax, use_filters=True)
+        nct_count = int(nct_results.get('esearchresult', {}).get('count', '0'))
+        
+        if nct_count > 0:
+            logger.info(f"✅ NCT search successful: {nct_count} results")
+            return {
+                'results': nct_results,
+                'strategy': 'nct_direct',
+                'count': nct_count,
+                'fallback_used': False
+            }
+        
+        # Stage 2: NCT failed, pivot to drug+disease search
+        logger.info(f"🔄 Stage 2: NCT failed, pivoting to drug+disease search for {nct_id}")
+        
+        if not drug_terms and not disease_terms:
+            logger.warning(f"⚠️ No drug or disease terms provided for pivot search on {nct_id}")
+            return {
+                'results': nct_results,  # Return the failed NCT results
+                'strategy': 'nct_failed_no_pivot_terms',
+                'count': 0,
+                'fallback_used': False
+            }
+        
+        # Build drug+disease query with clinical trial filters
+        pivot_query = self._build_drug_disease_pivot_query(drug_terms, disease_terms)
+        
+        try:
+            pivot_results = self._esearch(pivot_query, retmax)
+            pivot_count = int(pivot_results.get('esearchresult', {}).get('count', '0'))
+            
+            if pivot_count > 0:
+                logger.info(f"✅ Pivot search successful: {pivot_count} results using drug+disease")
+                return {
+                    'results': pivot_results,
+                    'strategy': 'drug_disease_pivot',
+                    'count': pivot_count,
+                    'fallback_used': True,
+                    'pivot_query': pivot_query
+                }
+            else:
+                logger.warning(f"⚠️ Pivot search also failed: {pivot_count} results")
+                return {
+                    'results': pivot_results,
+                    'strategy': 'both_failed',
+                    'count': 0,
+                    'fallback_used': True,
+                    'pivot_query': pivot_query
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Pivot search failed: {e}")
+            return {
+                'results': nct_results,  # Return the failed NCT results
+                'strategy': 'pivot_error',
+                'count': 0,
+                'fallback_used': True,
+                'error': str(e)
+            }
     
     def _build_drug_query(self, drug_synonyms: List[str], disease: Optional[str] = None) -> str:
         """
@@ -232,6 +402,57 @@ class SmartPubMedClient:
             return f"({drug_query}) AND {disease_query}"
         
         return drug_query
+    
+    def _build_drug_disease_pivot_query(self, drug_terms: List[str], disease_terms: List[str]) -> str:
+        """
+        Build a drug+disease query with clinical trial and human filters.
+        
+        Args:
+            drug_terms: List of drug names/synonyms
+            disease_terms: List of disease/indication terms
+            
+        Returns:
+            PubMed query string with proper filters
+        """
+        # Build drug query
+        drug_queries = []
+        for drug in drug_terms:
+            if drug.strip():
+                drug_queries.append(f'"{drug.strip()}"[tiab]')
+        
+        # Build disease query
+        disease_queries = []
+        for disease in disease_terms:
+            if disease.strip():
+                disease_queries.append(f'"{disease.strip()}"[tiab]')
+        
+        # Combine drug and disease terms
+        if drug_queries and disease_queries:
+            # Drug AND Disease
+            drug_part = " OR ".join(drug_queries)
+            disease_part = " OR ".join(disease_queries)
+            base_query = f"({drug_part}) AND ({disease_part})"
+        elif drug_queries:
+            # Drug only
+            base_query = " OR ".join(drug_queries)
+        elif disease_queries:
+            # Disease only
+            base_query = " OR ".join(disease_queries)
+        else:
+            # Fallback to generic clinical trial search
+            base_query = '"clinical trial"[tiab]'
+        
+        # Add clinical trial filters
+        clinical_filters = [
+            '("Clinical Trial"[ptyp] OR "Randomized Controlled Trial"[ptyp])',
+            'NOT (animals[mh] NOT humans[mh])'  # Exclude animal-only studies
+        ]
+        
+        # Combine base query with filters
+        final_query = f"({base_query}) AND {' AND '.join(clinical_filters)}"
+        
+        logger.info(f"Built pivot query: {final_query}")
+        return final_query
     
     def _esearch(self, query: str, retmax: int = 100) -> Dict[str, Any]:
         """Execute PubMed search."""
