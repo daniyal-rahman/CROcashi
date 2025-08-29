@@ -1,0 +1,204 @@
+# R/S Scoring Configuration
+# Tuneable parameters for relevance and shortability scoring
+
+# R (Relevance) tier thresholds
+r_tiers:
+  r3: 0.75    # High relevance threshold
+  r2: 0.55    # Medium-high relevance threshold  
+  r1: 0.35    # Medium relevance threshold
+  # r0: <0.35 (low relevance)
+
+# S (Shortability) tier thresholds
+s_tiers:
+  s3: 0.70    # High shortability threshold
+  s2: 0.45    # Medium-high shortability threshold
+  s1: 0.20    # Medium shortability threshold
+  # s0: <0.20 (low shortability)
+
+# Catalyst window for recency scoring (months)
+catalyst_window_months: 18
+
+# R component weights (must sum to 1.0)
+r_weights:
+  directness: 0.40      # Asset/indication/NCT match
+  phase: 0.25           # Clinical trial phase
+  recency: 0.20         # Publication vs catalyst timing
+  article_type: 0.15    # RCT/Review/Protocol/etc
+
+# S component weights (must sum to 1.0)
+s_weights:
+  direction_text: 0.35  # Risk phrase detection
+  effect_magnitude: 0.30 # HR/OR/RR values
+  design_fragility: 0.20 # Study design weaknesses
+  safety: 0.15          # Adverse event signals
+
+# Risk phrases for S scoring
+phrases:
+  # High-risk phrases (S3)
+  fail_primary:
+    - "did not meet primary"
+    - "failed to meet primary"
+    - "missed primary endpoint"
+    - "primary endpoint not met"
+    - "did not achieve primary"
+  
+  futility:
+    - "futility"
+    - "futile"
+    - "stopped early for futility"
+    - "futility analysis"
+    - "futility stopping"
+  
+  non_inferiority_miss:
+    - "did not demonstrate non-inferiority"
+    - "failed to demonstrate non-inferiority"
+    - "non-inferiority not met"
+    - "non-inferiority margin not achieved"
+  
+  # Medium-risk phrases (S2)
+  itt_negative_pp_positive:
+    - "ITT analysis negative"
+    - "intention-to-treat negative"
+    - "per-protocol positive"
+    - "ITT vs PP discrepancy"
+  
+  subgroup_analysis:
+    - "subgroup analysis"
+    - "post-hoc"
+    - "post hoc"
+    - "exploratory analysis"
+    - "subgroup finding"
+  
+  interim_analysis:
+    - "interim analysis"
+    - "stopped early"
+    - "early stopping"
+    - "interim stopping"
+  
+  # Low-risk phrases (S1)
+  caveats:
+    - "caveat"
+    - "limitation"
+    - "caution"
+    - "preliminary"
+    - "early results"
+
+# Effect size thresholds for S scoring
+effect_size_caps:
+  # Hazard ratios (unfavorable)
+  hr_bad: 1.50          # Very unfavorable
+  hr_border: 1.15       # Borderline unfavorable
+  hr_minor: 1.05        # Minor unfavorable
+  
+  # Response rate gaps (negative)
+  orr_gap_bad: -0.20    # Large negative gap
+  orr_gap_border: -0.10 # Medium negative gap
+  orr_gap_minor: -0.05  # Minor negative gap
+  
+  # Odds ratios (unfavorable)
+  or_bad: 1.50          # Very unfavorable
+  or_border: 1.15       # Borderline unfavorable
+  
+  # Risk ratios (unfavorable)
+  rr_bad: 1.50          # Very unfavorable
+  rr_border: 1.15       # Borderline unfavorable
+
+# Design fragility factors
+design_fragility:
+  single_arm_pivotal: 0.20    # Single-arm pivotal study
+  open_label: 0.15            # Open-label when blinding possible
+  small_n: 0.10               # Small sample size
+  poor_control: 0.10          # Poor control arm
+  multiplicity_issues: 0.10    # Multiple testing issues
+  underpowered: 0.15          # Underpowered study
+
+# Safety signal weights
+safety_signals:
+  discontinuations_worse: 0.15  # Higher discontinuation rate
+  sae_worse: 0.10              # Worse serious adverse events
+  grade_3_4_ae: 0.08           # High-grade adverse events
+  deaths_worse: 0.10            # Higher mortality
+  mortality_signal: 0.08        # Mortality signal present
+
+# Processing quotas per trial
+quotas:
+  max_abstracts_initial: 8      # Initial abstract fetch limit
+  max_abstracts_total: 20       # Total abstract processing limit
+  max_oa_fulltexts: 2           # Open access full text limit
+  max_processing_time_hours: 24 # Maximum processing time
+
+# Early stopping rules
+stop_rules:
+  theta_high: 0.80      # High confidence threshold
+  theta_low: 0.20       # Low confidence threshold
+  plateau_eps: 0.03     # Plateau detection epsilon
+  delta_min: 0.05       # Minimum utility threshold
+
+# Queue priority weights
+queue_weights:
+  best_s_rge2: 0.55     # Best S score among R≥2 documents
+  catalyst_timing: 0.25  # Time to catalyst weight
+  uncertainty: 0.15      # Current uncertainty level
+  expected_utility: 0.05 # Expected utility of next document
+
+# Time windows for catalyst weighting
+catalyst_windows:
+  urgent: 6              # <6 months: weight = 1.0
+  high: 12               # 6-12 months: weight = 0.8
+  medium: 18             # 12-18 months: weight = 0.6
+  low: 24                # >18 months: weight = 0.4
+
+# Processing hours (UTC)
+processing_hours:
+  start: "08:00"
+  end: "18:00"
+  timezone: "UTC"
+
+# Quality thresholds
+quality:
+  min_abstract_length: 50       # Minimum abstract length (characters)
+  min_confidence: 0.7           # Minimum entity extraction confidence
+  required_fields:               # Required fields for processing
+    - title
+    - abstract
+    - pmid
+    - published_at
+
+# Sampling rates by uncertainty
+sampling_rates:
+  high_uncertainty: 1.0         # >0.6: 100% sampling
+  medium_uncertainty: 0.75      # 0.3-0.6: 75% sampling
+  low_uncertainty: 0.5          # <0.3: 50% sampling
+
+# TTL settings (days)
+ttl:
+  fulltext_non_candidate: 90    # Full text TTL for non-candidates
+  parked_trials: 30             # Parked trial TTL
+  stopped_trials: 90            # Stopped trial TTL
+
+# PubMed API settings
+pubmed:
+  api_key: ${PUBMED_API_KEY}    # NCBI API key
+  rate_limit_per_sec: 8         # Requests per second
+  batch_size: 100               # Batch size for requests
+  max_retries: 3                # Maximum retry attempts
+  timeout_seconds: 30           # Request timeout
+  backoff_base: 2.0             # Exponential backoff base
+  circuit_breaker_threshold: 5   # Circuit breaker threshold
+
+# Entity extraction patterns
+extraction_patterns:
+  nct_id: "NCT\\d{8}"           # NCT ID pattern
+  phase: "(P[1-4]|P2B|P2/3)"   # Phase pattern
+  p_value: "p\\s*[<≤=]\\s*0\\.\\d+"  # P-value pattern
+  effect_size: "(HR|OR|RR)\\s*=\\s*[0-9.]+"  # Effect size pattern
+  sample_size: "(?:n\\s*=|sample\\s+size\\s*=|enrolled\\s+)(\\d+(?:,\\d+)*)"  # Sample size pattern
+
+# Monitoring thresholds
+monitoring:
+  queue_depth_alert: 100        # Alert if queue depth >100
+  processing_rate_alert: 10     # Alert if <10 trials/day
+  error_rate_alert: 0.05        # Alert if >5% trials fail
+  miss_rate_alert: 0.10         # Alert if >10% trials parked incorrectly
+  rs_consistency_alert: 0.80    # Alert if R/S agreement <80%
+  processing_delay_alert: 7     # Alert if trials wait >7 days

@@ -1,0 +1,16 @@
+{
+  "start_time": "2025-08-29T07:05:25.918134+00:00",
+  "end_time": "2025-08-29T07:05:26.801398+00:00",
+  "pipeline_results": [],
+  "database_validation": {},
+  "errors": [
+    "Test failed: Pipeline stages test failed: '<' not supported between instances of 'dict' and 'int'"
+  ],
+  "warnings": [],
+  "duration_seconds": 0.883264,
+  "test_summary": {
+    "total_tests": 0,
+    "successful_tests": 0,
+    "success_rate": 0
+  }
+}

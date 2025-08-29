@@ -1,0 +1,39 @@
+{
+  "test_trial_id": "NCT04368728",
+  "test_assets": [
+    "mRNA-1273",
+    "Moderna",
+    "Spikevax"
+  ],
+  "test_indications": [
+    "COVID-19",
+    "SARS-CoV-2",
+    "coronavirus"
+  ],
+  "max_results": 50,
+  "email": "test@example.com",
+  "api": {
+    "rate_limit_per_sec": 3,
+    "batch_size": 10,
+    "max_retries": 2,
+    "timeout_seconds": 30
+  },
+  "pipeline": {
+    "max_concurrent_requests": 2,
+    "enable_fulltext_fetch": false,
+    "enable_pmcid_linking": true,
+    "enable_oa_detection": true
+  },
+  "test_scenarios": {
+    "test_real_trial": true,
+    "test_multiple_assets": true,
+    "test_error_handling": true,
+    "test_database_operations": true
+  },
+  "validation": {
+    "min_documents": 5,
+    "min_abstracts": 3,
+    "min_nct_ids": 1,
+    "min_sponsors": 1
+  }
+}

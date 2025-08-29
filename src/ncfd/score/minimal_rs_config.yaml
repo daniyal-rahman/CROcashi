@@ -1,0 +1,95 @@
+# Minimal R/S Scoring Configuration
+# Used for testing and demonstration purposes
+
+# R tier thresholds (Relevance)
+r_thresholds:
+  r3: 0.75  # High relevance: same asset + indication + NCT mention
+  r2: 0.55  # Medium relevance: same asset + indication, different line
+  r1: 0.35  # Low relevance: same asset preclinical, or classmate data
+
+# S tier thresholds (Shortability)
+s_thresholds:
+  s3: 0.70  # High risk: explicit failure, futility, non-inferiority miss
+  s2: 0.45  # Medium risk: mixed picture, barely met primary
+  s1: 0.20  # Low risk: neutral/low concern, early positive with caveats
+
+# Risk signal phrases for S scoring
+risk_phrases:
+  fail_primary:
+    - "did not meet primary"
+    - "failed"
+    - "futility"
+    - "non-inferiority not demonstrated"
+    - "primary endpoint not met"
+  
+  trend_only:
+    - "trend only"
+    - "trend toward"
+    - "borderline"
+    - "marginally significant"
+  
+  post_hoc:
+    - "post-hoc"
+    - "post hoc"
+    - "subgroup"
+    - "subgroup analysis"
+    - "exploratory"
+  
+  interim:
+    - "interim"
+    - "interim analysis"
+    - "early stopping"
+    - "futility analysis"
+  
+  pp_not_itt:
+    - "per protocol"
+    - "per-protocol"
+    - "not intention to treat"
+    - "modified intention to treat"
+
+# Success phrases (negative S scoring)
+success_phrases:
+  met_primary:
+    - "met primary"
+    - "achieved primary"
+    - "primary endpoint met"
+    - "statistically significant"
+  
+  robust:
+    - "robust"
+    - "strong"
+    - "consistent"
+    - "convincing"
+    - "well-powered"
+
+# Effect size caps for risk assessment
+effect_size_caps:
+  hr_bad: 1.50        # Hazard ratio above this is concerning
+  hr_border: 1.15     # Hazard ratio above this needs attention
+  orr_gap_bad: -0.20  # Overall response rate gap below this is concerning
+
+# Scoring weights
+scoring_weights:
+  asset_match: 0.4      # Asset name match (0-0.4 points)
+  indication_match: 0.3 # Indication match (0-0.3 points)
+  nct_match: 0.2        # NCT ID match (0-0.2 points)
+  phase_relevance: 0.1  # Trial phase relevance (0-0.1 points)
+
+# Risk scoring weights
+risk_weights:
+  fail_primary: 0.4     # Primary endpoint failure
+  trend_only: 0.3       # Trend only results
+  post_hoc: 0.2         # Post-hoc analysis
+  interim: 0.1          # Interim analysis
+
+# Feature extraction settings
+extraction:
+  min_confidence: 0.5   # Minimum confidence for extracted entities
+  max_entities_per_type: 10  # Maximum entities to extract per type
+
+# Testing parameters
+testing:
+  max_results_per_search: 20    # Maximum PubMed results to fetch
+  max_documents_to_score: 10    # Maximum documents to score in test
+  rate_limit_per_sec: 3         # Conservative rate limit for testing
+  batch_size: 10                # Small batch size for testing

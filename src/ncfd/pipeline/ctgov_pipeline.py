@@ -904,3 +904,14 @@ class CtgovPipeline:
         """Update the last update date in state."""
         self.pipeline_state['last_update_date'] = update_date.isoformat()
         self._save_pipeline_state()
+    
+    def get_pipeline_status(self) -> Dict[str, Any]:
+        """Get current pipeline status for orchestrator."""
+        return {
+            'status': 'ready' if self.pipeline_state else 'not_started',
+            'last_update_date': self.pipeline_state.get('last_update_date'),
+            'trials_processed': self.stats.get('trials_processed', 0),
+            'trials_updated': self.stats.get('trials_updated', 0),
+            'trials_new': self.stats.get('trials_new', 0),
+            'state_file': str(self.state_file)
+        }

@@ -681,6 +681,8 @@ class Document(Base):
     notes: Mapped[List["DocumentNote"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     # Trials are linked through DocumentLink table
     # trials: Mapped[List["Trial"]] = relationship(back_populates="documents")
+    rs_scores: Mapped[List["DocRSScore"]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    trial_candidates: Mapped[List["TrialDocCandidate"]] = relationship(back_populates="document", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_documents_lower_doi", "doi"),
@@ -845,4 +847,102 @@ class AssetAlias(Base):
         Index("ix_asset_aliases_alias_norm", "alias_norm"),
         ForeignKeyConstraint(['asset_id'], ['assets.asset_id'], ondelete='CASCADE'),
         CheckConstraint("alias_type::text = ANY (ARRAY['inn','internal_code','generic','brand','misspelling','db_id','code']::text[])", name='ck_asset_aliases_alias_type'),
+    )
+
+# ---------------------------------------------------------------------------
+# PubMed Literature System Models
+# ---------------------------------------------------------------------------
+
+class DocRSScore(Base):
+    """R/S scoring for documents per trial."""
+    __tablename__ = "doc_rs_scores"
+
+    trial_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    R_score: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
+    R_tier: Mapped[str] = mapped_column(Text, nullable=False)
+    S_score: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
+    S_tier: Mapped[str] = mapped_column(Text, nullable=False)
+    R_components_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    S_components_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    # Relationships
+    trial: Mapped["Trial"] = relationship(back_populates=None)
+    document: Mapped["Document"] = relationship(back_populates="rs_scores")
+
+    __table_args__ = (
+        PrimaryKeyConstraint('trial_id', 'doc_id'),
+        ForeignKeyConstraint(['trial_id'], ['trials.trial_id'], ondelete='CASCADE'),
+        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
+        CheckConstraint("R_score >= 0 AND R_score <= 1", name='ck_doc_rs_scores_R_score_range'),
+        CheckConstraint("S_score >= 0 AND S_score <= 1", name='ck_doc_rs_scores_S_score_range'),
+        CheckConstraint("R_tier::text = ANY (ARRAY['R0','R1','R2','R3']::text[])", name='ck_doc_rs_scores_R_tier'),
+        CheckConstraint("S_tier::text = ANY (ARRAY['S0','S1','S2','S3']::text[])", name='ck_doc_rs_scores_S_tier')
+    )
+
+
+class TrialDocCandidate(Base):
+    """Trial-document relationships by processing stage."""
+    __tablename__ = "trial_doc_candidates"
+
+    trial_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    stage: Mapped[str] = mapped_column(Text, nullable=False)
+    selected: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    dropped_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    trial: Mapped["Trial"] = relationship(back_populates=None)
+    document: Mapped["Document"] = relationship(back_populates="trial_candidates")
+
+    __table_args__ = (
+        PrimaryKeyConstraint('trial_id', 'doc_id'),
+        ForeignKeyConstraint(['trial_id'], ['trials.trial_id'], ondelete='CASCADE'),
+        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
+        CheckConstraint("stage::text = ANY (ARRAY['U0_meta','U1_abstract','OA_fulltext']::text[])", name='ck_trial_doc_candidates_stage')
+    )
+
+
+class TrialLitState(Base):
+    """Trial-level literature state and metrics."""
+    __tablename__ = "trial_lit_state"
+
+    trial_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    best_S_Rge2: Mapped[Optional[Decimal]] = mapped_column(Numeric, nullable=True)
+    n_docs_seen: Mapped[int] = mapped_column(Integer, nullable=False, server_default='0')
+    n_docs_selected: Mapped[int] = mapped_column(Integer, nullable=False, server_default='0')
+    p_short: Mapped[Optional[Decimal]] = mapped_column(Numeric, nullable=True)
+    uncertainty: Mapped[Optional[Decimal]] = mapped_column(Numeric, nullable=True)
+    max_expected_utility_next_doc: Mapped[Optional[Decimal]] = mapped_column(Numeric, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default='active')
+
+    # Relationships
+    trial: Mapped["Trial"] = relationship(back_populates=None)
+
+    __table_args__ = (
+        ForeignKeyConstraint(['trial_id'], ['trials.trial_id'], ondelete='CASCADE'),
+        CheckConstraint("best_S_Rge2 IS NULL OR (best_S_Rge2 >= 0 AND best_S_Rge2 <= 1)", name='ck_trial_lit_state_best_S_Rge2_range'),
+        CheckConstraint("p_short IS NULL OR (p_short >= 0 AND p_short <= 1)", name='ck_trial_lit_state_p_short_range'),
+        CheckConstraint("uncertainty IS NULL OR (uncertainty >= 0 AND uncertainty <= 1)", name='ck_trial_lit_state_uncertainty_range'),
+        CheckConstraint("max_expected_utility_next_doc IS NULL OR (max_expected_utility_next_doc >= 0 AND max_expected_utility_next_doc <= 1)", name='ck_trial_lit_state_utility_range'),
+        CheckConstraint("status::text = ANY (ARRAY['active','stopped','parked','promoted']::text[])", name='ck_trial_lit_state_status')
+    )
+
+
+class CtgovIngestState(Base):
+    """CT.gov ingestion state tracking."""
+    __tablename__ = "ctgov_ingest_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    last_ingest_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_ingest_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    ingest_status: Mapped[str] = mapped_column(Text, nullable=False, server_default='idle')
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("ingest_status::text = ANY (ARRAY['idle','running','completed','failed']::text[])", name='ck_ctgov_ingest_state_status'),
     )

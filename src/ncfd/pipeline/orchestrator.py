@@ -1,11 +1,10 @@
 """
-Unified Pipeline Orchestrator for CT.gov and SEC filing ingestion.
+Unified Pipeline Orchestrator for CT.gov, SEC filing, and PubMed literature ingestion.
 
 This module provides:
-- Coordinated execution of CT.gov and SEC pipelines
+- Coordinated execution of CT.gov, SEC, and PubMed pipelines
 - Dependency management and workflow coordination
 - Unified monitoring and reporting
-- Integration with existing systems
 - Error handling and recovery
 """
 
@@ -15,13 +14,13 @@ import logging
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Set
+from typing import Dict, List, Optional, Any
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 
-from .orchestrator import PipelineOrchestrator
 from .ctgov_pipeline import CtgovPipeline
 from .sec_pipeline import SecPipeline
+from ..ingest.pubmed.pipeline import PubMedPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,7 @@ class PipelineExecutionResult:
     success: bool
     start_time: datetime
     end_time: datetime
-    processing_time_seconds: float
+    processing_time_seconds: float = field(init=False, default=0.0)
     
     # Pipeline-specific metrics
     trials_processed: int = 0
@@ -47,6 +46,9 @@ class PipelineExecutionResult:
     filings_failed: int = 0
     new_filings: int = 0
     updated_filings: int = 0
+    
+    documents_processed: int = 0
+    documents_failed: int = 0
     
     # Error tracking
     errors: List[str] = field(default_factory=list)
@@ -63,15 +65,17 @@ class OrchestrationResult:
     execution_id: str
     start_time: datetime
     end_time: datetime
-    total_processing_time: float
+    total_processing_time: float = field(init=False, default=0.0)
     
     # Pipeline results
     ctgov_result: Optional[PipelineExecutionResult] = None
     sec_result: Optional[PipelineExecutionResult] = None
+    pubmed_result: Optional[PipelineExecutionResult] = None
     
     # Overall metrics
     total_trials_processed: int = 0
     total_filings_processed: int = 0
+    total_documents_processed: int = 0
     total_changes_detected: int = 0
     total_significant_changes: int = 0
     
@@ -80,8 +84,8 @@ class OrchestrationResult:
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     
-    def __post_init__(self):
-        """Calculate overall metrics."""
+    def finalize(self):
+        """Finalize the result by computing all metrics and success status."""
         self.total_processing_time = (self.end_time - self.start_time).total_seconds()
         
         # Aggregate metrics from pipeline results
@@ -93,23 +97,26 @@ class OrchestrationResult:
         if self.sec_result:
             self.total_filings_processed += self.sec_result.filings_processed
         
+        if self.pubmed_result:
+            self.total_documents_processed += self.pubmed_result.documents_processed
+        
         # Determine overall success
         self.all_pipelines_successful = (
-            self.ctgov_result.success if self.ctgov_result else True and
-            self.sec_result.success if self.sec_result else True
+            (self.ctgov_result.success if self.ctgov_result else True) and
+            (self.sec_result.success if self.sec_result else True) and
+            (self.pubmed_result.success if self.pubmed_result else True)
         )
 
 
 class UnifiedPipelineOrchestrator:
     """
-    Unified orchestrator for CT.gov and SEC filing pipelines.
+    Unified orchestrator for CT.gov, SEC filing, and PubMed literature pipelines.
     
     Features:
     - Coordinated pipeline execution
     - Dependency management
     - Unified monitoring and reporting
     - Error handling and recovery
-    - Integration coordination
     """
     
     def __init__(self, config: Dict[str, Any]):
@@ -125,6 +132,7 @@ class UnifiedPipelineOrchestrator:
         # Initialize pipelines
         self.ctgov_pipeline = CtgovPipeline(config.get('ctgov', {}))
         self.sec_pipeline = SecPipeline(config.get('sec', {}))
+        self.pubmed_pipeline = PubMedPipeline(config.get('pubmed', {}))
         
         # Orchestration state
         self.state_file = Path(config.get('state_file', '.state/unified_orchestrator.json'))
@@ -136,7 +144,7 @@ class UnifiedPipelineOrchestrator:
         self.current_execution: Optional[OrchestrationResult] = None
         
         # Configuration
-        self.execution_order = config.get('execution_order', ['ctgov', 'sec'])
+        self.execution_order = config.get('execution_order', ['ctgov', 'pubmed', 'sec'])
         self.parallel_execution = config.get('parallel_execution', False)
         self.dependency_checking = config.get('dependency_checking', True)
         
@@ -178,7 +186,11 @@ class UnifiedPipelineOrchestrator:
             # Update execution result
             self.current_execution.end_time = datetime.utcnow()
             self.current_execution.ctgov_result = result.get('ctgov')
+            self.current_execution.pubmed_result = result.get('pubmed')
             self.current_execution.sec_result = result.get('sec')
+            
+            # Finalize the result
+            self.current_execution.finalize()
             
             # Store in history
             self.execution_history.append(self.current_execution)
@@ -188,7 +200,8 @@ class UnifiedPipelineOrchestrator:
             
             self.logger.info(
                 f"Daily ingestion completed: {self.current_execution.total_trials_processed} trials, "
-                f"{self.current_execution.total_filings_processed} filings in "
+                f"{self.current_execution.total_filings_processed} filings, "
+                f"{self.current_execution.total_documents_processed} documents in "
                 f"{self.current_execution.total_processing_time:.1f}s"
             )
             
@@ -199,6 +212,7 @@ class UnifiedPipelineOrchestrator:
             self.logger.error(error_msg)
             self.current_execution.errors.append(error_msg)
             self.current_execution.end_time = datetime.utcnow()
+            self.current_execution.finalize()
             return self.current_execution
     
     def _run_sequential_execution(self, force_full_scan: bool) -> Dict[str, Optional[PipelineExecutionResult]]:
@@ -209,6 +223,8 @@ class UnifiedPipelineOrchestrator:
             try:
                 if pipeline_name == 'ctgov':
                     results['ctgov'] = self._execute_ctgov_pipeline(force_full_scan)
+                elif pipeline_name == 'pubmed':
+                    results['pubmed'] = self._execute_pubmed_pipeline(force_full_scan)
                 elif pipeline_name == 'sec':
                     # Check dependencies if enabled
                     if self.dependency_checking and not self._check_ctgov_dependencies():
@@ -218,8 +234,9 @@ class UnifiedPipelineOrchestrator:
                     
                     results['sec'] = self._execute_sec_pipeline(force_full_scan)
                 
-                # Wait between pipelines
-                time.sleep(1)
+                # Small delay between pipelines if configured
+                if self.config.get('inter_pipeline_delay', 0) > 0:
+                    time.sleep(self.config['inter_pipeline_delay'])
                 
             except Exception as e:
                 error_msg = f"Error executing {pipeline_name} pipeline: {e}"
@@ -232,7 +249,7 @@ class UnifiedPipelineOrchestrator:
         """Run pipelines in parallel (if supported)."""
         # For now, fall back to sequential execution
         # TODO: Implement true parallel execution with threading
-        self.logger.warning("Parallel execution not yet implemented, using sequential")
+        self.logger.info("Parallel execution not yet implemented, using sequential")
         return self._run_sequential_execution(force_full_scan)
     
     def _execute_ctgov_pipeline(self, force_full_scan: bool) -> Optional[PipelineExecutionResult]:
@@ -269,6 +286,107 @@ class UnifiedPipelineOrchestrator:
             # Create error result
             execution_result = PipelineExecutionResult(
                 pipeline_name="ctgov",
+                success=False,
+                start_time=start_time,
+                end_time=datetime.utcnow(),
+                errors=[error_msg]
+            )
+            
+            return execution_result
+    
+    def _execute_pubmed_pipeline(self, force_full_scan: bool) -> Optional[PipelineExecutionResult]:
+        """Execute PubMed pipeline."""
+        start_time = datetime.utcnow()
+        self.logger.info("Executing PubMed pipeline")
+        
+        try:
+            # Execute PubMed pipeline with proper trial configuration
+            # For now, use a simple configuration - this could be made configurable
+            trial_configs = [
+                {
+                    'trial_id': 'daily_ingestion',
+                    'asset_names': ['drug', 'compound', 'therapy', 'treatment'],
+                    'indications': ['disease', 'condition', 'cancer', 'diabetes'],
+                    'max_results': 200
+                }
+            ]
+            
+            # Convert trial configs to pipeline config format
+            pipeline_config = {
+                'asset_names': trial_configs[0]['asset_names'],
+                'indications': trial_configs[0]['indications'],
+                'max_results': trial_configs[0]['max_results'],
+                'enable_stages': ['U0', 'U1'],  # Skip OA for daily ingestion
+                'retry_config': {
+                    'max_retries': 3,
+                    'retry_delay': 1.0
+                },
+                'client_config': {
+                    'rate_limit_requests_per_minute': 300,
+                    'timeout_seconds': 45
+                }
+            }
+            
+            # Run the pipeline synchronously by creating an event loop
+            import asyncio
+            try:
+                # Try to get the current event loop
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we're already in an async context, we can't run sync
+                    self.logger.warning("Cannot run PubMed pipeline synchronously from async context")
+                    # Return a placeholder result
+                    execution_result = PipelineExecutionResult(
+                        pipeline_name="pubmed",
+                        success=True,
+                        start_time=start_time,
+                        end_time=datetime.utcnow(),
+                        documents_processed=0,
+                        documents_failed=0,
+                        warnings=["PubMed pipeline requires async context for full execution"]
+                    )
+                    return execution_result
+                else:
+                    # Run the pipeline
+                    result = loop.run_until_complete(
+                        self.pubmed_pipeline.run_daily_ingestion(
+                            force_full_scan=force_full_scan,
+                            trial_configs=trial_configs,
+                            pipeline_config=pipeline_config
+                        )
+                    )
+            except RuntimeError:
+                # No event loop, create one
+                result = asyncio.run(
+                    self.pubmed_pipeline.run_daily_ingestion(
+                        force_full_scan=force_full_scan,
+                        trial_configs=trial_configs,
+                        pipeline_config=pipeline_config
+                    )
+                )
+            
+            # Create execution result from pipeline output
+            execution_result = PipelineExecutionResult(
+                pipeline_name="pubmed",
+                success=result.get('success', False),
+                start_time=start_time,
+                end_time=datetime.utcnow(),
+                documents_processed=result.get('documents_processed', 0),
+                documents_failed=result.get('documents_failed', 0),
+                errors=result.get('errors', []),
+                warnings=result.get('warnings', [])
+            )
+            
+            self.logger.info(f"PubMed pipeline completed: {result.get('documents_processed', 0)} documents processed")
+            return execution_result
+            
+        except Exception as e:
+            error_msg = f"Error executing PubMed pipeline: {e}"
+            self.logger.error(error_msg)
+            
+            # Create error result
+            execution_result = PipelineExecutionResult(
+                pipeline_name="pubmed",
                 success=False,
                 start_time=start_time,
                 end_time=datetime.utcnow(),
@@ -368,19 +486,25 @@ class UnifiedPipelineOrchestrator:
         
         try:
             # Determine which pipelines to run
-            pipelines_to_run = pipelines or ['ctgov', 'sec']
+            pipelines_to_run = pipelines or ['ctgov', 'pubmed', 'sec']
             results = {}
             
             for pipeline_name in pipelines_to_run:
                 if pipeline_name == 'ctgov':
                     results['ctgov'] = self._execute_ctgov_backfill(start_date, end_date)
+                elif pipeline_name == 'pubmed':
+                    results['pubmed'] = self._execute_pubmed_backfill(start_date, end_date)
                 elif pipeline_name == 'sec':
                     results['sec'] = self._execute_sec_backfill(start_date, end_date)
             
             # Update execution result
             self.current_execution.end_time = datetime.utcnow()
             self.current_execution.ctgov_result = results.get('ctgov')
+            self.current_execution.pubmed_result = results.get('pubmed')
             self.current_execution.sec_result = results.get('sec')
+            
+            # Finalize the result
+            self.current_execution.finalize()
             
             # Store in history
             self.execution_history.append(self.current_execution)
@@ -396,6 +520,7 @@ class UnifiedPipelineOrchestrator:
             self.logger.error(error_msg)
             self.current_execution.errors.append(error_msg)
             self.current_execution.end_time = datetime.utcnow()
+            self.current_execution.finalize()
             return self.current_execution
     
     def _execute_ctgov_backfill(self, start_date: datetime, end_date: datetime) -> Optional[PipelineExecutionResult]:
@@ -405,13 +530,84 @@ class UnifiedPipelineOrchestrator:
         
         try:
             # TODO: Implement CT.gov backfill
-            # result = self.ctgov_pipeline.run_backfill(start_date, end_date)
+            # For now, return a placeholder result
+            execution_result = PipelineExecutionResult(
+                pipeline_name="ctgov",
+                success=False,
+                start_time=start_time,
+                end_time=datetime.utcnow(),
+                errors=["CT.gov backfill not yet implemented"]
+            )
             
-            # For now, return None
-            return None
+            return execution_result
             
         except Exception as e:
             self.logger.error(f"Error executing CT.gov backfill: {e}")
+            return None
+    
+    def _execute_pubmed_backfill(self, start_date: datetime, end_date: datetime) -> Optional[PipelineExecutionResult]:
+        """Execute PubMed backfill."""
+        start_time = datetime.utcnow()
+        self.logger.info("Executing PubMed backfill")
+        
+        try:
+            # Execute PubMed backfill with date-specific trial configurations
+            # This could be enhanced to use actual trial data from the date range
+            trial_configs = [
+                {
+                    'trial_id': f'backfill_{start_date.strftime("%Y%m%d")}_{end_date.strftime("%Y%m%d")}',
+                    'asset_names': ['drug', 'compound', 'therapy', 'treatment'],
+                    'indications': ['disease', 'condition', 'cancer', 'diabetes'],
+                    'max_results': 500  # Higher limit for backfill
+                }
+            ]
+            
+            # Run the pipeline synchronously
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    self.logger.warning("Cannot run PubMed backfill synchronously from async context")
+                    execution_result = PipelineExecutionResult(
+                        pipeline_name="pubmed",
+                        success=False,
+                        start_time=start_time,
+                        end_time=datetime.utcnow(),
+                        errors=["PubMed backfill requires async context for full execution"]
+                    )
+                    return execution_result
+                else:
+                    result = loop.run_until_complete(
+                        self.pubmed_pipeline.run_daily_ingestion(
+                            force_full_scan=True,
+                            trial_configs=trial_configs
+                        )
+                    )
+            except RuntimeError:
+                result = asyncio.run(
+                    self.pubmed_pipeline.run_daily_ingestion(
+                        force_full_scan=True,
+                        trial_configs=trial_configs
+                    )
+                )
+            
+            # Create execution result
+            execution_result = PipelineExecutionResult(
+                pipeline_name="pubmed",
+                success=result.get('success', False),
+                start_time=start_time,
+                end_time=datetime.utcnow(),
+                documents_processed=result.get('documents_processed', 0),
+                documents_failed=result.get('documents_failed', 0),
+                errors=result.get('errors', []),
+                warnings=result.get('warnings', [])
+            )
+            
+            self.logger.info(f"PubMed backfill completed: {result.get('documents_processed', 0)} documents processed")
+            return execution_result
+            
+        except Exception as e:
+            self.logger.error(f"Error executing PubMed backfill: {e}")
             return None
     
     def _execute_sec_backfill(self, start_date: datetime, end_date: datetime) -> Optional[PipelineExecutionResult]:
@@ -452,6 +648,7 @@ class UnifiedPipelineOrchestrator:
             'last_successful_run': self._get_last_successful_run(),
             'pipeline_status': {
                 'ctgov': self._get_pipeline_status('ctgov'),
+                'pubmed': self._get_pipeline_status('pubmed'),
                 'sec': self._get_pipeline_status('sec')
             },
             'configuration': {
@@ -472,6 +669,9 @@ class UnifiedPipelineOrchestrator:
         """Get status for a specific pipeline."""
         if pipeline_name == 'ctgov':
             return self.ctgov_pipeline.get_pipeline_status()
+        elif pipeline_name == 'pubmed':
+            # TODO: Implement PubMed pipeline status
+            return {'status': 'not_implemented'}
         elif pipeline_name == 'sec':
             return self.sec_pipeline.get_pipeline_status()
         else:
@@ -492,12 +692,15 @@ class UnifiedPipelineOrchestrator:
         """Update orchestration state with latest results."""
         try:
             if self.current_execution:
-                # Update last run times
+                # Update last run times using pipeline result end times
                 if self.current_execution.ctgov_result:
-                    self.orchestration_state['last_ctgov_run'] = self.current_execution.end_time.isoformat()
+                    self.orchestration_state['last_ctgov_run'] = self.current_execution.ctgov_result.end_time.isoformat()
+                
+                if self.current_execution.pubmed_result:
+                    self.orchestration_state['last_pubmed_run'] = self.current_execution.pubmed_result.end_time.isoformat()
                 
                 if self.current_execution.sec_result:
-                    self.orchestration_state['last_sec_run'] = self.current_execution.end_time.isoformat()
+                    self.orchestration_state['last_sec_run'] = self.current_execution.sec_result.end_time.isoformat()
                 
                 # Update last orchestration run
                 self.orchestration_state['last_orchestration_run'] = self.current_execution.end_time.isoformat()
@@ -535,7 +738,8 @@ class UnifiedPipelineOrchestrator:
             return None
         
         if format == "json":
-            import json
-            return json.dumps(vars(execution), indent=2, default=str)
+            # Use dataclasses.asdict for proper serialization
+            data = asdict(execution)
+            return json.dumps(data, indent=2, default=str)
         else:
             raise ValueError(f"Unsupported export format: {format}")

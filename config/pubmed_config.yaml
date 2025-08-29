@@ -1,0 +1,50 @@
+# PubMed Client Configuration
+# This file contains configuration for the PubMed API client
+
+# NCBI API Configuration
+api:
+  # Your NCBI API key (optional but recommended for higher rate limits)
+  # Get one at: https://ncbiinsights.ncbi.nlm.nih.gov/2017/11/02/new-api-keys-for-the-e-utilities/
+  api_key: null  # Set your actual API key here
+  
+  # Contact information (REQUIRED by NCBI)
+  email: "your-email@example.com"  # Replace with your actual email
+  tool: "YourToolName"              # Replace with your tool name
+  
+  # Rate limiting
+  rate_limit_per_sec: 8  # Maximum requests per second (10 with API key, 3 without)
+  
+  # Batch processing
+  batch_size: 100        # Maximum PMIDs per request
+  
+  # Retry and timeout settings
+  max_retries: 3
+  timeout_seconds: 30
+  backoff_base: 2.0
+  
+  # Circuit breaker settings
+  circuit_breaker_threshold: 5
+
+# Search preferences
+search:
+  # Default sort order for searches
+  default_sort: "relevance"  # Options: relevance, pub_date, first_author, journal, title
+  
+  # Use history for large result sets (recommended)
+  use_history: true
+  
+  # Maximum results to fetch in paginated searches
+  max_results: 1000
+
+# Fetch preferences
+fetch:
+  # Preferred format for abstracts (xml is most reliable)
+  preferred_format: "xml"  # Options: xml, medline, abstract
+  
+  # Fallback format if preferred fails
+  fallback_format: "medline"
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  include_request_details: false  # Set to true for debugging

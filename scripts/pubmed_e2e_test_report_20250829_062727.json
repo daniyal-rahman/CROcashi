@@ -1,0 +1,60 @@
+{
+  "start_time": "2025-08-29T06:27:25.689340+00:00",
+  "end_time": "2025-08-29T06:27:27.702536+00:00",
+  "pipeline_results": [
+    {
+      "stage": "U0",
+      "success": true,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "error_message": null,
+      "execution_time": null,
+      "metadata": {
+        "search_query": "(mRNA-1273 OR Moderna) AND (COVID-19 OR SARS-CoV-2) AND (\"Clinical Trial\"[ptyp] OR \"Randomized Controlled Trial\"[ptyp] OR \"Controlled Clinical Trial\"[ptyp] OR \"Clinical Study\"[ptyp])",
+        "pmids_found": 0
+      }
+    },
+    {
+      "stage": "U1",
+      "success": true,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "error_message": null,
+      "execution_time": null,
+      "metadata": {
+        "documents_processed": 0
+      }
+    }
+  ],
+  "database_validation": {
+    "document_created": true,
+    "text_page_linked": true,
+    "citation_linked": true,
+    "relationships_valid": true
+  },
+  "errors": [
+    "Test failed: Error handling test failed: PubMedPipeline.__init__() missing 1 required positional argument: 'config'"
+  ],
+  "warnings": [],
+  "data_integrity": {
+    "total_documents": 0,
+    "documents_with_abstracts": 0,
+    "documents_with_nct_ids": 0,
+    "documents_with_sponsors": 0,
+    "documents_with_entities": 0,
+    "documents_with_scoring": 0,
+    "documents_with_r_tier": 0,
+    "documents_with_s_tier": 0,
+    "high_priority_docs": 0,
+    "fulltext_candidates": 0,
+    "quality_score": 0,
+    "total_checks": 0,
+    "quality_percentage": 0
+  },
+  "duration_seconds": 2.013196,
+  "test_summary": {
+    "total_tests": 6,
+    "successful_tests": 6,
+    "success_rate": 100.0
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "start_time": "2025-08-29T06:27:01.496302+00:00",
+  "end_time": "2025-08-29T06:27:03.024307+00:00",
+  "pipeline_results": [
+    {
+      "stage": "U0",
+      "success": true,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "error_message": null,
+      "execution_time": null,
+      "metadata": {
+        "search_query": "(mRNA-1273 OR Moderna) AND (COVID-19 OR SARS-CoV-2) AND (\"Clinical Trial\"[ptyp] OR \"Randomized Controlled Trial\"[ptyp] OR \"Controlled Clinical Trial\"[ptyp] OR \"Clinical Study\"[ptyp])",
+        "pmids_found": 0
+      }
+    },
+    {
+      "stage": "U1",
+      "success": true,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "error_message": null,
+      "execution_time": null,
+      "metadata": {
+        "documents_processed": 0
+      }
+    }
+  ],
+  "database_validation": {},
+  "errors": [
+    "Test failed: Complete pipeline test failed: Configuration validation failed:\n  - Missing required field: asset_names\n  - Missing required field: indications\n  - asset_names cannot be empty\n  - indications cannot be empty"
+  ],
+  "warnings": [],
+  "duration_seconds": 1.528005,
+  "test_summary": {
+    "total_tests": 2,
+    "successful_tests": 2,
+    "success_rate": 100.0
+  }
+}
