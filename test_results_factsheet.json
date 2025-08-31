@@ -1,0 +1,181 @@
+[
+  {
+    "created_at": "2025-08-30T01:47:07.414023",
+    "created_by": null,
+    "version": 1,
+    "input_hash": "43165f1bfd29434f",
+    "parent_ids": [],
+    "span_ids": [
+      "pmc:PMC2978916#sec:Results:char0-200"
+    ],
+    "notes": [],
+    "id": "4313b257-4634-43c8-8bfd-c367c97f79c2",
+    "status": "draft",
+    "metadata": {},
+    "results": [
+      {
+        "metric": "median_ttp",
+        "value": 14.0,
+        "units": "weeks",
+        "n": 100,
+        "method": "Kaplan-Meier",
+        "summary_statistic": "median",
+        "range_min": null,
+        "range_max": null,
+        "breakdown": null,
+        "ci_lower": null,
+        "ci_upper": null,
+        "p_value": null,
+        "direction": "favorable",
+        "log_metric": null,
+        "timepoint": null,
+        "analysis_set": "not_specified",
+        "population_slice": null,
+        "is_posthoc": false,
+        "flags": [],
+        "span_ids": [
+          "pmc:PMC2978916#sec:Results:char0-200"
+        ],
+        "doc_id": "pmc:PMC2978916"
+      }
+    ],
+    "primary_endpoint_results": {
+      "metric": "median_ttp",
+      "value": 14.0,
+      "units": "weeks",
+      "n": 100,
+      "method": "Kaplan-Meier",
+      "summary_statistic": "median",
+      "range_min": null,
+      "range_max": null,
+      "breakdown": null,
+      "ci_lower": null,
+      "ci_upper": null,
+      "p_value": null,
+      "direction": "favorable",
+      "log_metric": null,
+      "timepoint": null,
+      "analysis_set": "not_specified",
+      "population_slice": null,
+      "is_posthoc": false,
+      "flags": [],
+      "span_ids": [
+        "pmc:PMC2978916#sec:Results:char0-200"
+      ],
+      "doc_id": "pmc:PMC2978916"
+    },
+    "secondary_endpoint_results": [],
+    "safety_results": [],
+    "primary_analysis_set": "not_specified",
+    "secondary_analysis_sets": [],
+    "total_enrolled": null,
+    "completed_primary_endpoint": null,
+    "dropout_rate": null,
+    "follow_up_completion": null
+  },
+  {
+    "created_at": "2025-08-30T01:47:07.414049",
+    "created_by": null,
+    "version": 1,
+    "input_hash": "7910ccc52bab4f15",
+    "parent_ids": [],
+    "span_ids": [
+      "pmc:PMC2978916#sec:Results:char0-150"
+    ],
+    "notes": [],
+    "id": "a1547639-12d9-4fca-a196-38ff34884a21",
+    "status": "draft",
+    "metadata": {},
+    "results": [
+      {
+        "metric": "orr_recist",
+        "value": 15.8,
+        "units": "percent",
+        "n": 100,
+        "method": null,
+        "summary_statistic": "proportion",
+        "range_min": null,
+        "range_max": null,
+        "breakdown": {
+          "CR": 1,
+          "PR": 2,
+          "SD": 6,
+          "PD": 10
+        },
+        "ci_lower": null,
+        "ci_upper": null,
+        "p_value": null,
+        "direction": "favorable",
+        "log_metric": null,
+        "timepoint": null,
+        "analysis_set": "not_specified",
+        "population_slice": null,
+        "is_posthoc": false,
+        "flags": [],
+        "span_ids": [
+          "pmc:PMC2978916#sec:Results:char0-150"
+        ],
+        "doc_id": "pmc:PMC2978916"
+      }
+    ],
+    "primary_endpoint_results": null,
+    "secondary_endpoint_results": [],
+    "safety_results": [],
+    "primary_analysis_set": "not_specified",
+    "secondary_analysis_sets": [],
+    "total_enrolled": null,
+    "completed_primary_endpoint": null,
+    "dropout_rate": null,
+    "follow_up_completion": null
+  },
+  {
+    "created_at": "2025-08-30T01:47:07.414066",
+    "created_by": null,
+    "version": 1,
+    "input_hash": "6fc7682fbdc74198",
+    "parent_ids": [],
+    "span_ids": [
+      "pmc:PMC2978916#sec:Results:char0-150"
+    ],
+    "notes": [],
+    "id": "ad00321f-9804-4a6a-9c39-cdc39c599786",
+    "status": "draft",
+    "metadata": {},
+    "results": [
+      {
+        "metric": "ca125_response",
+        "value": 21.1,
+        "units": "percent",
+        "n": 100,
+        "method": null,
+        "summary_statistic": "proportion",
+        "range_min": null,
+        "range_max": null,
+        "breakdown": null,
+        "ci_lower": null,
+        "ci_upper": null,
+        "p_value": null,
+        "direction": "favorable",
+        "log_metric": null,
+        "timepoint": null,
+        "analysis_set": "not_specified",
+        "population_slice": null,
+        "is_posthoc": false,
+        "flags": [],
+        "span_ids": [
+          "pmc:PMC2978916#sec:Results:char0-150"
+        ],
+        "doc_id": "pmc:PMC2978916"
+      }
+    ],
+    "primary_endpoint_results": null,
+    "secondary_endpoint_results": [],
+    "safety_results": [],
+    "primary_analysis_set": "not_specified",
+    "secondary_analysis_sets": [],
+    "total_enrolled": null,
+    "completed_primary_endpoint": null,
+    "dropout_rate": null,
+    "follow_up_completion": null
+  }
+]

@@ -1,0 +1,237 @@
+# Test Configuration for Normalization Registry & Denominator Resolver Test Suite
+# PMC2978916 Units, Conversions, and N Mapping Testing
+
+# Test Data Configuration
+test_data:
+  paper_id: "pmc:PMC2978916"
+  title: "Phase 1/2 Study of Atrasentan Combined with Pegylated Liposomal Doxorubicin in Platinum-Resistant Recurrent Ovarian Cancer"
+  
+  # Gold metrics with expected units and denominators
+  gold_metrics:
+    median_ttp:
+      description: "Median time to progression"
+      expected_value: 14
+      expected_unit: "weeks"
+      normalized_unit: "days"
+      expected_n: 22
+      expected_denominator_source: "ttp_os"
+      required_sections: ["Results"]
+      priority: "high"
+    
+    median_os:
+      description: "Median overall survival"
+      expected_value: 13.1
+      expected_unit: "months"
+      normalized_unit: "days"
+      expected_n: 22
+      expected_denominator_source: "ttp_os"
+      required_sections: ["Results"]
+      priority: "high"
+    
+    orr_recist:
+      description: "Objective response rate by RECIST"
+      expected_value: 15.8
+      expected_unit: "percent"
+      normalized_unit: "percent"
+      expected_n: 19
+      expected_denominator_source: "response"
+      required_sections: ["Results"]
+      priority: "high"
+    
+    ca125_response:
+      description: "CA125 response rate"
+      expected_value: 21.1
+      expected_unit: "percent"
+      normalized_unit: "percent"
+      expected_n: 19
+      expected_denominator_source: "response"
+      required_sections: ["Results"]
+      priority: "high"
+
+# Unit Conversion Configuration
+unit_conversions:
+  weeks_to_days:
+    from_unit: "weeks"
+    to_unit: "days"
+    conversion_factor: 7
+    auto_convert: true
+  
+  months_to_days:
+    from_unit: "months"
+    to_unit: "days"
+    conversion_factor: 30.44
+    auto_convert: true
+  
+  percent_to_percent:
+    from_unit: "percent"
+    to_unit: "percent"
+    conversion_factor: 1
+    auto_convert: false
+
+# Denominator Precedence Rules
+denominator_precedence:
+  table: 3
+  results: 2
+  abstract: 1
+  methods: 0
+
+# Test Configuration
+test_config:
+  require_unit_conformance: true
+  auto_convert_enabled: true
+  store_alternates: true
+  validate_denominators: true
+
+# Test Execution Configuration
+execution:
+  # Test categories to run
+  test_categories:
+    - "unit_enforcement"
+    - "denominator_mapping"
+    - "ambiguity_resolution"
+    - "unit_conversion_validation"
+    - "denominator_source_tracking"
+    - "unit_conformance_validation"
+    - "denominator_consistency_validation"
+    - "error_handling_and_validation"
+  
+  # Performance thresholds
+  performance:
+    max_execution_time: 300  # 5 minutes
+    max_memory_usage: 512    # 512 MB
+    max_cpu_usage: 80        # 80%
+  
+  # Output configuration
+  output:
+    generate_reports: true
+    report_format: ["html", "json"]
+    save_artifacts: true
+    artifact_directory: "test_results/normalization_denominator"
+
+# Validation Rules
+validation:
+  # Unit conformance requirements
+  unit_conformance:
+    require_exact_match: true
+    allow_auto_conversion: true
+    no_default_units: true
+    validate_conversions: true
+  
+  # Denominator requirements
+  denominator:
+    require_span_ids: true
+    validate_consistency: true
+    apply_precedence_rules: true
+    store_alternates: true
+  
+  # Conversion requirements
+  conversion:
+    validate_mathematics: true
+    check_conversion_factors: true
+    test_edge_cases: true
+    verify_rounding: true
+
+# Error Handling
+error_handling:
+  # Error tolerance levels
+  tolerance:
+    invalid_units: 0        # 0% tolerance for invalid units
+    missing_denominators: 0 # 0% tolerance for missing denominators
+    conversion_failures: 0  # 0% tolerance for conversion failures
+  
+  # Error reporting
+  reporting:
+    detailed_errors: true
+    include_stack_traces: true
+    save_error_logs: true
+    error_log_directory: "test_results/errors"
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "[%(levelname)s] %(name)s: %(message)s"
+  handlers:
+    - type: "console"
+      level: "INFO"
+    - type: "file"
+      level: "DEBUG"
+      filename: "test_results/normalization_denominator.log"
+  
+  # Performance logging
+  performance:
+    log_execution_time: true
+    log_memory_usage: true
+    log_cpu_usage: true
+    log_conversion_rates: true
+    log_denominator_resolution: true
+
+# Expected Results
+expected_results:
+  # Unit conformance expectations
+  unit_conformance:
+    median_ttp: "weeks"
+    median_os: "months"
+    orr_recist: "percent"
+    ca125_response: "percent"
+    all_metrics: 100.0
+  
+  # Normalization expectations
+  normalization:
+    median_ttp: "days"
+    median_os: "days"
+    orr_recist: "percent"
+    ca125_response: "percent"
+    conversion_success: 100.0
+  
+  # Denominator expectations
+  denominator:
+    median_ttp: 22
+    median_os: 22
+    orr_recist: 19
+    ca125_response: 19
+    all_metrics: 100.0
+  
+  # Precedence expectations
+  precedence:
+    table_priority: 100.0
+    results_priority: 100.0
+    abstract_priority: 100.0
+    rule_application: 100.0
+
+# Test Scenarios
+test_scenarios:
+  # Unit conversion scenarios
+  unit_conversions:
+    weeks_to_days:
+      test_values: [1, 2, 4, 8, 12, 26, 52]
+      expected_factors: 7
+      tolerance: 0.1
+    
+    months_to_days:
+      test_values: [1, 3, 6, 12, 24, 60]
+      expected_factors: 30.44
+      tolerance: 0.1
+    
+    percent_to_percent:
+      test_values: [0, 25, 50, 75, 100]
+      expected_factors: 1
+      tolerance: 0.0
+  
+  # Denominator scenarios
+  denominators:
+    ttp_os:
+      expected_value: 22
+      source_sections: ["Results"]
+      consistency_required: true
+    
+    response:
+      expected_value: 19
+      source_sections: ["Results", "Table", "Abstract"]
+      precedence_applied: true
+  
+  # Ambiguity scenarios
+  ambiguity:
+    response_metrics:
+      available_sources: ["table", "results", "abstract"]
+      precedence_order: ["table", "results", "abstract"]
+      alternates_stored: true

@@ -221,62 +221,6 @@ Everything else (IDs, numeric extraction, unit conversions, threshold checks) sh
 
 ---
 
-# 8) Files Slated for Overhaul
-
-Based on the current implementation analysis, the following files are associated with the study card generation → gate generation pipeline and are slated for overhaul to align with the new architecture:
-
-## Core Study Card Files:
-- **`src/ncfd/extract/study_card.schema.json`** - JSON schema for study cards
-- **`src/ncfd/extract/prompts/study_card_prompts.md`** - LLM prompts for extraction  
-- **`src/ncfd/extract/prompts/study_card_prompts.py`** - Python wrapper for prompts
-- **`src/ncfd/extract/lanextract_adapter.py`** - Main extraction adapter using LangExtract
-
-## Study Card Processing:
-- **`src/ncfd/pipeline/processing.py`** - StudyCardProcessor for enrichment and validation
-- **`src/ncfd/pipeline/ingestion.py`** - Document ingestion pipeline with study card extraction
-- **`src/ncfd/pipeline/workflow.py`** - End-to-end workflow orchestrating study card → signals → gates
-
-## Study Card Analysis & Evaluation:
-- **`src/ncfd/catalyst/extractor.py`** - Field extraction from study cards
-- **`src/ncfd/catalyst/evaluator.py`** - Automatic study card evaluation
-- **`src/ncfd/catalyst/comprehensive_service.py`** - Comprehensive study card analysis service
-
-## Signals & Gates (Study Card → Gate Generation):
-- **`src/ncfd/signals/primitives.py`** - Signal primitives S1-S9 that consume study card data
-- **`src/ncfd/signals/gates.py`** - Gate logic G1-G4 that combines signals
-- **`src/ncfd/scoring/score.py`** - Scoring system using gates and likelihood ratios
-
-## Database Models & Migrations:
-- **`src/ncfd/db/models.py`** - Database models for studies, signals, gates, scores
-- **`alembic/versions/20250121_create_studies_table_and_guardrails.py`** - Studies table creation
-- **`alembic/versions/20250124_create_signals_gates_scores_tables.py`** - Signals/gates/scores tables
-- **`alembic/versions/cb8dbc1fff5f_enhance_study_card_schema_phase2.py`** - Study card schema enhancements
-
-## Testing & Validation:
-- **`tests/test_study_card_guardrails.py`** - Study card validation tests
-- **`scripts/demo_testing_validation.py`** - Demo scripts for study card generation
-- **`scripts/test_e2e_full_pipeline.py`** - End-to-end pipeline testing
-
-## Overhaul Rationale:
-The current implementation has several architectural issues that need to be addressed:
-
-1. **Mixed Responsibilities**: Current files mix study card extraction, processing, and signal generation
-2. **Inconsistent Data Flow**: Study cards flow through multiple processing layers without clear contracts
-3. **Limited Evidence Tracking**: Current evidence spans are basic and don't support the new granular approach
-4. **Rigid Schema**: Current study card schema doesn't support the new composable card structure
-5. **Tight Coupling**: Signals and gates are tightly coupled to the current study card format
-
-## Migration Strategy:
-1. **Phase 1**: Create new data structures (DocumentCard, EvidenceSpan, Claim, MethodCard, etc.)
-2. **Phase 2**: Implement new LLM workers with clear contracts
-3. **Phase 3**: Migrate existing study card data to new format
-4. **Phase 4**: Update signals and gates to use new data structures
-5. **Phase 5**: Deprecate old implementation and remove legacy code
-
----
-
-awesome — here’s a clean, “contracts-first” description of each LLM worker: what it does, what it consumes/produces, how to implement it (prompt style, guardrails, hyperparams), and how it fails. No code — just the ops manual you can hand to anyone wiring this up.
-
 # 0) Global principles (apply to all workers)
 
 * **Closed-book by default:** models only see retrieved spans + the Pocket Context Card (10–12 bullets). No web, no hidden priors.
@@ -458,3 +402,155 @@ awesome — here’s a clean, “contracts-first” description of each LLM work
 
 * Use **one heavy “auditor”** to reconstruct Methods truth, a **distiller** to sanitize Results, a **proposer+validator** pair to create **falsifiable gates**, a mostly **deterministic assessor** to decide PASS/FAIL, and an **FDA lens** for forward-looking asks — all stitched by a memo composer that **cites every sentence**.
 * Keep models **closed-book**, **provenance-locked**, and **deterministic**; push all arithmetic out of the LLMs; enforce numeric thresholds and claim links in gates; and always render a small sensitivity snapshot so reviewers see levers, not vibes.
+
+---
+
+## 0) Project scaffolding (shared contracts)
+
+**Goal:** lock IDs, folders, and JSON shapes so everything downstream plugs in.
+
+* **Inputs:** none.
+* **Outputs:**
+
+  * `ids.md` (how to form `doc_id`, `span_id`, `claim_id`)
+  * `schemas/` (JSON for: DocumentCard, EvidenceSpan, Claim, MethodCard, ResultsFactsheet, PocketContextCard, GateCandidate, GateSpec, GateAssessment, DecisionRecord)
+  * `conventions.md` (units, endpoint names, assay cutoffs)
+* **Done when:** all schemas validate with 2–3 hand-made examples and every schema includes a `provenance.span_ids[]` field.
+
+---
+
+## 1) Span Triage & Index (cheap retrieval)
+
+**Goal:** get high-quality Methods/Results/Tables **spans** out of your ingested docs.
+
+* **Inputs:** parsed PDFs/HTML (already ingested).
+* **Outputs:** `DocumentCard[]`, `EvidenceSpan[]` (≤400 chars, with page/char anchors), labeled by section.
+* **Done when:** for 5 test papers, you can list 10–30 top spans/section and discard low-quality OCR pages.
+
+---
+
+## 2) Results Distiller v0 (facts-only rows)
+
+**Goal:** turn Results spans into a **ResultsFactsheet** (numbers normalized; spin filtered).
+
+* **Inputs:** Results spans.
+* **Outputs:** `ResultsFactsheet[]` rows `{metric, value, ci, p, set, timepoint, is_posthoc, flags[], span_ids[]}` plus normalized `log_metric` when applicable.
+* **Done when:** on 5 RCTs, primary endpoint HR/CI/p are captured with correct analysis set, and every row links to a span.
+
+---
+
+## 3) Method Auditor v0 (the non-obvious bits)
+
+**Goal:** reconstruct what isn’t cleanly stated in tables.
+
+* **Inputs:** design stub (arms/N/endpoints) + Methods/Protocol/SAP spans + PocketContextCard (placeholder bullets).
+* **Outputs:** `MethodCard` with: `estimand`, `alpha_structure`, `interim/spending`, `analysis_set`, `missingness`, `endpoint_ascertainment`, `protocol_features`, `assay_thresholds`, `dose_exposure_rationale`, `site_geography`, `design_risks[]`, `provenance_anchors[]`.
+* **Done when:** for 3 papers you can point to the span that supports **each** scalar; if unknown, it says `unknown` (no guessing).
+
+---
+
+## 4) Claimizer v0 (atomic claims)
+
+**Goal:** convert spans into **atomic, testable** `Claim` objects the gates can compute with.
+
+* **Inputs:** All spans (Methods/Results/Tables) + normalization rules.
+* **Outputs:** `Claim[]` with `type` (design\_fact | effect\_size | prevalence | assay\_cutoff | pkpd | operational | limitation), `value/ci/p/units`, `stance`, `quality_score`, `applicability_score`, `span_ids[]`.
+* **Done when:** duplicates are merged, units normalized, and each claim has a quality/applicability score (even a simple heuristic).
+
+---
+
+## 5) Counter-Evidence Miner (negation sweep)
+
+**Goal:** surface the **best contradictors** per gate family.
+
+* **Inputs:** same corpus; pattern list (e.g., “no difference”, “failed to meet”, “neutral”).
+* **Outputs:** top-N contradicting `Claim[]` per family (G1/G2/G3), ranked by quality×applicability.
+* **Done when:** for each family, you either have ≥1 strong contradictor or an explicit “none found” with queries tried.
+
+---
+
+## 6) Gate Proposer v0 (necessary & falsifiable)
+
+**Goal:** propose 3–5 **necessary** gates with **numeric rules** and computable measurables.
+
+* **Inputs:** `MethodCard`, `ResultsFactsheet`, supportive/contradicting `Claim[]`, PocketContextCard.
+* **Outputs:** `GateCandidate[]` each with `proposition`, `decision_rule`, `measurables[name, compute, threshold, claim_ids]`, `dependencies[]`, `counter_claims[]`, `fda_next`, `confidence`.
+* **Done when:** every gate has ≥2 measurables **with thresholds** and every measurable points to at least one claim.
+
+---
+
+## 7) Post-Gate Validator (rule enforcer)
+
+**Goal:** reject or fix gates that aren’t computable.
+
+* **Inputs:** `GateCandidate[]`, referenced `Claim[]`.
+* **Outputs:** `GateSpec[]` (canonical wording) + list of rejections with reasons.
+* **Checks:** thresholds present; computations feasible with available claims; counters included; dependencies explicit.
+* **Done when:** invalid gates are bounced with actionable errors; valid ones are normalized into a consistent template.
+
+---
+
+## 8) Gate Assessor v0 (deterministic first)
+
+**Goal:** compute measurables → apply gate rules → set PASS/FAIL/UNCERTAIN; create rationale with citations.
+
+* **Inputs:** `GateSpec[]`, all referenced `Claim[]`.
+* **Outputs:** `GateAssessment[]` with `{status, numbers_used, p_gate?(optional), rationale(sentences + claim_ids), sensitivity[] (1–2 knobs)}`.
+* **Done when:** for a test trial you can show the intermediate numbers (e.g., eligible\_fraction, vg/cell), the decision rule evaluation, and a short rationale where **every sentence** cites claim ids.
+
+---
+
+## 9) FDA Lens (forward-looking asks)
+
+**Goal:** convert “what would increase confidence next time” into measurable **future gates**.
+
+* **Inputs:** `MethodCard`, `GateAssessment[]`, coverage gaps (auto-compiled list of missing measurables).
+* **Outputs:** 2–3 `GateSpec` items phrased as next-study requirements (with thresholds).
+* **Done when:** each ask is **feasible** (collectable in a protocol/SAP) and measurable.
+
+---
+
+## 10) DecisionRecord & Memo Composer
+
+**Goal:** stitch assessments into a one-pager with an AND-gate summary and tiny sensitivity.
+
+* **Inputs:** `GateAssessment[]`, chosen combine rule (simple AND for MVP), PocketContextCard.
+* **Outputs:** `DecisionRecord` + markdown memo (every sentence carries `[claim_id]` or `span_id`).
+* **Done when:** memo validates: all sentences have references; AND logic and sensitivity grid are present; coverage gaps listed.
+
+---
+
+## 11) Guardrails & Validators (cross-cutting, tiny)
+
+**Goal:** keep the system honest without heavy infra.
+
+* **Artifacts:**
+
+  * **Schema validators** for every JSON.
+  * **Provenance checker** (reject numerics lacking `span_ids`).
+  * **Gate linter** (no “and/or”, no vague adjectives without thresholds, ≥2 measurables).
+  * **Citation checker** (memo sentences all reference known ids).
+* **Done when:** any violation hard-fails the stage with a machine-readable error.
+
+---
+
+## 12) Pocket Context Card generator (zoom-out in a page)
+
+**Goal:** give models just enough big-picture context without a full disease review.
+
+* **Inputs:** trial class (e.g., AAV in HFrEF) + small registry of “class quirks” (event volatility, MCID, redose feasibility).
+* **Outputs:** `PocketContextCard` (10–12 bullets).
+* **Done when:** cards exist for 2–3 common classes you care about; they’re injected into Method Auditor, Gate Proposer, and Memo Composer prompts.
+
+---
+
+### How to run this in practice (lightweight flow)
+
+1. **0–1–2–3**: lock schemas → spans → ResultsFactsheet → MethodCard
+2. **4–5**: make Claims + contradictors
+3. **6–7–8**: propose gates → validate → assess
+4. **9–10–11–12**: FDA asks → memo → guardrails → pocket context
+
+Each chunk is shippable on its own; you can onboard trials incrementally and improve prompts/heuristics without breaking contracts.
+
+If you want, I can turn these into **issue templates** (one per chunk) with acceptance criteria you can paste into your tracker.

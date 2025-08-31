@@ -1,0 +1,143 @@
+{
+  "worker": "MethodAuditor",
+  "success": true,
+  "output": {
+    "method_card": {
+      "created_at": "2025-08-31T02:27:33.840838",
+      "created_by": null,
+      "version": 1,
+      "input_hash": "227bf7b840244ae7",
+      "parent_ids": [],
+      "span_ids": [],
+      "notes": [],
+      "id": "5e79c620-485a-4fe3-944e-75508008cfb8",
+      "status": "draft",
+      "metadata": {},
+      "estimand": {
+        "population": "unknown",
+        "endpoint": "unknown",
+        "intercurrent_policy": "unknown",
+        "summary_measure": "unknown"
+      },
+      "population_description": null,
+      "primary_endpoint": "ORR_RECIST",
+      "secondary_endpoints": [],
+      "intercurrent_events_policy": null,
+      "summary_measure": null,
+      "alpha_structure": {
+        "sidedness": "not_reported",
+        "alpha_threshold": null,
+        "multiplicity_plan": "not_reported",
+        "hierarchy": "not_reported",
+        "gatekeeping": false
+      },
+      "alpha_level": null,
+      "is_one_sided": null,
+      "multiplicity_adjustment": null,
+      "gatekeeping_hierarchy": [],
+      "interim_looks": "unknown",
+      "interim_timing": "unknown",
+      "spending_function": "unknown",
+      "sample_size_reassessment": false,
+      "stop_rules": [],
+      "gehan_two_stage": false,
+      "analysis_set": {
+        "ITT": false,
+        "mITT": false,
+        "PP": false,
+        "safety": false,
+        "efficacy": false,
+        "stratification_factors": []
+      },
+      "stratification_factors": [],
+      "covariate_adjustment": [],
+      "missingness_assumption": "not_reported",
+      "missingness_pattern": null,
+      "imputation_method": "not_reported",
+      "tipping_point_analysis": false,
+      "endpoint_ascertainment": "RECIST",
+      "is_blinded": false,
+      "adjudication_committee": null,
+      "protocol_features": {
+        "run_in": false,
+        "enrichment": false,
+        "crossover": false,
+        "rescue": false,
+        "washout": false
+      },
+      "run_in_period": null,
+      "enrichment_strategy": null,
+      "crossover_design": null,
+      "rescue_medication": null,
+      "assay_thresholds": [],
+      "dose_exposure_rationale": "Based on targeted_therapy class considerations",
+      "target_engagement": null,
+      "pkpd_relationship": null,
+      "site_geography": {
+        "num_sites": "not_reported",
+        "regions": [],
+        "dispersion": "not_reported"
+      },
+      "number_of_sites": "not_reported",
+      "regions": [],
+      "dispersion_flag": null,
+      "design_risks": ["single_arm_phase2", "two_stage_selection"],
+      "study_phase": "phase_2",
+      "randomization_ratio": null,
+      "blinding_level": "not_reported",
+      "treatment_duration": null,
+      "follow_up_duration": null,
+      "provenance_anchors": [
+        "pmc:PMC2978916#sec:Methods:char100-200",
+        "pmc:PMC2978916#sec:Methods:char200-300",
+        "pmc:PMC2978916#sec:Methods:char300-400"
+      ]
+    },
+    "processed_spans": 3,
+    "extracted_fields": 19
+  },
+  "metadata": {
+    "worker": "MethodAuditor",
+    "version": "1.0",
+    "max_spans_processed": 3
+  },
+  "input_spans": [
+    {
+      "doc_id": "pmc:PMC2978916",
+      "quote": "This was a single-arm phase 2 study using Gehan's two-stage design.",
+      "section": "Methods",
+      "char_start": 100,
+      "char_end": 200,
+      "confidence": 0.95
+    },
+    {
+      "doc_id": "pmc:PMC2978916",
+      "quote": "Response was assessed every 6 weeks using RECIST v1.1 criteria.",
+      "section": "Methods",
+      "char_start": 200,
+      "char_end": 300,
+      "confidence": 0.95
+    },
+    {
+      "doc_id": "pmc:PMC2978916",
+      "quote": "Twenty-two patients were evaluable for analysis.",
+      "section": "Methods",
+      "char_start": 300,
+      "char_end": 400,
+      "confidence": 0.90
+    }
+  ],
+  "design_json": {
+    "arms": ["PLD + atrasentan"],
+    "total_n": 22,
+    "primary_endpoint": "feasibility_and_toxicity",
+    "study_design": "single_arm_phase2_gehan",
+    "gehan_two_stage": true,
+    "interim_looks": 1
+  },
+  "pocket_context": {
+    "disease": "ovarian_cancer",
+    "intervention_class": "targeted_therapy",
+    "mechanism_of_action": "endothelin_receptor_antagonist"
+  }
+}

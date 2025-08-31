@@ -1,0 +1,297 @@
+# Test Configuration for Results Distiller Test Suite
+# PMC2978916 Robust Extraction Under Span Limits with No Hallucinations
+
+# Test Data Configuration
+test_data:
+  paper_id: "pmc:PMC2978916"
+  title: "Phase 1/2 Study of Atrasentan Combined with Pegylated Liposomal Doxorubicin in Platinum-Resistant Recurrent Ovarian Cancer"
+  
+  # Gold metrics with expected values, units, and denominators
+  gold_metrics:
+    median_ttp:
+      description: "Median time to progression"
+      value_native: 14
+      unit_native: "weeks"
+      value_normalized: 98
+      unit_normalized: "days"
+      n: 22
+      denominator_source: "ttp_os"
+      required_sections: ["Results"]
+      priority: "high"
+    
+    median_os:
+      description: "Median overall survival"
+      value_native: 13.1
+      unit_native: "months"
+      value_normalized: 398.764
+      unit_normalized: "days"
+      n: 22
+      denominator_source: "ttp_os"
+      required_sections: ["Results"]
+      priority: "high"
+    
+    orr_recist:
+      description: "Objective response rate by RECIST"
+      value_native: 15.8
+      unit_native: "percent"
+      value_normalized: 15.8
+      unit_normalized: "percent"
+      n: 19
+      denominator_source: "response"
+      required_sections: ["Results"]
+      priority: "high"
+    
+    ca125_response:
+      description: "CA125 response rate"
+      value_native: 21.1
+      unit_native: "percent"
+      value_normalized: 21.1
+      unit_normalized: "percent"
+      n: 19
+      denominator_source: "response"
+      required_sections: ["Results"]
+      priority: "high"
+
+# Expected ResultsFactsheet rows
+expected_rows:
+  median_ttp:
+    metric: "median_ttp"
+    value_native: 14
+    unit_native: "weeks"
+    value_normalized: 98
+    unit_normalized: "days"
+    n: 22
+    span_ids: ["pmc:PMC2978916#p2:200-300", "pmc:PMC2978916#p2:0-100"]
+    required_fields: ["metric", "value_native", "unit_native", "value_normalized", "unit_normalized", "n", "span_ids"]
+  
+  median_os:
+    metric: "median_os"
+    value_native: 13.1
+    unit_native: "months"
+    value_normalized: 398.764
+    unit_normalized: "days"
+    n: 22
+    span_ids: ["pmc:PMC2978916#p2:300-400", "pmc:PMC2978916#p2:0-100"]
+    required_fields: ["metric", "value_native", "unit_native", "value_normalized", "unit_normalized", "n", "span_ids"]
+  
+  orr_recist:
+    metric: "orr_recist"
+    value_native: 15.8
+    unit_native: "percent"
+    value_normalized: 15.8
+    unit_normalized: "percent"
+    n: 19
+    span_ids: ["pmc:PMC2978916#p2:400-500", "pmc:PMC2978916#p2:100-200"]
+    required_fields: ["metric", "value_native", "unit_native", "value_normalized", "unit_normalized", "n", "span_ids"]
+  
+  ca125_response:
+    metric: "ca125_response"
+    value_native: 21.1
+    unit_native: "percent"
+    value_normalized: 21.1
+    unit_normalized: "percent"
+    n: 19
+    span_ids: ["pmc:PMC2978916#p2:500-600", "pmc:PMC2978916#p2:100-200"]
+    required_fields: ["metric", "value_native", "unit_native", "value_normalized", "unit_normalized", "n", "span_ids"]
+
+# Test Configuration
+test_config:
+  require_all_metrics: true
+  enforce_span_limits: true
+  prevent_hallucinations: true
+  require_provenance: true
+  deduplicate_results: true
+
+# Processing Modes
+processing_modes:
+  deterministic:
+    description: "Deterministic processing path"
+    llm_assist: false
+    expected_accuracy: 1.0
+  
+  llm_assist:
+    description: "LLM-assisted processing path"
+    llm_assist: true
+    expected_accuracy: 1.0
+
+# Test Execution Configuration
+execution:
+  # Test categories to run
+  test_categories:
+    - "coverage_extraction"
+    - "deduplication_validation"
+    - "provenance_validation"
+    - "llm_evidence_lock"
+    - "deterministic_path_validation"
+    - "llm_assist_path_validation"
+    - "span_limit_enforcement"
+    - "hallucination_prevention"
+  
+  # Performance thresholds
+  performance:
+    max_execution_time: 300  # 5 minutes
+    max_memory_usage: 512    # 512 MB
+    max_cpu_usage: 80        # 80%
+  
+  # Output configuration
+  output:
+    generate_reports: true
+    report_format: ["html", "json"]
+    save_artifacts: true
+    artifact_directory: "test_results/results_distiller"
+
+# Validation Rules
+validation:
+  # Coverage requirements
+  coverage:
+    require_all_four_metrics: true
+    require_native_values: true
+    require_normalized_values: true
+    require_denominators: true
+    require_span_ids: true
+  
+  # Deduplication requirements
+  deduplication:
+    no_duplicate_metrics: true
+    no_duplicate_values: true
+    abstract_vs_results_deduplication: true
+  
+  # Provenance requirements
+  provenance:
+    every_row_has_spans: true
+    spans_belong_to_doc: true
+    metric_spans_found: true
+    denominator_spans_found: true
+    hard_fail_if_missing: true
+  
+  # Evidence lock requirements
+  evidence_lock:
+    all_tokens_in_spans: true
+    no_unseen_content: true
+    fail_on_hallucination: true
+    verify_metric_values: true
+    verify_metric_units: true
+    verify_denominators: true
+
+# Error Handling
+error_handling:
+  # Error tolerance levels
+  tolerance:
+    missing_metrics: 0        # 0% tolerance for missing metrics
+    missing_spans: 0          # 0% tolerance for missing spans
+    hallucinated_content: 0   # 0% tolerance for hallucinations
+    duplicate_rows: 0         # 0% tolerance for duplicates
+  
+  # Error reporting
+  reporting:
+    detailed_errors: true
+    include_stack_traces: true
+    save_error_logs: true
+    error_log_directory: "test_results/errors"
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "[%(levelname)s] %(name)s: %(message)s"
+  handlers:
+    - type: "console"
+      level: "INFO"
+    - type: "file"
+      level: "DEBUG"
+      filename: "test_results/results_distiller.log"
+  
+  # Performance logging
+  performance:
+    log_execution_time: true
+    log_memory_usage: true
+    log_cpu_usage: true
+    log_metric_extraction: true
+    log_span_usage: true
+    log_hallucination_checks: true
+
+# Expected Results
+expected_results:
+  # Coverage expectations
+  coverage:
+    all_four_metrics: 100.0
+    native_values: 100.0
+    normalized_values: 100.0
+    denominators: 100.0
+    span_ids: 100.0
+  
+  # Deduplication expectations
+  deduplication:
+    no_duplicates: 100.0
+    abstract_vs_results: 100.0
+  
+  # Provenance expectations
+  provenance:
+    all_rows_have_spans: 100.0
+    spans_belong_to_doc: 100.0
+    metric_spans_found: 100.0
+    denominator_spans_found: 100.0
+  
+  # Evidence lock expectations
+  evidence_lock:
+    all_tokens_verified: 100.0
+    no_hallucinations: 100.0
+  
+  # Processing path expectations
+  processing_paths:
+    deterministic_accuracy: 100.0
+    llm_assist_accuracy: 100.0
+    independent_criteria: 100.0
+
+# Test Scenarios
+test_scenarios:
+  # Coverage scenarios
+  coverage:
+    four_target_metrics:
+      - "median_ttp"
+      - "median_os"
+      - "orr_recist"
+      - "ca125_response"
+    
+    required_fields:
+      - "metric"
+      - "value_native"
+      - "unit_native"
+      - "value_normalized"
+      - "unit_normalized"
+      - "n"
+      - "span_ids"
+  
+  # Deduplication scenarios
+  deduplication:
+    abstract_vs_results:
+      abstract_sections: ["Abstract"]
+      results_sections: ["Results"]
+      no_cross_contamination: true
+  
+  # Provenance scenarios
+  provenance:
+    span_requirements:
+      min_spans_per_row: 1
+      max_spans_per_row: 4
+      document_ownership: true
+      traceability: true
+  
+  # Evidence lock scenarios
+  evidence_lock:
+    token_verification:
+      metric_values: true
+      metric_units: true
+      denominators: true
+      hallucination_detection: true
+  
+  # Processing path scenarios
+  processing_paths:
+    deterministic:
+      llm_assist: false
+      expected_accuracy: 1.0
+      independence: true
+    
+    llm_assist:
+      llm_assist: true
+      expected_accuracy: 1.0
+      evidence_lock: true

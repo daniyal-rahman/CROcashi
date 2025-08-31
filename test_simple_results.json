@@ -1,0 +1,25 @@
+{
+  "file_creation": {
+    "src/ncfd/extract/workers/llm/claimizer.py": true,
+    "src/ncfd/extract/workers/llm/counter_evidence_miner.py": true,
+    "src/ncfd/extract/workers/deterministic/gate_validator.py": true,
+    "src/ncfd/extract/workers/deterministic/gate_assessor.py": true,
+    "src/ncfd/extract/orchestrate/late_fusion_orchestrator.py": true,
+    "src/ncfd/extract/workers/deterministic/__init__.py": true,
+    "src/ncfd/extract/orchestrate/__init__.py": true
+  },
+  "file_content": {
+    "src/ncfd/extract/workers/llm/claimizer.py": true,
+    "src/ncfd/extract/workers/llm/counter_evidence_miner.py": true,
+    "src/ncfd/extract/workers/deterministic/gate_validator.py": true,
+    "src/ncfd/extract/workers/deterministic/gate_assessor.py": true,
+    "src/ncfd/extract/orchestrate/late_fusion_orchestrator.py": true
+  },
+  "syntax": {
+    "src/ncfd/extract/workers/llm/claimizer.py": true,
+    "src/ncfd/extract/workers/llm/counter_evidence_miner.py": true,
+    "src/ncfd/extract/workers/deterministic/gate_validator.py": true,
+    "src/ncfd/extract/workers/deterministic/gate_assessor.py": true,
+    "src/ncfd/extract/orchestrate/late_fusion_orchestrator.py": true
+  }
+}

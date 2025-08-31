@@ -1,0 +1,9 @@
+{
+  "Models": true,
+  "Validators": true,
+  "Claimizer": false,
+  "CounterEvidenceMiner": false,
+  "GateValidator": false,
+  "GateAssessor": false,
+  "LateFusionOrchestrator": false
+}

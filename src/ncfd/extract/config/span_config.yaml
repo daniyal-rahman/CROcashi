@@ -1,0 +1,126 @@
+# BaseSpan System Configuration
+
+# Span Generation Settings
+span_generation:
+  min_sentence_length: 50
+  max_sentence_length: 400
+  min_table_cell_length: 10
+  max_table_cell_length: 200
+  preserve_hyphens: false
+  normalize_whitespace: true
+  include_paragraph_spans: false
+
+# Indexing Settings
+indexing:
+  bm25:
+    k1: 1.2
+    b: 0.75
+    max_features: 10000
+    normalize_tokens: true
+    preserve_numerics: true
+  
+  dense:
+    dimension: 768
+    model_name: "sentence-transformers/all-MiniLM-L6-v2"
+    fallback_to_tfidf: true
+
+# Fuzzy Alignment Settings
+fuzzy_alignment:
+  similarity_threshold: 0.85
+  use_levenshtein: true
+  use_sequence_matcher: true
+  use_token_set: true
+  normalize_text: true
+  preserve_case: false
+  max_derived_span_length: 1000
+
+# Span Triage Settings
+span_triage:
+  budgets:
+    methods: 12
+    results: 12
+    tables: 5
+  
+  topup:
+    per_field: 3
+    max_attempts: 1
+  
+  retrieval:
+    use_bm25: true
+    use_dense: true
+    min_similarity_threshold: 0.3
+  
+  must_hit_slots:
+    statistics_km: 2
+    endpoints_recist: 2
+    design_archetype: 2
+    response_breakdown: 2
+    survival_medians: 2
+
+# System Flags
+system_flags:
+  retriever_mode: "bm25_dense_union"  # "bm25_only", "dense_only", "bm25_dense_union"
+  llm_assist_mode: "on"  # "on", "off"
+  factsbin_mode: "both"  # "deterministic", "llm_selector", "both"
+  km_inference_policy: "strict"  # "strict", "allow_inferred"
+  provenance_enforcement: "hard"  # "hard", "soft"
+
+# Default Required Fields
+default_required_fields:
+  - "endpoints"
+  - "ascertainment"
+  - "survival_method"
+  - "design_archetype"
+  - "interim_looks"
+  - "analysis_denominators"
+  - "site_geography"
+  - "response_breakdown"
+  - "survival_medians"
+  - "tables"
+
+# Section Classification Patterns
+section_patterns:
+  methods:
+    - "methods"
+    - "materials and methods"
+    - "study design"
+    - "protocol"
+    - "statistical analysis"
+    - "sample size"
+    - "randomization"
+  
+  results:
+    - "results"
+    - "outcomes"
+    - "efficacy"
+    - "response rate"
+    - "survival"
+    - "median"
+    - "progression-free"
+    - "overall survival"
+  
+  abstract:
+    - "abstract"
+    - "background"
+    - "objective"
+    - "conclusion"
+  
+  discussion:
+    - "discussion"
+    - "interpretation"
+    - "clinical implications"
+
+# Table Processing
+table_processing:
+  min_cell_length: 10
+  max_cell_length: 200
+  include_headers: true
+  include_captions: true
+  preserve_structure: true
+
+# Performance Settings
+performance:
+  batch_size: 100
+  max_workers: 4
+  timeout_seconds: 300
+  memory_limit_mb: 2048

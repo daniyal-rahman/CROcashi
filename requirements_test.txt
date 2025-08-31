@@ -1,0 +1,128 @@
+# Test Suite Dependencies for Study Card System
+
+# Core testing framework
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-html>=3.0.0
+pytest-xdist>=3.0.0  # Parallel testing
+
+# Test utilities
+pytest-mock>=3.10.0
+pytest-timeout>=2.1.0
+pytest-benchmark>=4.0.0
+
+# System monitoring
+psutil>=5.9.0  # Memory and CPU monitoring
+memory-profiler>=0.60.0  # Memory profiling
+
+# Data validation
+jsonschema>=4.17.0  # JSON schema validation
+cerberus>=1.3.0  # Data validation
+
+# Performance testing
+locust>=2.15.0  # Load testing
+pytest-profiling>=1.7.0  # Performance profiling
+
+# Mock and fixture support
+factory-boy>=3.2.0  # Test data factories
+faker>=18.0.0  # Fake data generation
+
+# Coverage and reporting
+coverage>=7.0.0
+pytest-cov>=4.0.0
+pytest-html>=3.0.0
+
+# Async testing
+pytest-asyncio>=0.21.0
+aiohttp>=3.8.0
+
+# Database testing
+pytest-postgresql>=4.1.0
+pytest-mysql>=4.1.0
+pytest-sqlalchemy>=0.5.0
+
+# Configuration management
+pyyaml>=6.0.0
+python-dotenv>=1.0.0
+
+# Logging and monitoring
+structlog>=23.0.0
+rich>=13.0.0  # Rich console output
+
+# Data analysis
+pandas>=1.5.0
+numpy>=1.21.0
+
+# Visualization (for test reports)
+matplotlib>=3.5.0
+seaborn>=0.11.0
+
+# Network testing
+requests-mock>=1.10.0
+responses>=0.22.0
+
+# File system testing
+pytest-tmpdir>=0.1.0
+pytest-cov>=4.0.0
+
+# Security testing
+bandit>=1.7.0  # Security linting
+safety>=2.3.0  # Dependency vulnerability scanning
+
+# Code quality
+black>=22.0.0  # Code formatting
+flake8>=5.0.0  # Linting
+mypy>=1.0.0   # Type checking
+
+# Documentation testing
+pytest-docstyle>=1.0.0
+pytest-check>=1.0.0
+
+# Integration testing
+pytest-docker>=2.0.0
+pytest-selenium>=4.0.0
+
+# Performance benchmarking
+pytest-benchmark>=4.0.0
+pytest-profiling>=1.7.0
+
+# Test data management
+pytest-datafiles>=3.0.0
+pytest-json-report>=1.5.0
+
+# Reporting and visualization
+allure-pytest>=2.13.0  # Allure reporting
+pytest-html>=3.0.0     # HTML reports
+pytest-json-report>=1.5.0  # JSON reports
+
+# Mock and stub support
+pytest-mock>=3.10.0
+responses>=0.22.0
+requests-mock>=1.10.0
+
+# Environment management
+pytest-env>=1.0.0
+pytest-dotenv>=1.0.0
+
+# Fixture management
+pytest-factoryboy>=2.5.0
+factory-boy>=3.2.0
+
+# Test isolation
+pytest-xdist>=3.0.0
+pytest-parallel>=0.1.0
+
+# Debugging support
+pytest-pdb>=0.2.0
+pytest-sugar>=0.9.0
+
+# Continuous integration
+pytest-cov>=4.0.0
+pytest-html>=3.0.0
+pytest-json-report>=1.5.0
+
+# Note: Some dependencies may have additional system requirements:
+# - psutil: May require system-specific packages
+# - memory-profiler: May require psutil
+# - pytest-docker: Requires Docker
+# - pytest-selenium: Requires browser drivers

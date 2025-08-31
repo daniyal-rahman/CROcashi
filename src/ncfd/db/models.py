@@ -679,6 +679,8 @@ class Document(Base):
     entities: Mapped[List["DocumentEntity"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     links: Mapped[List["DocumentLink"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     notes: Mapped[List["DocumentNote"]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    base_spans: Mapped[List["BaseSpan"]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    derived_spans: Mapped[List["DerivedSpan"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     # Trials are linked through DocumentLink table
     # trials: Mapped[List["Trial"]] = relationship(back_populates="documents")
     rs_scores: Mapped[List["DocRSScore"]] = relationship(back_populates="document", cascade="all, delete-orphan")
@@ -810,20 +812,107 @@ class DocumentLink(Base):
 
 
 class DocumentNote(Base):
-    """Document notes table - document annotations and notes."""
+    """Document notes table - user annotations and processing notes."""
     __tablename__ = "document_notes"
 
     note_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
     note_type: Mapped[str] = mapped_column(Text, nullable=False)
     note_text: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    note_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
 
     # Relationships
     document: Mapped["Document"] = relationship(back_populates="notes")
 
     __table_args__ = (
         ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
+        Index("ix_document_notes_doc_id", "doc_id"),
+        Index("ix_document_notes_note_type", "note_type")
+    )
+
+
+# ---------------------------------------------------------------------------
+# BaseSpan and DerivedSpan Models
+# ---------------------------------------------------------------------------
+
+class BaseSpan(Base):
+    """Base spans table - immutable sentence-level or table-cell slices with stable location anchors."""
+    __tablename__ = "base_spans"
+
+    span_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    section: Mapped[str] = mapped_column(Text, nullable=False)
+    page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    char_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    char_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    is_table_cell: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    table_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    row: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    col: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    document: Mapped["Document"] = relationship(back_populates="base_spans")
+    derived_spans: Mapped[List["DerivedSpan"]] = relationship(back_populates="parent_base_spans")
+    
+    __table_args__ = (
+        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
+        Index("ix_base_spans_doc_id", "doc_id"),
+        Index("ix_base_spans_section", "section"),
+        Index("ix_base_spans_page", "page"),
+        Index("ix_base_spans_char_range", "char_start", "char_end"),
+        Index("ix_base_spans_table", "table_id", "row", "col"),
+        CheckConstraint("char_end > char_start", name="ck_base_spans_char_range"),
+        CheckConstraint("char_start >= 0", name="ck_base_spans_char_start_positive")
+    )
+
+
+class DerivedSpan(Base):
+    """Derived spans table - contiguous char ranges aligned by fuzzy matcher when quotes don't exactly match BaseSpans."""
+    __tablename__ = "derived_spans"
+
+    derived_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    char_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    char_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    parent_span_ids: Mapped[List[int]] = mapped_column(ARRAY(Integer), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    similarity_score: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    document: Mapped["Document"] = relationship(back_populates="derived_spans")
+    parent_base_spans: Mapped[List["BaseSpan"]] = relationship(
+        "BaseSpan", 
+        secondary="base_span_derived_span_association",
+        back_populates="derived_spans"
+    )
+    
+    __table_args__ = (
+        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
+        Index("ix_derived_spans_doc_id", "doc_id"),
+        Index("ix_derived_spans_char_range", "char_start", "char_end"),
+        Index("ix_derived_spans_parent_ids", "parent_span_ids", postgresql_using="gin"),
+        CheckConstraint("char_end > char_start", name="ck_derived_spans_char_range"),
+        CheckConstraint("char_start >= 0", name="ck_derived_spans_char_start_positive"),
+        CheckConstraint("similarity_score >= 0.0 AND similarity_score <= 1.0", name="ck_derived_spans_similarity_range")
+    )
+
+
+# Association table for many-to-many relationship between BaseSpan and DerivedSpan
+class BaseSpanDerivedSpanAssociation(Base):
+    """Association table for BaseSpan and DerivedSpan many-to-many relationship."""
+    __tablename__ = "base_span_derived_span_association"
+
+    base_span_id: Mapped[int] = mapped_column(Integer, ForeignKey("base_spans.span_id"), primary_key=True)
+    derived_span_id: Mapped[int] = mapped_column(Integer, ForeignKey("derived_spans.derived_id"), primary_key=True)
+    
+    __table_args__ = (
+        Index("ix_base_derived_assoc_base", "base_span_id"),
+        Index("ix_base_derived_assoc_derived", "derived_span_id")
     )
 
 

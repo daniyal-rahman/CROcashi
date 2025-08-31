@@ -1,0 +1,60 @@
+🧪 SIMPLE END-TO-END TEST
+================================================================================
+📄 Paper: pmc:PMC2978916
+📝 Title: Phase 1/2 Study of Atrasentan Combined with Pegylated Liposomal Doxorubicin in Platinum-Resistant Recurrent Ovarian Cancer
+📊 Input spans: 6
+================================================================================
+
+1️⃣ METHOD AUDITOR
+----------------------------------------
+Methods spans: 3
+DEBUG: Gehan pattern matched: 'gehan\s*\'?s?\s*two.?stage' in text: 'This was a single-arm phase 2 study using Gehan's two-stage design. Response was assessed every 6 we...'
+WARNING: Primary endpoint mismatch: paper='ORR_RECIST' vs trial_context='feasibility_and_toxicity'. Paper spans override trial context.
+✅ Success: True
+📊 Output:
+{
+  "method_card": "MethodCard(created_at=datetime.datetime(2025, 8, 31, 3, 59, 45, 927535), created_by=None, version=1, input_hash='0d51abc24b4f496e', parent_ids=[], provenance_span_ids=[], notes=[], id='b63404b3-f940-46df-9ef5-94ca65ff46f1', status='draft', metadata={}, estimand={'population': 'unknown', 'endpoint': 'unknown', 'intercurrent_policy': 'unknown', 'summary_measure': 'unknown'}, population_description=None, primary_endpoint='ORR_RECIST', secondary_endpoints=[], intercurrent_events_policy=None, summary_measure=None, alpha_structure={'sidedness': 'not_reported', 'alpha_threshold': None, 'multiplicity_plan': 'not_reported', 'hierarchy': 'not_reported', 'gatekeeping': False}, alpha_level=None, is_one_sided=None, multiplicity_adjustment=None, gatekeeping_hierarchy=[], interim_looks=1, interim_timing='unknown', spending_function='unknown', sample_size_reassessment=False, stop_rules=[], gehan_two_stage=True, design_archetype='single_arm_phase2_gehan', analysis_set={'ITT': False, 'mITT': False, 'PP': False, 'safety': False, 'efficacy': False, 'stratification_factors': []}, stratification_factors=[], covariate_adjustment=[], missingness_assumption='not_reported', missingness_pattern=None, imputation_method='not_reported', tipping_point_analysis=False, endpoint_ascertainment='RECIST', assessment_interval='q6w', is_blinded=False, adjudication_committee=None, protocol_features={'run_in': False, 'enrichment': False, 'crossover': False, 'rescue': False, 'washout': False}, run_in_period=None, enrichment_strategy=None, crossover_design=None, rescue_medication=None, assay_thresholds=[], dose_exposure_rationale='Based on targeted_therapy class considerations', target_engagement=None, pkpd_relationship=None, site_geography={'num_sites': 'not_reported', 'regions': [], 'dispersion': 'not_reported'}, number_of_sites='not_reported', regions=[], dispersion_flag=None, design_risks=['single_arm_phase2', 'two_stage_selection'], study_phase='phase_2', randomization_ratio=None, blinding_level='not_reported', treatment_duration=None, follow_up_duration=None, span_ids=['pmc:PMC2978916#sec:Methods:char100-200', 'pmc:PMC2978916#sec:Methods:char200-300', 'pmc:PMC2978916#sec:Methods:char300-400'], provenance_anchors=['pmc:PMC2978916#sec:Methods:char100-200', 'pmc:PMC2978916#sec:Methods:char200-300', 'pmc:PMC2978916#sec:Methods:char300-400'], warnings=[\"Primary endpoint mismatch: paper='ORR_RECIST' vs trial_context='feasibility_and_toxicity'. Paper spans override trial context.\"])",
+  "processed_spans": 3,
+  "extracted_fields": 22
+}
+
+2️⃣ RESULTS DISTILLER
+----------------------------------------
+Results spans: 3
+✅ Success: True
+📊 Output:
+{
+  "results_factsheet": "ResultsFactsheet(created_at=datetime.datetime(2025, 8, 31, 3, 59, 45, 929511), created_by=None, version=1, input_hash='2fdfabd66f684a6e', parent_ids=[], provenance_span_ids=[], notes=[], id='985d3883-7588-49ab-9c50-047f817a3176', status='draft', metadata={}, results=[], primary_endpoint_results=None, secondary_endpoint_results=[], safety_results=[], primary_analysis_set=None, secondary_analysis_sets=[], total_enrolled=None, completed_primary_endpoint=None, dropout_rate=None, follow_up_completion=None)",
+  "processed_spans": 3,
+  "extracted_results": 0,
+  "final_entries": 0
+}
+
+3️⃣ CLAIMIZER
+----------------------------------------
+DEBUG: Skipping 95% as it appears to be a CI level, not an effect value
+✅ Success: True
+📊 Output:
+{
+  "claims": [
+    "Claim(created_at=datetime.datetime(2025, 8, 31, 3, 59, 45, 930853), created_by='Claimizer', version=1, input_hash='432fe695f9d0a4a51736aaa593352345f94a2b86b1fcd49e6daaa528ab7775df', parent_ids=['pmc:PMC2978916#sec:Methods:char100-200'], provenance_span_ids=['pmc:PMC2978916#sec:Methods:char100-200'], notes=[], id='73bea976-7c60-47d5-ba27-818c8c64abd9', status='draft', metadata={}, claim_id='pmc:PMC2978916#claim_0', doc_id='pmc:PMC2978916', span_ids=['pmc:PMC2978916#sec:Methods:char100-200'], type='design_fact', proposition='study_phase: phase 2', stance='neutral', value=None, ci_lower=None, ci_upper=None, p_value=None, units=None, timepoint=None, analysis_set=None, n_events=None, denominator=None, population=None, intervention=None, intervention_normalized=None, quality_score=0.5, applicability_score=0.5, endpoint='study_phase', arm=None, phase=None, is_primary=False, is_posthoc=False, is_subgroup=False)",
+    "Claim(created_at=datetime.datetime(2025, 8, 31, 3, 59, 45, 930906), created_by='Claimizer', version=1, input_hash='432fe695f9d0a4a51736aaa593352345f94a2b86b1fcd49e6daaa528ab7775df', parent_ids=['pmc:PMC2978916#sec:Methods:char100-200'], provenance_span_ids=['pmc:PMC2978916#sec:Methods:char100-200'], notes=[], id='9b855e57-3b2c-46d8-8d9b-b91da0b846aa', status='draft', metadata={}, claim_id='pmc:PMC2978916#claim_1', doc_id='pmc:PMC2978916', span_ids=['pmc:PMC2978916#sec:Methods:char100-200'], type='design_fact', proposition='interim_design: Gehan', stance='neutral', value=None, ci_lower=None, ci_upper=None, p_value=None, units=None, timepoint=None, analysis_set=None, n_events=None, denominator=None, population=None, intervention=None, intervention_normalized=None, quality_score=0.5, applicability_score=0.5, endpoint='interim_design', arm=None, phase=None, is_primary=False, is_posthoc=False, is_subgroup=False)",
+    "Claim(created_at=datetime.datetime(2025, 8, 31, 3, 59, 45, 931562), created_by='Claimizer', version=1, input_hash='432fe695f9d0a4a51736aaa593352345f94a2b86b1fcd49e6daaa528ab7775df', parent_ids=['pmc:PMC2978916#sec:Methods:char200-300'], provenance_span_ids=['pmc:PMC2978916#sec:Methods:char200-300'], notes=[], id='7e878cbc-be41-45a0-9389-a177eff2f0e1', status='draft', metadata={}, claim_id='pmc:PMC2978916#claim_0', doc_id='pmc:PMC2978916', span_ids=['pmc:PMC2978916#sec:Methods:char200-300'], type='design_fact', proposition='time_value: 6', stance='neutral', value=6.0, ci_lower=None, ci_upper=None, p_value=None, units='weeks', timepoint=None, analysis_set=None, n_events=None, denominator=None, population=None, intervention=None, intervention_normalized=None, quality_score=0.5, applicability_score=0.5, endpoint='duration', arm=None, phase=None, is_primary=False, is_posthoc=False, is_subgroup=False)",
+    "Claim(created_at=datetime.datetime(2025, 8, 31, 3, 59, 45, 931663), created_by='Claimizer', version=1, input_hash='432fe695f9d0a4a51736aaa593352345f94a2b86b1fcd49e6daaa528ab7775df', parent_ids=['pmc:PMC2978916#sec:Results:char100-200'], provenance_span_ids=['pmc:PMC2978916#sec:Results:char100-200'], notes=[], id='ebd0fedd-12e7-4e1b-ada8-edbad0449fb5', status='draft', metadata={}, claim_id='pmc:PMC2978916#claim_0', doc_id='pmc:PMC2978916', span_ids=['pmc:PMC2978916#sec:Results:char100-200'], type='effect_size', proposition='response_rate: 15.8', stance='neutral', value=15.8, ci_lower=3.4, ci_upper=39.6, p_value=None, units='percent', timepoint=None, analysis_set=None, n_events=None, denominator=None, population=None, intervention=None, intervention_normalized=None, quality_score=0.5, applicability_score=0.5, endpoint='response_rate', arm=None, phase=None, is_primary=False, is_posthoc=False, is_subgroup=False)",
+    "Claim(created_at=datetime.datetime(2025, 8, 31, 3, 59, 45, 931707), created_by='Claimizer', version=1, input_hash='432fe695f9d0a4a51736aaa593352345f94a2b86b1fcd49e6daaa528ab7775df', parent_ids=['pmc:PMC2978916#sec:Results:char200-300'], provenance_span_ids=['pmc:PMC2978916#sec:Results:char200-300'], notes=[], id='d9a46ec4-0ff8-4eaf-b2ca-899f68fd68e3', status='draft', metadata={}, claim_id='pmc:PMC2978916#claim_0', doc_id='pmc:PMC2978916', span_ids=['pmc:PMC2978916#sec:Results:char200-300'], type='effect_size', proposition='time_value: 14', stance='neutral', value=14.0, ci_lower=None, ci_upper=None, p_value=None, units='weeks', timepoint=None, analysis_set=None, n_events=None, denominator=None, population=None, intervention=None, intervention_normalized=None, quality_score=0.5, applicability_score=0.5, endpoint='median_pfs', arm=None, phase=None, is_primary=False, is_posthoc=False, is_subgroup=False)",
+    "Claim(created_at=datetime.datetime(2025, 8, 31, 3, 59, 45, 931736), created_by='Claimizer', version=1, input_hash='432fe695f9d0a4a51736aaa593352345f94a2b86b1fcd49e6daaa528ab7775df', parent_ids=['pmc:PMC2978916#sec:Results:char200-300'], provenance_span_ids=['pmc:PMC2978916#sec:Results:char200-300'], notes=[], id='8c804972-e6b1-4e50-a5a8-c8ba836cc007', status='draft', metadata={}, claim_id='pmc:PMC2978916#claim_1', doc_id='pmc:PMC2978916', span_ids=['pmc:PMC2978916#sec:Results:char200-300'], type='effect_size', proposition='time_value: 13.1', stance='neutral', value=13.1, ci_lower=None, ci_upper=None, p_value=None, units='months', timepoint=None, analysis_set=None, n_events=None, denominator=None, population=None, intervention=None, intervention_normalized=None, quality_score=0.5, applicability_score=0.5, endpoint='median_pfs', arm=None, phase=None, is_primary=False, is_posthoc=False, is_subgroup=False)",
+    "Claim(created_at=datetime.datetime(2025, 8, 31, 3, 59, 45, 931886), created_by='Claimizer', version=1, input_hash='432fe695f9d0a4a51736aaa593352345f94a2b86b1fcd49e6daaa528ab7775df', parent_ids=['pmc:PMC2978916#sec:Results:char300-400'], provenance_span_ids=['pmc:PMC2978916#sec:Results:char300-400'], notes=[], id='72134a84-8197-45ae-abbb-0b916f62f52e', status='draft', metadata={}, claim_id='pmc:PMC2978916#claim_0', doc_id='pmc:PMC2978916', span_ids=['pmc:PMC2978916#sec:Results:char300-400'], type='safety', proposition='response_rate: 25', stance='neutral', value=25.0, ci_lower=None, ci_upper=None, p_value=None, units='percent', timepoint=None, analysis_set=None, n_events=None, denominator=None, population=None, intervention=None, intervention_normalized=None, quality_score=0.5, applicability_score=0.5, endpoint='grade\u22653_AE_rate', arm=None, phase=None, is_primary=False, is_posthoc=False, is_subgroup=False)"
+  ],
+  "processed_spans": 6,
+  "total_claims": 7,
+  "final_claims": 7
+}
+
+🎯 TEST SUMMARY:
+==============================
+  Method Auditor: ✅ PASS
+  Results Distiller: ✅ PASS
+  Claimizer: ✅ PASS
+
+🎉 ALL WORKERS PASSED!
+The Study Card system is working correctly.

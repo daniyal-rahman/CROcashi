@@ -1,0 +1,214 @@
+# Test Configuration for Retrieval & Span Triage Test Suite
+# PMC2978916 Must-Hit Recall Testing
+
+# Test Data Configuration
+test_data:
+  paper_id: "pmc:PMC2978916"
+  title: "Phase 1/2 Study of Atrasentan Combined with Pegylated Liposomal Doxorubicin in Platinum-Resistant Recurrent Ovarian Cancer"
+  
+  # Must-hit content types with expected spans
+  must_hit_content:
+    statistics_km:
+      description: "Statistics/Kaplan-Meier content"
+      expected_terms: ["Kaplan-Meier", "log-rank", "survival analysis", "median"]
+      required_sections: ["Methods", "Results"]
+      min_spans: 1
+      priority: "high"
+    
+    recist_cadence:
+      description: "RECIST criteria and assessment cadence"
+      expected_terms: ["RECIST", "response", "assessment", "every", "weeks", "cycles"]
+      required_sections: ["Methods", "Results"]
+      min_spans: 1
+      priority: "high"
+    
+    gehan_design:
+      description: "Gehan two-stage design information"
+      expected_terms: ["Gehan", "two-stage", "interim", "cohorts", "escalating"]
+      required_sections: ["Methods"]
+      min_spans: 1
+      priority: "high"
+    
+    response_breakdown:
+      description: "Response breakdown (paragraph or table)"
+      expected_terms: ["response rate", "ORR", "15.8%", "21.1%", "objective responses"]
+      required_sections: ["Results"]
+      min_spans: 1
+      priority: "high"
+    
+    survival_medians:
+      description: "Survival medians (paragraph or table)"
+      expected_terms: ["median", "14 weeks", "13.1 months", "time to progression", "overall survival"]
+      required_sections: ["Results"]
+      min_spans: 1
+      priority: "high"
+
+# Span Budget Configuration
+span_budget:
+  methods: 12
+  results: 12
+  tables: 5
+  abstract: 3
+  discussion: 2
+  topup_per_field: 3
+
+# Retrieval Configuration
+retrieval_config:
+  mode: "bm25_dense_union"
+  seeds: [42, 123, 456]
+  section_boosting: true
+  content_type_boosting: true
+
+# Triage Configuration
+triage_config:
+  must_hit_threshold: 0.95  # 95% recall requirement
+  topup_attempts: 1         # Exactly one top-up run
+  topup_increment: 3        # +3 spans per top-up
+  max_total_spans: 50       # Overall limit
+
+# Test Execution Configuration
+execution:
+  # Test categories to run
+  test_categories:
+    - "must_hit_coverage"
+    - "section_boosting"
+    - "top_up_logic"
+    - "budget_enforcement"
+    - "recall_rate_calculation"
+    - "content_type_prioritization"
+    - "retrieval_mode_comparison"
+    - "error_handling_and_robustness"
+  
+  # Performance thresholds
+  performance:
+    max_execution_time: 300  # 5 minutes
+    max_memory_usage: 512    # 512 MB
+    max_cpu_usage: 80        # 80%
+  
+  # Output configuration
+  output:
+    generate_reports: true
+    report_format: ["html", "json"]
+    save_artifacts: true
+    artifact_directory: "test_results/retrieval_triage"
+
+# Validation Rules
+validation:
+  # Must-hit coverage requirements
+  must_hit_coverage:
+    min_coverage_rate: 0.95  # 95% minimum coverage
+    require_all_content_types: true
+    allow_partial_coverage: false
+  
+  # Section boosting requirements
+  section_boosting:
+    methods_exclude_discussion: true
+    results_prefer_over_abstract: true
+    numeric_content_priority: true
+  
+  # Top-up logic requirements
+  top_up_logic:
+    max_attempts: 1
+    increment_per_field: 3
+    no_infinite_loops: true
+    reduce_missing_content: true
+  
+  # Budget requirements
+  budget:
+    enforce_section_limits: true
+    enforce_total_limits: true
+    utilize_reserved_slots: true
+    min_utilization_rate: 0.5
+  
+  # Recall requirements
+  recall:
+    min_threshold: 0.95
+    individual_content_types: true
+    overall_recall: true
+
+# Error Handling
+error_handling:
+  # Error tolerance levels
+  tolerance:
+    malformed_queries: 0     # 0% tolerance for malformed queries
+    empty_span_sets: 0       # 0% tolerance for empty span sets
+    budget_overruns: 0       # 0% tolerance for budget overruns
+  
+  # Error reporting
+  reporting:
+    detailed_errors: true
+    include_stack_traces: true
+    save_error_logs: true
+    error_log_directory: "test_results/errors"
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "[%(levelname)s] %(name)s: %(message)s"
+  handlers:
+    - type: "console"
+      level: "INFO"
+    - type: "file"
+      level: "DEBUG"
+      filename: "test_results/retrieval_triage.log"
+  
+  # Performance logging
+  performance:
+    log_execution_time: true
+    log_memory_usage: true
+    log_cpu_usage: true
+    log_span_counts: true
+    log_recall_rates: true
+    log_budget_utilization: true
+
+# Simulation Configuration
+simulation:
+  # Query simulation
+  queries:
+    methods_queries: ["statistics survival analysis", "Kaplan-Meier log-rank"]
+    results_queries: ["median survival time progression", "response rate ORR"]
+    numeric_queries: ["15.8% 21.1% 14 weeks 13.1 months"]
+    malformed_queries: ["", "   ", "a" * 1000, "!@#$%^&*()"]
+  
+  # Section priority mapping
+  section_priority:
+    Results: 3
+    Methods: 2
+    Abstract: 1
+    Discussion: 0
+  
+  # Content type priority mapping
+  content_type_priority:
+    high: 2
+    medium: 1
+    low: 0
+
+# Expected Results
+expected_results:
+  # Coverage expectations
+  coverage:
+    statistics_km: 100.0
+    recist_cadence: 100.0
+    gehan_design: 100.0
+    response_breakdown: 100.0
+    survival_medians: 100.0
+    overall: 100.0
+  
+  # Recall expectations
+  recall:
+    min_threshold: 95.0
+    target_threshold: 100.0
+    after_topup: 100.0
+  
+  # Budget expectations
+  budget:
+    methods_utilization: 50.0
+    results_utilization: 50.0
+    tables_utilization: 50.0
+    total_utilization: 70.0
+  
+  # Performance expectations
+  performance:
+    max_execution_time: 300
+    max_memory_usage: 512
+    max_cpu_usage: 80

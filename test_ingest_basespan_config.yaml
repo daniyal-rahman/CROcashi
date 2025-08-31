@@ -1,0 +1,242 @@
+# Test Configuration for Ingest & BaseSpan Test Suite
+# PMC2978916 Gold Pack Testing
+
+# Test Data Configuration
+test_data:
+  paper_id: "pmc:PMC2978916"
+  title: "Phase 1/2 Study of Atrasentan Combined with Pegylated Liposomal Doxorubicin in Platinum-Resistant Recurrent Ovarian Cancer"
+  
+  # Gold standard spans
+  gold_spans:
+    methods:
+      - text: "Patients with platinum-resistant ovarian cancer were treated with pegylated liposomal doxorubicin (PLD) 50 mg/m2 on day 1 (and repeated every 4 weeks) in combination with escalating doses of atrasentan once daily. The starting dose was 2.5 mg and escalated in cohorts of three patients from 5 to 10 mg."
+        section: "Methods"
+        page: 1
+        char_start: 0
+        char_end: 200
+        span_id: "pmc:PMC2978916#p1:0-200"
+    
+    results:
+      - text: "Twenty-six patients (mean age = 60 years, range = 42–74 years) were treated at the three dose levels. Atrasentan could be safely administered in combination at a dose of 10 mg. All patients were evaluable for toxicity, and 19 patients, included in the phase 2 period, were evaluable for response."
+        section: "Results"
+        page: 2
+        char_start: 200
+        char_end: 400
+        span_id: "pmc:PMC2978916#p2:200-400"
+      
+      - text: "Three objective responses were observed and another six patients had stable disease with a median time to progression of 14 weeks and an overall survival of 13.1 months."
+        section: "Results"
+        page: 2
+        char_start: 400
+        char_end: 500
+        span_id: "pmc:PMC2978916#p2:400-500"
+      
+      - text: "The ORR was 15.8% (95% CI: 3.4-39.6). CA125 response was 21.1% (95% CI: 8.4-40.3)."
+        section: "Results"
+        page: 2
+        char_start: 500
+        char_end: 600
+        span_id: "pmc:PMC2978916#p2:500-600"
+
+# Gold MethodCard (truth)
+gold_method_card:
+  endpoints:
+    primary: "feasibility_and_toxicity"
+    secondary: ["response_rate", "time_to_progression", "overall_survival"]
+  ascertainment: "RECIST"
+  survival_method: "KM"
+  design_archetype: "single_arm_phase2_gehan"
+  interim_looks: 1
+  analysis_denominators:
+    response_n: 19
+    ttp_os_n: 22
+  site_geography: "not_reported"
+  missingness: "not_reported"
+
+# Gold ResultsFactsheet (truth)
+gold_results_factsheet:
+  median_ttp:
+    value: 14
+    units: "weeks"
+    n: 22
+    ci_lower: null
+    ci_upper: null
+    method: "kaplan_meier"
+    is_posthoc: false
+    analysis_set: "ttp_os"
+  
+  median_os:
+    value: 13.1
+    units: "months"
+    n: 22
+    ci_lower: null
+    ci_upper: null
+    method: "kaplan_meier"
+    is_posthoc: false
+    analysis_set: "ttp_os"
+  
+  orr_recist:
+    value: 15.8
+    units: "percent"
+    n: 19
+    ci_lower: 3.4
+    ci_upper: 39.6
+    method: "recist_criteria"
+    is_posthoc: false
+    analysis_set: "response"
+  
+  ca125_response:
+    value: 21.1
+    units: "percent"
+    n: 19
+    ci_lower: 8.4
+    ci_upper: 40.3
+    method: "ca125_criteria"
+    is_posthoc: false
+    analysis_set: "response"
+
+# Gold Claims with span_ids
+gold_claims:
+  - type: "methods_detail"
+    quote: "every 4 weeks"
+    span_id: "pmc:PMC2978916#p1:0-200"
+    confidence: 0.95
+  
+  - type: "methods_detail"
+    quote: "escalating doses"
+    span_id: "pmc:PMC2978916#p1:0-200"
+    confidence: 0.90
+  
+  - type: "limitation"
+    quote: "single-arm"
+    span_id: "pmc:PMC2978916#p2:200-400"
+    confidence: 0.85
+  
+  - type: "operational"
+    quote: "open label"
+    span_id: "pmc:PMC2978916#p2:200-400"
+    confidence: 0.80
+
+# Test Configuration
+test_config:
+  # Span budget configuration
+  span_budget:
+    methods: 12
+    results: 12
+    tables: 5
+    topup_per_field: 3
+  
+  # Retrieval configuration
+  retrieval:
+    mode: "bm25_dense_union"
+    seeds: [42, 123, 456]  # Fixed seeds for reproducibility
+  
+  # Policies
+  policies:
+    km_inference_policy: "strict"  # Base policy
+    km_inference_policy_allowed: "allow_inferred"  # Alternative policy
+  
+  # Processing configuration
+  processing:
+    min_sentence_length: 10
+    max_sentence_length: 500
+    dehyphenate: true
+    normalize_whitespace: true
+    extract_tables: true
+    preserve_table_structure: true
+    extract_numeric_cells: true
+  
+  # Fuzzy alignment configuration
+  fuzzy_alignment:
+    similarity_threshold: 0.85
+    min_span_length: 10
+    max_span_length: 1000
+
+# Test Execution Configuration
+execution:
+  # Test categories to run
+  test_categories:
+    - "sentence_segmentation"
+    - "table_mining"
+    - "derivedspan_alignment"
+    - "immutability"
+    - "gold_span_coverage"
+    - "span_budget_adherence"
+    - "reproducibility_across_seeds"
+    - "policy_matrix_testing"
+  
+  # Performance thresholds
+  performance:
+    max_execution_time: 300  # 5 minutes
+    max_memory_usage: 512    # 512 MB
+    max_cpu_usage: 80        # 80%
+  
+  # Output configuration
+  output:
+    generate_reports: true
+    report_format: ["html", "json"]
+    save_artifacts: true
+    artifact_directory: "test_results/ingest_basespan"
+
+# Validation Rules
+validation:
+  # Span quality requirements
+  span_quality:
+    min_text_length: 10
+    max_text_length: 1000
+    require_section: true
+    require_page: true
+    require_char_offsets: true
+  
+  # Alignment requirements
+  alignment:
+    min_similarity_score: 0.85
+    max_similarity_score: 1.0
+    require_span_id: true
+    require_confidence: true
+  
+  # Budget requirements
+  budget:
+    enforce_limits: true
+    allow_overflow: false
+    topup_attempts: 3
+  
+  # Reproducibility requirements
+  reproducibility:
+    require_identical_spans: true
+    require_identical_offsets: true
+    require_identical_ids: true
+    max_offset_variance: 10  # characters
+
+# Error Handling
+error_handling:
+  # Error tolerance levels
+  tolerance:
+    missing_spans: 0        # 0% tolerance for missing gold spans
+    offset_variance: 10     # 10 character tolerance for offsets
+    section_mismatch: 0     # 0% tolerance for section mismatches
+  
+  # Error reporting
+  reporting:
+    detailed_errors: true
+    include_stack_traces: true
+    save_error_logs: true
+    error_log_directory: "test_results/errors"
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "[%(levelname)s] %(name)s: %(message)s"
+  handlers:
+    - type: "console"
+      level: "INFO"
+    - type: "file"
+      level: "DEBUG"
+      filename: "test_results/ingest_basespan.log"
+  
+  # Performance logging
+  performance:
+    log_execution_time: true
+    log_memory_usage: true
+    log_cpu_usage: true
+    log_span_counts: true
