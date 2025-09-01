@@ -41,6 +41,8 @@ class ResultsDistiller(BaseWorker):
             'median_pfs': r'(median\s+progression.?free\s+survival|median\s+PFS|PFS\s+median|progression.?free\s+survival|PFS)\s+(?:of|was|showed|revealed)?\s*([0-9.]+)\s*(weeks?|months?|years?)',
             'orr_recist': r'(overall\s+response\s+rate|ORR|response\s+rate|objective\s+response\s+rate)\s+(?:of|was|showed|revealed)?\s*([0-9.]+)\s*%',
             'ca125_response': r'(CA-125\s+response|CA125\s+response|CA.?125\s+response).*?([0-9.]+)\s*%',
+            'grade3_ae_rate': r'(grade\s*3\+?\s*adverse\s+events?|grade\s*3\+?\s*AE)\s+(?:occurred\s+in|reported\s+in|was|were)\s*([0-9.]+)\s*%',
+            'serious_ae_rate': r'(serious\s+adverse\s+events?|serious\s+AE)\s+(?:occurred\s+in|reported\s+in|was|were)\s*([0-9.]+)\s*%',
             'os_fixed_time': r'(overall\s+survival|OS)\s+at\s+(\d+)\s*(weeks?|months?)\s+(?:was|showed|revealed)?\s*([0-9.]+)\s*%',
             'pfs_fixed_time': r'(progression.?free\s+survival|PFS)\s+at\s+(\d+)\s*(weeks?|months?)\s+(?:was|showed|revealed)?\s*([0-9.]+)\s*%',
             'hr': r'(hazard\s+ratio|HR)\s+(?:of|was|showed|revealed)?\s*([0-9.]+)'
@@ -93,6 +95,7 @@ class ResultsDistiller(BaseWorker):
             inputs: Dict containing:
                 - evidence_spans: List[EvidenceSpan] - Results/Abstract/Table spans
                 - trial_context: Dict - Trial context information
+                - denominators: DenominatorFamily - Denominators from DenominatorResolver
                 
         Returns:
             WorkerResult containing ResultsFactsheet entries
@@ -108,6 +111,7 @@ class ResultsDistiller(BaseWorker):
             
             evidence_spans = inputs['evidence_spans']
             trial_context = inputs.get('trial_context', {})
+            denominators = inputs.get('denominators', None)
             
             # Filter spans to focus on Results sections
             results_spans = self._filter_results_spans(evidence_spans)
@@ -115,7 +119,7 @@ class ResultsDistiller(BaseWorker):
             # Extract results data from spans
             results_data = []
             for span in results_spans:
-                span_results = self._extract_span_results(span, trial_context)
+                span_results = self._extract_span_results(span, trial_context, denominators)
                 results_data.extend(span_results)
             
             # Deduplicate and merge results
@@ -131,13 +135,14 @@ class ResultsDistiller(BaseWorker):
                         'metric': result.get('metric'),
                         'value': result.get('value'),
                         'units': result.get('units'),
+                        'value_normalized': result.get('value_normalized'),  # Add value_normalized
                         'n': result.get('n'),
                         'method': result.get('method'),
                         'summary_statistic': result.get('summary_statistic'),
                         'range_min': result.get('range_min'),
                         'range_max': result.get('range_max'),
                         'breakdown': result.get('breakdown'),
-                        'span_ids': [result.get('span_id')] if result.get('span_id') else []
+                        'span_ids': result.get('span_ids', [])  # Use span_ids directly
                     }
                     
                     # Add to results list
@@ -205,7 +210,7 @@ class ResultsDistiller(BaseWorker):
         text_lower = text.lower()
         return any(re.search(pattern, text_lower) for pattern in self.spin_indicators)
 
-    def _extract_span_results(self, span: EvidenceSpan, trial_context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _extract_span_results(self, span: EvidenceSpan, trial_context: Dict[str, Any], denominators=None) -> List[Dict[str, Any]]:
         """Extract results data from a single evidence span."""
         results = []
         text = span.quote
@@ -229,11 +234,10 @@ class ResultsDistiller(BaseWorker):
                 context = self._extract_result_context(text, match.start(), match.end())
                 
                 # Extract n (denominator) from context
-                n = self._extract_denominator(text, context, trial_context)
+                n = self._extract_denominator(text, context, trial_context, denominators)
                 
-                # If no denominator found, skip this result to avoid guessing
-                if n is None:
-                    continue
+                # Mark as pending if no denominator found, but don't skip
+                pending_denominator = n is None
                 
                 # Extract method for time-to-event metrics
                 method = self._extract_method(text, metric_name)
@@ -244,20 +248,27 @@ class ResultsDistiller(BaseWorker):
                 # Extract breakdown for ORR - only if this is an ORR metric
                 breakdown = self._extract_breakdown(text, metric_name) if metric_name == 'orr_recist' else None
                 
+                # Calculate value_normalized for survival metrics
+                value_normalized = None
+                if metric_name.startswith('median_'):
+                    value_normalized = self._normalize_units_to_days(metric_value, units)
+                    print(f"DEBUG: Added value_normalized={value_normalized} for {metric_name}={metric_value} {units}")
+                else:
+                    print(f"DEBUG: No value_normalized for {metric_name} (not a median metric)")
+                
                 result = {
                     'metric': metric_name,
                     'value': metric_value,
                     'units': units,
+                    'value_normalized': value_normalized,
                     'summary_statistic': self._get_summary_statistic(metric_name),
                     'n': n,
                     'method': method,
                     'range_min': range_min,
                     'range_max': range_max,
                     'breakdown': breakdown,
-                    'span_id': span.span_id,
-                    'doc_id': span.doc_id,
-                    'section': span.section,
-                    'confidence': span.confidence,
+                    'span_ids': [span.span_id],  # Use span_ids list format
+                    'pending_denominator': pending_denominator,
                     **context
                 }
                 
@@ -279,6 +290,17 @@ class ResultsDistiller(BaseWorker):
             return 'ratio'
         else:
             return 'months'
+
+    def _normalize_units_to_days(self, value: float, units: str) -> float:
+        """Convert units to days for normalization."""
+        if units.lower() in ['weeks', 'week']:
+            return value * 7
+        elif units.lower() in ['months', 'month']:
+            return value * 30.44  # Average days per month
+        elif units.lower() in ['years', 'year']:
+            return value * 365.25  # Average days per year
+        else:
+            return value  # Already in days or unknown unit
 
     def _get_summary_statistic(self, metric_name: str) -> str:
         """Get summary statistic for a metric."""
@@ -420,8 +442,19 @@ class ResultsDistiller(BaseWorker):
         
         return flags
 
-    def _extract_denominator(self, text: str, context: Dict[str, Any], trial_context: Dict[str, Any]) -> Optional[int]:
-        """Extract denominator (n) from text or context."""
+    def _extract_denominator(self, text: str, context: Dict[str, Any], trial_context: Dict[str, Any], denominators=None) -> Optional[int]:
+        """Extract denominator (n) from text or context, with inheritance from DenominatorResolver."""
+        # First try to extract from the text itself (legacy patterns)
+        n = self._extract_local_denominator(text)
+        
+        # If no local denominator found, try inheritance from DenominatorResolver
+        if n is None and denominators is not None:
+            n = self._inherit_denominator(text, denominators)
+        
+        return n
+    
+    def _extract_local_denominator(self, text: str) -> Optional[int]:
+        """Extract denominator from local text (legacy method)."""
         # Look for n= pattern
         n_pattern = r'n\s*=\s*(\d+)'
         match = re.search(n_pattern, text, re.IGNORECASE)
@@ -452,26 +485,46 @@ class ResultsDistiller(BaseWorker):
         if match:
             return int(match.group(1))
         
-        # Look for "response assessment included X" pattern
-        response_pattern = r'response\s+assessment\s+included\s+(\d+)'
-        match = re.search(response_pattern, text, re.IGNORECASE)
-        if match:
-            return int(match.group(1))
-        
-        # Look for "TTP and OS analysis included X" pattern
-        analysis_pattern = r'(?:TTP|OS|survival)\s+analysis\s+included\s+(\d+)'
-        match = re.search(analysis_pattern, text, re.IGNORECASE)
-        if match:
-            return int(match.group(1))
-        
         # Look for "X/Y (Z%)" pattern which might indicate denominator
         fraction_pattern = r'(\d+)/(\d+)\s*\([0-9.]+%\)'
         match = re.search(fraction_pattern, text, re.IGNORECASE)
         if match:
             return int(match.group(2))  # Use denominator
         
-        # No denominator found - return None instead of guessing
         return None
+    
+    def _inherit_denominator(self, text: str, denominators) -> Optional[int]:
+        """Inherit denominator from DenominatorResolver based on metric family."""
+        # Classify the metric based on text content
+        metric_family = self._classify_metric_family(text)
+        
+        if metric_family == 'response':
+            return denominators.response_n
+        elif metric_family == 'survival':
+            return denominators.ttp_os_n
+        elif metric_family == 'safety':
+            return denominators.safety_n or denominators.treated_n
+        else:
+            return None
+    
+    def _classify_metric_family(self, text: str) -> str:
+        """Classify metric into family based on text content."""
+        text_lower = text.lower()
+        
+        # Response metrics
+        if any(term in text_lower for term in ['orr', 'response rate', 'objective response', 'recist']):
+            return 'response'
+        
+        # Survival metrics
+        if any(term in text_lower for term in ['pfs', 'ttp', 'os', 'progression', 'survival', 'median']):
+            return 'survival'
+        
+        # Safety metrics
+        if any(term in text_lower for term in ['ae', 'adverse event', 'toxicity', 'grade']):
+            return 'safety'
+        
+        # Default to response if unclear
+        return 'response'
 
     def _extract_method(self, text: str, metric_name: str) -> Optional[str]:
         """Extract statistical method from text."""

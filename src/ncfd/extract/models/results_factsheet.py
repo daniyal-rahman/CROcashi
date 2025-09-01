@@ -1,3 +1,4 @@
+# src/ncfd/extract/models/results_factsheet.py
 """
 ResultsFactsheet Model
 
@@ -85,13 +86,18 @@ class ResultsFactsheet(BaseModel, ProvenanceMixin):
     
     def _validate_result(self, result: Dict[str, Any]) -> bool:
         """Validate a single result item."""
-        required_fields = ['metric', 'value', 'units', 'n', 'span_ids']
+        required_fields = ['metric', 'value', 'units', 'span_ids']
         
         # Check required fields
         for field in required_fields:
             if field not in result:
                 print(f"DEBUG: Missing required field '{field}' in result")
                 return False
+        
+        # Check for pending denominator
+        if result.get('pending_denominator', False):
+            print(f"DEBUG: Result has pending denominator: {result['metric']}")
+            # Don't fail validation for pending denominators - let validators handle it
         
         # Validate metric enum
         try:
@@ -112,9 +118,9 @@ class ResultsFactsheet(BaseModel, ProvenanceMixin):
             print(f"DEBUG: Value must be numeric, got {type(result['value'])}")
             return False
         
-        # Validate n (denominator)
-        if not isinstance(result['n'], int) or result['n'] <= 0:
-            print(f"DEBUG: n must be positive integer, got {result['n']}")
+        # Validate n (denominator) - allow None for pending denominators
+        if result['n'] is not None and (not isinstance(result['n'], int) or result['n'] <= 0):
+            print(f"DEBUG: n must be positive integer or None, got {result['n']}")
             return False
         
         # Validate span_ids

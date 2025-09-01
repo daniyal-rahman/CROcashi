@@ -446,18 +446,28 @@ class Claimizer(BaseWorker):
                 return "median_ttp"
             elif re.search(r'\bOS\b', text, re.IGNORECASE):
                 return "median_os"
+            elif re.search(r'\btime\s+to\s+progression\b', text, re.IGNORECASE):
+                return "median_ttp"  # Time to progression is TTP, not PFS
+            elif re.search(r'\bprogression.?free\s+survival\b', text, re.IGNORECASE):
+                return "median_pfs"  # Progression-free survival is PFS
             elif re.search(r'\bprogression\b', text, re.IGNORECASE):
-                return "median_pfs"  # Progression usually refers to PFS
+                # Check if this is TTP or PFS based on context
+                if re.search(r'\btime\s+to\s+progression\b', text, re.IGNORECASE):
+                    return "median_ttp"
+                elif re.search(r'\bprogression.?free\s+survival\b', text, re.IGNORECASE):
+                    return "median_pfs"
+                else:
+                    return "median_pfs"  # Default to PFS for generic progression
             elif re.search(r'\boverall\s+survival\b', text, re.IGNORECASE):
                 return "median_os"
-            elif re.search(r'\bprogression.?free\s+survival\b', text, re.IGNORECASE):
-                return "median_pfs"
             else:
                 # Check if any survival terms are nearby (within the same sentence)
                 survival_terms = ['pfs', 'ttp', 'os', 'progression', 'survival']
                 if any(term in text_lower for term in survival_terms):
                     # Determine based on context
-                    if 'progression' in text_lower:
+                    if 'time to progression' in text_lower:
+                        return "median_ttp"
+                    elif 'progression' in text_lower:
                         return "median_pfs"
                     elif 'survival' in text_lower:
                         return "median_os"

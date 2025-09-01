@@ -345,16 +345,19 @@ class MethodAuditor(BaseWorker):
         method_info['interim'] = self._extract_interim_plan(combined_text)
         
         # Extract Gehan two-stage design and set design archetype
-        method_info['gehan_two_stage'] = self._extract_gehan_two_stage(combined_text)
-        
-        # Set design archetype based on Gehan detection
-        if method_info['gehan_two_stage']:
-            method_info['design_archetype'] = 'single_arm_phase2_gehan'
-            # Enforce Gehan design rules: must have 1 interim look
-            if method_info['interim'].get('looks') != 1:
-                method_info['interim']['looks'] = 1
-        else:
-            method_info['design_archetype'] = 'not_reported'
+        gehan_result = self._extract_gehan_two_stage(combined_text)
+        if gehan_result is not None:
+            method_info['gehan_two_stage'] = gehan_result
+            
+            # Set design archetype based on Gehan detection
+            if method_info['gehan_two_stage']:
+                method_info['design_archetype'] = 'single_arm_phase2_gehan'
+                # Enforce Gehan design rules: must have 1 interim look
+                if method_info['interim'].get('looks') != 1:
+                    method_info['interim']['looks'] = 1
+            else:
+                method_info['design_archetype'] = 'not_reported'
+        # If gehan_result is None, don't set gehan_two_stage (leave as None)
         
         # Extract analysis sets
         method_info['analysis_set'] = self._extract_analysis_sets(combined_text, design_json)
@@ -562,7 +565,7 @@ class MethodAuditor(BaseWorker):
         
         return interim
 
-    def _extract_gehan_two_stage(self, text: str) -> bool:
+    def _extract_gehan_two_stage(self, text: str) -> Optional[bool]:
         """Extract whether the study uses a Gehan two-stage design."""
         # Look for explicit mentions of Gehan two-stage design
         gehan_patterns = [
@@ -579,17 +582,17 @@ class MethodAuditor(BaseWorker):
                 print(f"DEBUG: Gehan pattern matched: '{pattern}' in text: '{text[:100]}...'")
                 return True
         
-        print(f"DEBUG: No Gehan patterns matched in text: '{text[:100]}...'")
-        return False
+        # Return None if not found (not False as default)
+        return None
 
     def _extract_analysis_sets(self, text: str, design_json: Dict[str, Any]) -> Dict[str, Any]:
         """Extract analysis set information from text."""
         analysis_sets = {
-            'ITT': False,
-            'mITT': False,
-            'PP': False,
-            'safety': False,
-            'efficacy': False,
+            'ITT': None,
+            'mITT': None,
+            'PP': None,
+            'safety': None,
+            'efficacy': None,
             'stratification_factors': []
         }
         
@@ -624,8 +627,8 @@ class MethodAuditor(BaseWorker):
         missingness = {
             'assumption': 'not_reported',
             'imputation_method': 'not_reported',
-            'tipping_point': False,
-            'sensitivity_analysis': False
+            'tipping_point': None,  # Only set if explicitly found
+            'sensitivity_analysis': None  # Only set if explicitly found
         }
         
         # Only extract missingness assumptions if explicitly stated
@@ -1054,24 +1057,27 @@ class MethodAuditor(BaseWorker):
         # Collect all span IDs for provenance
         span_ids = [span.span_id for span in spans]
         
-        # Create the MethodCard
+        # Create the MethodCard with only explicitly extracted values (no defaults)
         method_card = MethodCard(
             estimand=method_info['estimand'],  # Store as real object, not JSON string
             alpha_structure=method_info['alpha_structure'],  # Store as real object, not JSON string
             interim_looks=method_info['interim'].get('looks', []),
             interim_timing=method_info['interim'].get('timing'),
             spending_function=method_info['interim'].get('spending_function'),
-            sample_size_reassessment=method_info['interim'].get('ssr', False),
-            gehan_two_stage=method_info.get('gehan_two_stage', False),
+            # Only set if explicitly extracted (not default False)
+            sample_size_reassessment=method_info['interim'].get('ssr') if 'ssr' in method_info['interim'] else None,
+            gehan_two_stage=method_info.get('gehan_two_stage') if 'gehan_two_stage' in method_info else None,
             design_archetype=method_info.get('design_archetype'),
             analysis_set=method_info['analysis_set'],  # Store as real object, not JSON string
             stratification_factors=method_info['analysis_set'].get('stratification_factors', []),
             missingness_assumption=method_info['missingness'].get('assumption'),
             imputation_method=method_info['missingness'].get('imputation_method'),
-            tipping_point_analysis=method_info['missingness'].get('tipping_point', False),
+            # Only set if explicitly extracted (not default False)
+            tipping_point_analysis=method_info['missingness'].get('tipping_point') if 'tipping_point' in method_info['missingness'] else None,
             endpoint_ascertainment=method_info['endpoint_ascertainment'].get('criteria'),
             assessment_interval=method_info.get('assessment_interval'),
-            is_blinded=method_info['endpoint_ascertainment'].get('blinded', False),
+            # Only set if explicitly extracted (not default False)
+            is_blinded=method_info['endpoint_ascertainment'].get('blinded') if 'blinded' in method_info['endpoint_ascertainment'] else None,
             protocol_features=method_info['protocol_features'],
             assay_thresholds=method_info['assay_thresholds'],
             dose_exposure_rationale=method_info['dose_exposure_rationale'],

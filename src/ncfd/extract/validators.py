@@ -1,3 +1,4 @@
+# src/ncfd/extract/validators.py
 """
 Global validation rules for the study card system.
 
@@ -83,9 +84,7 @@ class GlobalValidator:
         
         # Fields that should be objects, not JSON strings
         object_fields = {
-            'estimand', 'alpha_structure', 'analysis_set', 'interim', 
-            'missingness', 'endpoint_ascertainment', 'protocol_features',
-            'site_geography', 'design_risks'
+            'estimand', 'alpha_structure', 'analysis_set', 'site_geography'
         }
         
         def check_value(value: Any, path: str):
@@ -127,6 +126,16 @@ class GlobalValidator:
                     if not GlobalValidator._is_valid_span_id(span_id):
                         errors.append(f"{artifact_type}: Invalid span_id format at index {i}: {span_id}")
         
+        # Recurse into results list if present (e.g., ResultsFactsheet)
+        if 'results' in artifact_dict and isinstance(artifact_dict['results'], list):
+            for idx, result in enumerate(artifact_dict['results']):
+                if isinstance(result, dict) and 'span_ids' in result:
+                    span_ids = result['span_ids']
+                    if isinstance(span_ids, list):
+                        for jdx, span_id in enumerate(span_ids):
+                            if not GlobalValidator._is_valid_span_id(span_id):
+                                errors.append(f"{artifact_type}: Result[{idx}] invalid span_id at index {jdx}: {span_id}")
+        
         # Check for generic IDs
         if 'id' in artifact_dict:
             artifact_id = artifact_dict['id']
@@ -156,6 +165,15 @@ class GlobalValidator:
             has_span_refs = True
         if 'provenance_anchors' in artifact_dict and artifact_dict['provenance_anchors']:
             has_span_refs = True
+        
+        # Special-case: ResultsFactsheet may store span_ids per result row
+        if not has_span_refs and artifact_type == 'ResultsFactsheet':
+            results = artifact_dict.get('results', [])
+            if isinstance(results, list):
+                for result in results:
+                    if isinstance(result, dict) and result.get('span_ids'):
+                        has_span_refs = True
+                        break
         
         if not has_span_refs:
             errors.append(f"{artifact_type}: No span references found (span_ids or provenance_anchors)")
@@ -189,11 +207,13 @@ class GlobalValidator:
         # Check locator format
         # sec:Methods:char234-471 or p1:char234-471 or table:3:rRECIST_total
         locator_patterns = [
-            r'^sec:[A-Za-z]+:char\d+-\d+$',
+            r'^sec:[A-Za-z0-9_-]+:char\d+-\d+$',
             r'^p\d+:char\d+-\d+$',
             r'^table:\d+:r[A-Za-z0-9_]+$',
             r'^table:\d+:r\d+c\d+$',
-            r'^table:\d+:cell:[A-Za-z0-9_]+$'
+            r'^table:\d+:cell:[A-Za-z0-9_]+$',
+            r'^fig:[A-Za-z0-9_-]+$',
+            r'^sup:[A-Za-z0-9_-]+'
         ]
         
         return any(re.match(pattern, locator) for pattern in locator_patterns)
@@ -217,7 +237,7 @@ class GlobalValidator:
         
         # For now, allow shorter hashes (SHA256 format will be enforced later)
         # Should be alphanumeric and at least 8 characters
-        hash_pattern = r'^[a-f0-9]{8,}$'
+        hash_pattern = r'^[A-Fa-f0-9]{8,}$'
         return bool(re.match(hash_pattern, hash_value))
 
     @staticmethod
@@ -225,13 +245,17 @@ class GlobalValidator:
         """
         Validate that ResultsFactsheet contains required metrics when trigger tokens appear.
         
-        Must-fail rule: results_factsheet must contain ≥2 of {orr_recist, median_pfs|median_ttp, median_os} 
-        when their trigger tokens appear in input spans.
+        Must-fail rule: results_factsheet must contain ≥2 of {orr_recist, median_pfs|median_ttp, median_os}
+        when their trigger tokens appear in input spans. If only one family is mentioned, warn not fail.
         """
         violations = []
         
-        # Check for trigger tokens in spans
-        combined_text = " ".join([span.quote.lower() for span in spans])
+        # Consider only Results section spans for triggers
+        results_section_texts = [
+            (span.quote or "").lower() for span in spans
+            if getattr(span, 'section', '').lower() == 'results'
+        ]
+        combined_text = " ".join(results_section_texts)
         
         # Define trigger tokens and their corresponding required metrics
         required_metrics = {
@@ -247,26 +271,39 @@ class GlobalValidator:
             if any(trigger in combined_text for trigger in triggers):
                 expected_metrics.append(metric)
         
+        # Collect factsheet metrics and pending denominators (always)
+        factsheet_metrics = []
+        pending_denominators = []
+        if hasattr(factsheet, 'results') and factsheet.results:
+            for result in factsheet.results:
+                if isinstance(result, dict) and 'metric' in result:
+                    factsheet_metrics.append(str(result['metric']).lower())
+                    if result.get('pending_denominator', False):
+                        pending_denominators.append(result['metric'])
+                elif hasattr(result, 'metric'):
+                    factsheet_metrics.append(str(result.metric).lower())
+                    if getattr(result, 'pending_denominator', False):
+                        pending_denominators.append(result.metric)
+
         # Must-fail rule: need at least 2 metrics when triggers are present
         if len(expected_metrics) >= 2:
-            # Check if factsheet has the required metrics
-            factsheet_metrics = []
-            if hasattr(factsheet, 'results') and factsheet.results:
-                for result in factsheet.results:
-                    if isinstance(result, dict) and 'metric' in result:
-                        factsheet_metrics.append(result['metric'])
-                    elif hasattr(result, 'metric'):
-                        factsheet_metrics.append(result.metric)
-                
-                # Check coverage
-                missing_metrics = []
-                for expected in expected_metrics:
-                    if not any(expected in str(metric).lower() for metric in factsheet_metrics):
-                        missing_metrics.append(expected)
-                
-                if len(missing_metrics) > 0:
-                    violation = f"CRITICAL: ResultsFactsheet missing required metrics: {missing_metrics}. Expected ≥2 of {expected_metrics} when triggers present."
-                    violations.append(violation)
+            # Check coverage
+            missing_metrics = []
+            for expected in expected_metrics:
+                if not any(expected in metric for metric in factsheet_metrics):
+                    missing_metrics.append(expected)
+            if len(missing_metrics) > 0:
+                violation = f"CRITICAL: ResultsFactsheet missing required metrics: {missing_metrics}. Expected ≥2 of {expected_metrics} when triggers present."
+                violations.append(violation)
+        elif len(expected_metrics) == 1:
+            expected = expected_metrics[0]
+            if not any(expected in metric for metric in factsheet_metrics):
+                violations.append(f"WARN: ResultsFactsheet missing suggested metric: {expected} present in spans.")
+
+        # Check for pending denominators always
+        if pending_denominators:
+            violation = f"CRITICAL: ResultsFactsheet has pending denominators: {pending_denominators}. All metrics must have denominators."
+            violations.append(violation)
         
         return violations
     
@@ -292,29 +329,32 @@ class GlobalValidator:
     @staticmethod
     def validate_ci_mis_extraction(claims: List[Claim], spans: List[EvidenceSpan]) -> List[str]:
         """
-        Validate that no claim has value=95% if "95% CI" is nearby.
+        Validate that no claim has CI level mis-extracted as an effect (e.g., 95% near CI text).
         
-        Must-fail rule: No claim may have value=95% if "95% CI" is nearby.
+        Must-fail rule: If a claim has units=='percent' and value≈95 and its spans are near CI text, fail.
         """
         violations = []
         
-        # Check for CI patterns in spans
-        ci_spans = []
+        ci_tokens = re.compile(r'\b\d{2,3}%\s*ci\b|\bconfidence\s*interval\b', re.IGNORECASE)
+        ci_span_ids = set()
         for span in spans:
-            if '95% ci' in span.quote.lower() or '95% confidence interval' in span.quote.lower():
-                ci_spans.append(span)
+            quote = getattr(span, 'quote', '') or ''
+            if ci_tokens.search(quote):
+                span_id = getattr(span, 'span_id', None)
+                if span_id:
+                    ci_span_ids.add(span_id)
         
-        # Check claims for 95% values
         for claim in claims:
-            if hasattr(claim, 'value') and claim.value == '95%':
-                # Check if this claim is from a span near CI information
-                for ci_span in ci_spans:
-                    # Simple proximity check - if claim span is close to CI span
-                    if hasattr(claim, 'span_ids') and claim.span_ids:
-                        # This is a basic check - in practice you might want more sophisticated proximity logic
-                        violation = f"CRITICAL: Claim has value=95% which appears to be from CI context. This should be ci_level, not effect value."
-                        violations.append(violation)
-                        break
+            units = getattr(claim, 'units', None)
+            value = getattr(claim, 'value', None)
+            if units and str(units).lower() == 'percent' and isinstance(value, (int, float)):
+                try:
+                    if abs(float(value) - 95.0) < 0.5:
+                        claim_span_ids = set(getattr(claim, 'span_ids', []) or [])
+                        if claim_span_ids & ci_span_ids:
+                            violations.append("CRITICAL: Claim value≈95% near CI text — likely CI level mis-extracted as effect.")
+                except Exception:
+                    pass
         
         return violations
     
@@ -340,36 +380,35 @@ class GlobalValidator:
         """
         Validate Gehan design consistency.
         
-        Must-fail rule: If "Gehan" is present, gehan_two_stage=True and interim_looks=1.
+        Must-fail rule: If "Gehan" is present, gehan_two_stage=True and exactly 1 interim look.
         """
         violations = []
         
         # Check for Gehan presence in spans
-        combined_text = " ".join([span.quote.lower() for span in spans])
+        combined_text = " ".join([(span.quote or "").lower() for span in spans])
         gehan_present = 'gehan' in combined_text
         
         if gehan_present:
             # Check gehan_two_stage
-            if not method_card.gehan_two_stage:
-                violation = f"CRITICAL: 'Gehan' detected in spans but gehan_two_stage=False. Must be True when Gehan is present."
-                violations.append(violation)
+            if not getattr(method_card, 'gehan_two_stage', False):
+                violations.append("CRITICAL: 'Gehan' detected but gehan_two_stage=False.")
             
-            # Check interim_looks
-            if hasattr(method_card, 'interim_looks'):
-                if isinstance(method_card.interim_looks, list):
-                    if len(method_card.interim_looks) != 1:
-                        violation = f"CRITICAL: 'Gehan' detected but interim_looks has {len(method_card.interim_looks)} looks. Must be 1 for Gehan design."
-                        violations.append(violation)
-                else:
-                    violation = f"CRITICAL: 'Gehan' detected but interim_looks is not a list. Must be [1] for Gehan design."
-                    violations.append(violation)
+            looks = getattr(method_card, 'interim_looks', None)
+            if isinstance(looks, list):
+                count = len(looks)
+            elif isinstance(looks, int):
+                count = looks
+            else:
+                count = None
+            if count != 1:
+                violations.append(f"CRITICAL: 'Gehan' detected but interim_looks={looks!r}; expected exactly 1 look.")
         
         return violations
     
     @staticmethod
     def hard_fail_on_empty_provenance(claims: List[Any]) -> bool:
         """
-        Check if any claims have empty span_ids and hard fail if so.
+        Check if any numeric-critical claims have empty span_ids and hard fail if so.
         
         Args:
             claims: List of Claim objects
@@ -381,7 +420,10 @@ class GlobalValidator:
             AssertionError: If any claim has empty span_ids
         """
         for claim in claims:
-            if hasattr(claim, 'span_ids') and not claim.span_ids:
+            claim_type = getattr(claim, 'type', None)
+            value = getattr(claim, 'value', None)
+            requires_provenance = (value is not None) or (claim_type in {'effect_size', 'assay_cutoff', 'prevalence'})
+            if requires_provenance and hasattr(claim, 'span_ids') and not getattr(claim, 'span_ids', []):
                 error_message = f"CRITICAL: Claim with value '{getattr(claim, 'value', 'unknown')}' has empty span_ids. Every numeric must be span-anchored."
                 raise AssertionError(error_message)
         return True
