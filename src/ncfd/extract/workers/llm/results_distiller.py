@@ -1,3 +1,4 @@
+# src/ncfd/extract/workers/llm/results_distiller.py
 """
 Results Distiller Worker
 
@@ -125,6 +126,13 @@ class ResultsDistiller(BaseWorker):
             # Deduplicate and merge results
             deduplicated_results = self._deduplicate_results(results_data)
             
+            # Sort by importance (primary endpoints first, then by p-value) before cleaning
+            if deduplicated_results:
+                deduplicated_results.sort(key=lambda r: (
+                    r.get('is_posthoc', False),  # Primary endpoints first
+                    r.get('p_value', float('inf'))  # Lower p-values first
+                ))
+            
             # Create a single ResultsFactsheet with all results
             if deduplicated_results:
                 # Convert results to the format expected by ResultsFactsheet
@@ -134,38 +142,79 @@ class ResultsDistiller(BaseWorker):
                     clean_result = {
                         'metric': result.get('metric'),
                         'value': result.get('value'),
-                        'units': result.get('units'),
-                        'value_normalized': result.get('value_normalized'),  # Add value_normalized
+                        'units': result.get('unit'),  # Use 'unit' from metric registry
+                        'value_normalized': result.get('value_normalized'),  # From metric registry
+                        'unit_normalized': result.get('unit_normalized'),  # From metric registry
                         'n': result.get('n'),
                         'method': result.get('method'),
                         'summary_statistic': result.get('summary_statistic'),
                         'range_min': result.get('range_min'),
                         'range_max': result.get('range_max'),
                         'breakdown': result.get('breakdown'),
-                        'span_ids': result.get('span_ids', [])  # Use span_ids directly
+                        'span_ids': result.get('span_ids', []),  # Use span_ids directly
+                        # preserve these so sorting and downstream validators work
+                        'analysis_set': result.get('analysis_set'),
+                        'timepoint': result.get('timepoint'),
+                        'ci_lower': result.get('ci_lower'),
+                        'ci_upper': result.get('ci_upper'),
+                        'p_value': result.get('p_value'),
+                        'is_posthoc': result.get('is_posthoc', False),
+                        'population_slice': result.get('population_slice'),
+                        'flags': result.get('flags', []),
+                        'section': result.get('section'),
+                        'doc_id': result.get('doc_id'),
                     }
+                    
+                    # Remove timepoint for median metrics
+                    if clean_result['metric'] in {"median_ttp", "median_os", "median_pfs"}:
+                        clean_result.pop("timepoint", None)
                     
                     # Add to results list
                     results_list.append(clean_result)
                 
-                # Sort by importance (primary endpoints first, then by p-value)
-                results_list.sort(key=lambda r: (
-                    r.get('is_posthoc', False),  # Primary endpoints first
-                    r.get('p_value', float('inf'))  # Lower p-values first
-                ))
-                
                 # Create single ResultsFactsheet
                 from ...models.results_factsheet import ResultsFactsheet
+                
+                # Get doc_id from the first result or from the first span
+                doc_id = None
+                if results_list:
+                    doc_id = results_list[0].get('doc_id')
+                elif results_spans:
+                    doc_id = results_spans[0].doc_id
+                
+                # Ensure we have a valid doc_id
+                if not doc_id:
+                    # Try to get from trial_context or use a fallback
+                    doc_id = trial_context.get('doc_id') if trial_context else None
+                    if not doc_id and results_spans:
+                        # Use the first span's doc_id as fallback
+                        doc_id = results_spans[0].doc_id
+                    if not doc_id:
+                        raise ValueError("Cannot create ResultsFactsheet without a valid doc_id")
+                
                 results_factsheet = ResultsFactsheet(
-                    results=results_list,
-                    provenance_span_ids=[span.span_id for span in results_spans]
+                    doc_id=doc_id,
+                    results=results_list
                 )
             else:
                 # Create empty ResultsFactsheet if no results
                 from ...models.results_factsheet import ResultsFactsheet
+                
+                # Get doc_id from the first span
+                doc_id = None
+                if results_spans:
+                    doc_id = results_spans[0].doc_id
+                
+                # Ensure we have a valid doc_id
+                if not doc_id:
+                    # Try to get from trial_context or use a fallback
+                    doc_id = trial_context.get('doc_id') if trial_context else None
+                    if not doc_id:
+                        raise ValueError("Cannot create ResultsFactsheet without a valid doc_id")
+                
                 results_factsheet = ResultsFactsheet(
-                    results=[],
-                    provenance_span_ids=[span.span_id for span in results_spans]
+                    doc_id=doc_id,
+                    results=[]
                 )
             
             return WorkerResult(
@@ -199,9 +248,8 @@ class ResultsDistiller(BaseWorker):
             if span.section.lower() in ['results', 'abstract', 'table', 'figure']:
                 # Filter out low-quality spans
                 if span.confidence >= 0.7:
-                    # Filter out spans that are likely spin or low-quality
-                    if not self._is_spin_content(span.quote):
-                        results_spans.append(span)
+                    # Keep spans with spin language but mark them for validators to decide
+                    results_spans.append(span)
         
         return results_spans
 
@@ -234,7 +282,7 @@ class ResultsDistiller(BaseWorker):
                 context = self._extract_result_context(text, match.start(), match.end())
                 
                 # Extract n (denominator) from context
-                n = self._extract_denominator(text, context, trial_context, denominators)
+                n = self._extract_denominator(text, context, trial_context, denominators, metric_name=metric_name)
                 
                 # Mark as pending if no denominator found, but don't skip
                 pending_denominator = n is None
@@ -248,19 +296,10 @@ class ResultsDistiller(BaseWorker):
                 # Extract breakdown for ORR - only if this is an ORR metric
                 breakdown = self._extract_breakdown(text, metric_name) if metric_name == 'orr_recist' else None
                 
-                # Calculate value_normalized for survival metrics
-                value_normalized = None
-                if metric_name.startswith('median_'):
-                    value_normalized = self._normalize_units_to_days(metric_value, units)
-                    print(f"DEBUG: Added value_normalized={value_normalized} for {metric_name}={metric_value} {units}")
-                else:
-                    print(f"DEBUG: No value_normalized for {metric_name} (not a median metric)")
-                
                 result = {
                     'metric': metric_name,
                     'value': metric_value,
-                    'units': units,
-                    'value_normalized': value_normalized,
+                    'unit': units,  # Use 'unit' for metric registry compatibility
                     'summary_statistic': self._get_summary_statistic(metric_name),
                     'n': n,
                     'method': method,
@@ -269,8 +308,20 @@ class ResultsDistiller(BaseWorker):
                     'breakdown': breakdown,
                     'span_ids': [span.span_id],  # Use span_ids list format
                     'pending_denominator': pending_denominator,
+                    'section': span.section.title(),  # Add section from span (e.g., "Results" / "Table" / "Abstract")
+                    'doc_id': span.doc_id,    # Add doc_id from span
                     **context
                 }
+                
+                # Centralize normalization using metric registry
+                from ...normalization import get_metric_registry
+                metric_registry = get_metric_registry()
+                success, errors = metric_registry.normalize_metric_row(result)
+                if not success:
+                    print(f"DEBUG: Normalization failed for {metric_name}: {'; '.join(errors)}")
+                    # Continue without normalization rather than failing
+                else:
+                    print(f"DEBUG: Normalized {metric_name}: {result.get('value_normalized')} {result.get('unit_normalized', 'days')}")
                 
                 results.append(result)
         
@@ -291,16 +342,7 @@ class ResultsDistiller(BaseWorker):
         else:
             return 'months'
 
-    def _normalize_units_to_days(self, value: float, units: str) -> float:
-        """Convert units to days for normalization."""
-        if units.lower() in ['weeks', 'week']:
-            return value * 7
-        elif units.lower() in ['months', 'month']:
-            return value * 30.44  # Average days per month
-        elif units.lower() in ['years', 'year']:
-            return value * 365.25  # Average days per year
-        else:
-            return value  # Already in days or unknown unit
+
 
     def _get_summary_statistic(self, metric_name: str) -> str:
         """Get summary statistic for a metric."""
@@ -353,6 +395,13 @@ class ResultsDistiller(BaseWorker):
         
         # Extract flags
         flags = self._extract_flags(context_text)
+        
+        # Check for spin language and add to flags
+        if self._is_spin_content(context_text):
+            if flags is None:
+                flags = []
+            flags.append('spin_language')
+        
         if flags:
             context['flags'] = flags
         
@@ -442,14 +491,14 @@ class ResultsDistiller(BaseWorker):
         
         return flags
 
-    def _extract_denominator(self, text: str, context: Dict[str, Any], trial_context: Dict[str, Any], denominators=None) -> Optional[int]:
+    def _extract_denominator(self, text: str, context: Dict[str, Any], trial_context: Dict[str, Any], denominators=None, metric_name=None) -> Optional[int]:
         """Extract denominator (n) from text or context, with inheritance from DenominatorResolver."""
         # First try to extract from the text itself (legacy patterns)
         n = self._extract_local_denominator(text)
         
         # If no local denominator found, try inheritance from DenominatorResolver
         if n is None and denominators is not None:
-            n = self._inherit_denominator(text, denominators)
+            n = self._inherit_denominator_by_metric(metric_name, denominators)
         
         return n
     
@@ -491,40 +540,43 @@ class ResultsDistiller(BaseWorker):
         if match:
             return int(match.group(2))  # Use denominator
         
+        # Look for simple fraction patterns like "3/19" or "4/19"
+        simple_fraction_pattern = r'\b(\d+)/(\d+)\b'
+        match = re.search(simple_fraction_pattern, text, re.IGNORECASE)
+        if match:
+            return int(match.group(2))  # Use denominator
+        
+        # Look for response rate patterns with fractions
+        response_rate_pattern = r'response\s+(?:rate|was)\s+\d+(?:\.\d+)?\s*%.*\(\s*\d+\s*/\s*(\d+)\s*\)'
+        match = re.search(response_rate_pattern, text, re.IGNORECASE)
+        if match:
+            return int(match.group(1))  # Use denominator from response rate pattern
+        
+        # Look for CA-125 specific patterns
+        ca125_pattern = r'CA-?125.*\(\s*\d+\s*/\s*(\d+)\s*\)'
+        match = re.search(ca125_pattern, text, re.IGNORECASE)
+        if match:
+            return int(match.group(1))  # Use denominator from CA-125 pattern
+        
         return None
     
-    def _inherit_denominator(self, text: str, denominators) -> Optional[int]:
-        """Inherit denominator from DenominatorResolver based on metric family."""
-        # Classify the metric based on text content
-        metric_family = self._classify_metric_family(text)
-        
-        if metric_family == 'response':
+    def _inherit_denominator_by_metric(self, metric_name: str, denominators) -> Optional[int]:
+        """Inherit denominator from DenominatorResolver based on metric name."""
+        if metric_name is None:
+            return None
+            
+        # Use metric name for precise classification instead of text scanning
+        if metric_name in ('median_os', 'median_ttp', 'median_pfs', 'os_fixed_time', 'pfs_fixed_time'):
+            # For survival metrics, prefer ttp_os_n, but fall back to response_n if not available
+            return denominators.ttp_os_n or denominators.response_n
+        elif metric_name in ('orr_recist', 'ca125_response'):
             return denominators.response_n
-        elif metric_family == 'survival':
-            return denominators.ttp_os_n
-        elif metric_family == 'safety':
+        elif metric_name in ('grade3_ae_rate', 'serious_ae_rate'):
             return denominators.safety_n or denominators.treated_n
         else:
             return None
     
-    def _classify_metric_family(self, text: str) -> str:
-        """Classify metric into family based on text content."""
-        text_lower = text.lower()
-        
-        # Response metrics
-        if any(term in text_lower for term in ['orr', 'response rate', 'objective response', 'recist']):
-            return 'response'
-        
-        # Survival metrics
-        if any(term in text_lower for term in ['pfs', 'ttp', 'os', 'progression', 'survival', 'median']):
-            return 'survival'
-        
-        # Safety metrics
-        if any(term in text_lower for term in ['ae', 'adverse event', 'toxicity', 'grade']):
-            return 'safety'
-        
-        # Default to response if unclear
-        return 'response'
+
 
     def _extract_method(self, text: str, metric_name: str) -> Optional[str]:
         """Extract statistical method from text."""
@@ -545,9 +597,9 @@ class ResultsDistiller(BaseWorker):
             if re.search(pattern, text, re.IGNORECASE):
                 return method_name
         
-        # Default method based on metric type
+        # Do not infer method - return None unless explicitly matched
         if metric_name.startswith('median_'):
-            return 'Kaplan-Meier'  # Default for survival analysis
+            return None  # do not infer; validators/policy can set inferred_KM elsewhere
         else:
             return None
 
@@ -679,61 +731,7 @@ class ResultsDistiller(BaseWorker):
         
         return deduplicated
 
-    def _create_factsheet_entry(self, result: Dict[str, Any]) -> Optional[ResultsFactsheet]:
-        """Create a ResultsFactsheet entry from extracted result data."""
-        try:
-            # Validate metric enum
-            try:
-                MetricType(result['metric'])
-            except ValueError:
-                print(f"Invalid metric: {result['metric']}")
-                return None
-            
-            # Validate units enum
-            try:
-                UnitType(result['units'])
-            except ValueError:
-                print(f"Invalid units: {result['units']}")
-                return None
-            
-            # Create the factsheet entry
-            factsheet_entry = ResultsFactsheet()
-            
-            # Add the result using the add_result method
-            factsheet_entry.add_result(
-                metric=result['metric'],
-                value=result['value'],
-                units=result['units'],
-                n=result['n'],
-                method=result.get('method'),
-                summary_statistic=result.get('summary_statistic', self._get_summary_statistic(result['metric'])),
-                range_min=result.get('range_min'),
-                range_max=result.get('range_max'),
-                breakdown=result.get('breakdown'),
-                ci_lower=result.get('ci_lower'),
-                ci_upper=result.get('ci_upper'),
-                p_value=result.get('p_value'),
-                direction=self._determine_direction(result['value'], result['metric']),
-                log_metric=None,  # Calculate if needed
-                timepoint=None if result['metric'].startswith('median_') else result.get('timepoint'),
-                analysis_set=result.get('analysis_set', 'not_specified'),
-                population_slice=result.get('population_slice'),
-                is_posthoc=result.get('is_posthoc', False),
-                flags=result.get('flags', []),
-                span_ids=[result['span_id']],
-                doc_id=result.get('doc_id')
-            )
-            
-            # Set the primary analysis set if this is the first result
-            if not factsheet_entry.primary_analysis_set:
-                factsheet_entry.primary_analysis_set = result.get('analysis_set', 'not_specified')
-            
-            return factsheet_entry
-            
-        except Exception as e:
-            # Log error but continue processing other results
-            print(f"Error creating factsheet entry: {e}")
-            return None
+
     
     def _determine_direction(self, value: float, metric: str) -> str:
         """Determine the direction of effect for a metric."""
@@ -746,14 +744,7 @@ class ResultsDistiller(BaseWorker):
         else:
             return 'unknown'
     
-    def _get_summary_statistic(self, metric: str) -> str:
-        """Get the appropriate summary statistic for a metric."""
-        if metric.startswith('median_'):
-            return 'median'
-        elif metric in ['orr_recist', 'ca125_response', 'response_rate']:
-            return 'percentage'
-        else:
-            return 'mean'
+
     
     def _validate_span_references(self, span_ids: List[int], doc_id: int) -> bool:
         """Validate that span references are valid for the document."""
@@ -863,7 +854,7 @@ class ResultsDistiller(BaseWorker):
                 "metadata": {
                     "worker_version": self.version,
                     "extraction_method": "span_limited_llm",
-                    "confidence_threshold": self.config.confidence_threshold
+                    "confidence_threshold": getattr(getattr(self, 'config', {}), 'confidence_threshold', 0.0)
                 }
             }
             

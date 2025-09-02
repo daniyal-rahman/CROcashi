@@ -2,13 +2,32 @@
 
 # Span Generation Settings
 span_generation:
-  min_sentence_length: 50
+  min_sentence_length: 12
   max_sentence_length: 400
   min_table_cell_length: 10
   max_table_cell_length: 200
   preserve_hyphens: false
   normalize_whitespace: true
   include_paragraph_spans: false
+  short_sentence_allowlist:
+    - '%'  # Percentage values
+    - 'median'  # Median values
+    - 'weeks?|months?|years?'  # Time units
+    - 'n\\s*='  # Sample sizes
+    - '\\d+\\.\\d+'  # Decimal numbers
+    - 'hr\\s*[=<>]'  # Hazard ratios
+    - 'or\\s*[=<>]'  # Odds ratios
+    - 'rr\\s*[=<>]'  # Risk ratios
+    - 'p\\s*[=<>]'  # P-values
+    - 'ci\\s*[=<>]'  # Confidence intervals
+    - 'response'  # Response rates
+    - 'survival'  # Survival data
+    - 'progression'  # Progression data
+    - 'objective'  # Objective response
+    - 'complete'  # Complete response
+    - 'partial'  # Partial response
+    - 'stable'  # Stable disease
+    - 'progressive'  # Progressive disease
 
 # Indexing Settings
 indexing:

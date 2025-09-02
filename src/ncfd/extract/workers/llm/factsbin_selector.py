@@ -167,13 +167,43 @@ class FactsBinSelector(BaseWorker):
         if any(indicator in text_lower for indicator in non_fact_indicators):
             return False
         
-        # Look for factual indicators
+        # Enhanced factual indicators based on policy requirements
+        # Accept sentences with number/unit or methods keywords (RECIST, Kaplan-Meier, Gehan, interim, randomized/blinded)
         fact_indicators = [
+            # Numbers and units
             "patients", "subjects", "participants", "cohort",
             "median", "mean", "rate", "percentage", "response",
             "survival", "progression", "toxicity", "adverse",
             "dose", "schedule", "protocol", "criteria",
-            "analysis", "evaluation", "assessment", "measurement"
+            "analysis", "evaluation", "assessment", "measurement",
+            
+            # Methods keywords (RECIST, Kaplan-Meier, Gehan, interim, randomized/blinded)
+            "recist", "kaplan", "meier", "gehan", "interim",
+            "randomized", "randomised", "blinded", "blind", "open label",
+            "log-rank", "cox", "proportional hazards",
+            
+            # Additional clinical trial keywords
+            "endpoint", "primary", "secondary", "objective",
+            "efficacy", "safety", "tolerability", "pharmacokinetics",
+            "pharmacodynamics", "bioavailability", "clearance",
+            "half-life", "volume of distribution", "area under curve",
+            "maximum concentration", "time to maximum",
+            
+            # Statistical terms
+            "confidence interval", "p-value", "p value", "statistical",
+            "significance", "power", "sample size", "enrollment",
+            "randomization", "stratification", "blocking",
+            
+            # Clinical assessment terms
+            "response rate", "complete response", "partial response",
+            "stable disease", "progressive disease", "objective response",
+            "duration of response", "time to progression", "overall survival",
+            "progression-free survival", "event-free survival",
+            
+            # Adverse events
+            "adverse event", "serious adverse event", "grade",
+            "ctcae", "common terminology criteria", "toxicity",
+            "side effect", "treatment emergent", "treatment-related"
         ]
         
         return any(indicator in text_lower for indicator in fact_indicators)
@@ -181,20 +211,41 @@ class FactsBinSelector(BaseWorker):
     def _contains_numeric(self, text: str) -> bool:
         """Check if text contains numeric values."""
         import re
-        # Look for numbers (including decimals and percentages)
-        numeric_pattern = r'\b\d+(?:\.\d+)?\s*(?:%|percent|mg|kg|ml|days?|weeks?|months?|years?|cycles?)\b'
-        return bool(re.search(numeric_pattern, text, re.IGNORECASE))
+        # Enhanced numeric pattern to catch more clinical trial numbers
+        numeric_patterns = [
+            r'\b\d+(?:\.\d+)?\s*(?:%|percent|mg|kg|ml|g|mcg|ng|pg)\b',  # Units
+            r'\b\d+(?:\.\d+)?\s*(?:days?|weeks?|months?|years?|cycles?|hours?|minutes?)\b',  # Time
+            r'\b\d+(?:\.\d+)?\s*(?:patients?|subjects?|participants?|cohorts?)\b',  # Counts
+            r'\b\d+(?:\.\d+)?\s*(?:mg/kg|mg/m2|ml/min|ml/kg|ng/ml|pg/ml)\b',  # Combined units
+            r'\b\d+(?:\.\d+)?\s*(?:confidence interval|ci|hazard ratio|hr|odds ratio|or)\b',  # Statistics
+            r'\b\d+(?:\.\d+)?\s*(?:response rate|survival rate|progression rate)\b',  # Rates
+            r'\b\d+(?:\.\d+)?\s*(?:grade|level|score|scale)\b',  # Grading/scoring
+            r'\b\d+(?:\.\d+)?\s*(?:fold|times|x)\b',  # Multiples
+            r'\b\d+(?:\.\d+)?\s*(?:median|mean|average|range)\b',  # Statistical measures
+        ]
+        
+        for pattern in numeric_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                return True
+        
+        return False
     
     def _extract_units(self, text: str) -> Optional[str]:
         """Extract units from text if present."""
         import re
         
-        # Common unit patterns
+        # Enhanced unit patterns for clinical trials
         unit_patterns = [
-            r'(\d+(?:\.\d+)?)\s*(%)',
-            r'(\d+(?:\.\d+)?)\s*(mg|kg|ml|g)',
-            r'(\d+(?:\.\d+)?)\s*(days?|weeks?|months?|years?|cycles?)',
-            r'(\d+(?:\.\d+)?)\s*(patients?|subjects?|participants?)'
+            r'(\d+(?:\.\d+)?)\s*(%)',  # Percentages
+            r'(\d+(?:\.\d+)?)\s*(mg|kg|ml|g|mcg|ng|pg)',  # Weight/volume
+            r'(\d+(?:\.\d+)?)\s*(days?|weeks?|months?|years?|cycles?|hours?|minutes?)',  # Time
+            r'(\d+(?:\.\d+)?)\s*(patients?|subjects?|participants?|cohorts?)',  # Counts
+            r'(\d+(?:\.\d+)?)\s*(mg/kg|mg/m2|ml/min|ml/kg|ng/ml|pg/ml)',  # Combined units
+            r'(\d+(?:\.\d+)?)\s*(confidence interval|ci|hazard ratio|hr|odds ratio|or)',  # Statistics
+            r'(\d+(?:\.\d+)?)\s*(response rate|survival rate|progression rate)',  # Rates
+            r'(\d+(?:\.\d+)?)\s*(grade|level|score|scale)',  # Grading/scoring
+            r'(\d+(?:\.\d+)?)\s*(fold|times|x)',  # Multiples
+            r'(\d+(?:\.\d+)?)\s*(median|mean|average|range)',  # Statistical measures
         ]
         
         for pattern in unit_patterns:
@@ -277,6 +328,41 @@ class FactsBinSelector(BaseWorker):
             "misc": 0.1
         }
         score += type_boosts.get(fact_type, 0.0)
+        
+        # Boost for key methods keywords (RECIST, Kaplan-Meier, Gehan, interim, randomized/blinded)
+        text_lower = candidate.text.lower()
+        key_methods_keywords = [
+            "recist", "kaplan", "meier", "gehan", "interim",
+            "randomized", "randomised", "blinded", "blind", "open label",
+            "log-rank", "cox", "proportional hazards"
+        ]
+        
+        methods_keyword_count = sum(1 for keyword in key_methods_keywords if keyword in text_lower)
+        if methods_keyword_count > 0:
+            score += 0.3  # Significant boost for methods keywords
+        
+        # Boost for statistical terms
+        statistical_keywords = [
+            "confidence interval", "p-value", "p value", "statistical",
+            "significance", "power", "sample size", "enrollment",
+            "hazard ratio", "odds ratio", "median", "mean"
+        ]
+        
+        stat_keyword_count = sum(1 for keyword in statistical_keywords if keyword in text_lower)
+        if stat_keyword_count > 0:
+            score += 0.2  # Boost for statistical terms
+        
+        # Boost for clinical assessment terms
+        clinical_keywords = [
+            "response rate", "complete response", "partial response",
+            "stable disease", "progressive disease", "objective response",
+            "duration of response", "time to progression", "overall survival",
+            "progression-free survival", "event-free survival"
+        ]
+        
+        clinical_keyword_count = sum(1 for keyword in clinical_keywords if keyword in text_lower)
+        if clinical_keyword_count > 0:
+            score += 0.25  # Boost for clinical terms
         
         # Boost for longer, more detailed text
         text_length = len(candidate.text)

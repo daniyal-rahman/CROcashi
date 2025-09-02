@@ -1,0 +1,80 @@
+{
+  "base_span_coverage": {
+    "methods_spans": 9,
+    "results_spans": 6,
+    "table_spans": 3,
+    "abstract_spans": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "span_counts_and_must_hits": {
+    "methods_count": 9,
+    "results_count": 6,
+    "table_count": 3,
+    "must_hit_spans_found": [
+      "time to progression",
+      "progression-free survival",
+      "overall survival",
+      "every two cycles",
+      "assessed every two cycles",
+      "response rate",
+      "survival",
+      "median"
+    ],
+    "missing_must_hits": [
+      "ttp",
+      "median survival",
+      "os",
+      "Cox proportional hazards",
+      "cox model",
+      "cox regression",
+      "RECIST",
+      "Gehan",
+      "Kaplan-Meier",
+      "survival estimated by",
+      "KM",
+      "ttp",
+      "os"
+    ],
+    "errors": [],
+    "warnings": [
+      "Missing must-hit concepts: ['ttp', 'median survival', 'os', 'Cox proportional hazards', 'cox model', 'cox regression', 'RECIST', 'Gehan', 'Kaplan-Meier', 'survival estimated by', 'KM', 'ttp', 'os']"
+    ]
+  },
+  "claims": {
+    "total_claims": 0,
+    "numeric_claims": 0,
+    "claims_with_spans": 0,
+    "methods_detail_claims": 0,
+    "operational_claims": 0,
+    "limitation_claims": 0,
+    "errors": [],
+    "warnings": [
+      "Few numeric claims: 0 < 4",
+      "Insufficient methods_detail/operational/limitation claims"
+    ]
+  },
+  "dual_path_fusion": {
+    "llm_path_success": true,
+    "deterministic_path_success": false,
+    "fusion_success": true,
+    "ambiguity_ledger_present": true,
+    "global_provenance_valid": true,
+    "errors": [],
+    "warnings": [
+      "Deterministic path did not produce results"
+    ]
+  },
+  "final_sanity_checks": {
+    "ttp_14_weeks_found": true,
+    "os_13_1_months_found": true,
+    "orr_15_8_percent_found": true,
+    "ca125_21_percent_found": true,
+    "gehan_design_found": true,
+    "interim_look_1_found": true,
+    "open_label_found": true,
+    "recist_found": true,
+    "errors": [],
+    "warnings": []
+  }
+}

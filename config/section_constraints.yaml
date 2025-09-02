@@ -1,0 +1,136 @@
+# Section Constraints Configuration
+# ===============================
+
+# Section aliases and synonyms for flexible matching
+section_aliases:
+  methods: 
+    - "Methods"
+    - "Materials and Methods" 
+    - "Patients and Methods"
+    - "Protocol"
+    - "Statistical Analysis"
+    - "SAP"
+    - "Study Design"
+    - "Trial Design"
+    - "Randomization"
+    - "Sample Size"
+  
+  results:
+    - "Results"
+    - "Efficacy Results"
+    - "Outcome"
+    - "Findings"
+    - "Primary Results"
+    - "Secondary Results"
+    - "Efficacy"
+    - "Response"
+    - "Survival"
+  
+  safety:
+    - "Safety"
+    - "Adverse Events"
+    - "Toxicity"
+    - "Safety Results"
+    - "Adverse Reactions"
+    - "Tolerability"
+  
+  abstract:
+    - "Abstract"
+    - "Background"
+    - "Objective"
+    - "Conclusions"
+    - "Summary"
+  
+  discussion:
+    - "Discussion"
+    - "Interpretation"
+    - "Clinical Implications"
+    - "Conclusions"
+    - "Limitations"
+  
+  mixed:
+    - "Results and Discussion"
+    - "Discussion and Results"
+    - "Findings and Discussion"
+
+# Field-level section constraints
+constraints:
+  MethodCard:
+    site_geography: ["methods"]
+    primary_endpoint: ["methods"]
+    sample_size: ["methods"]
+    randomization: ["methods"]
+    survival_method: ["methods"]
+    statistical_method: ["methods"]
+    blinding: ["methods"]
+    stratification: ["methods"]
+    interim_analysis: ["methods"]
+    alpha_structure: ["methods"]
+    estimand: ["methods"]
+    analysis_set: ["methods"]
+    missingness_assumption: ["methods"]
+    gehan_two_stage: ["methods"]
+    interim_looks: ["methods"]
+  
+  ResultsFactsheet:
+    response_rate: ["results", "abstract", "mixed"]
+    survival_data: ["results", "abstract", "mixed"]
+    safety_events: ["safety", "results", "abstract"]
+    orr_recist: ["results", "abstract", "mixed"]
+    median_os: ["results", "abstract", "mixed"]
+    median_pfs: ["results", "abstract", "mixed"]
+    median_ttp: ["results", "abstract", "mixed"]
+    hazard_ratio: ["results", "abstract", "mixed"]
+    confidence_interval: ["results", "abstract", "mixed"]
+    p_value: ["results", "abstract", "mixed"]
+
+# Severity levels for constraint violations
+severity:
+  MethodCard:
+    site_geography: "hard"
+    primary_endpoint: "hard"
+    sample_size: "hard"
+    randomization: "hard"
+    survival_method: "hard"
+    statistical_method: "hard"
+    blinding: "hard"
+    stratification: "hard"
+    interim_analysis: "hard"
+    alpha_structure: "hard"
+    estimand: "hard"
+    analysis_set: "hard"
+    missingness_assumption: "hard"
+    gehan_two_stage: "hard"
+    interim_looks: "hard"
+  
+  ResultsFactsheet:
+    response_rate: "hard"
+    survival_data: "hard"
+    safety_events: "warn"
+    orr_recist: "hard"
+    median_os: "hard"
+    median_pfs: "hard"
+    median_ttp: "hard"
+    hazard_ratio: "hard"
+    confidence_interval: "hard"
+    p_value: "hard"
+
+# Validation policy settings
+validation_policy:
+  min_allowed_fraction: 0.8  # 80% of supporting spans must be in allowed sections
+  min_allowed_primary: 1     # At least one span in the primary allowed section
+  auto_repair_attempts: 1   # Number of targeted retrieval attempts before failing
+  unknown_section_allowed: false  # Whether to allow "Unknown" sections by default
+
+# Table/Figure section mapping rules
+table_figure_mapping:
+  # Default mapping for tables/figures without explicit context
+  default_table_section: "results"
+  default_figure_section: "results"
+  
+  # Keywords in table captions that indicate section ownership
+  caption_keywords:
+    methods: ["methods", "protocol", "design", "statistical", "sample", "randomization"]
+    results: ["results", "outcome", "efficacy", "response", "survival", "safety"]
+    safety: ["safety", "adverse", "toxicity", "tolerability"]
+    abstract: ["abstract", "background", "objective"]

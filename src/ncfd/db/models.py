@@ -847,7 +847,8 @@ class BaseSpan(Base):
     page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     char_start: Mapped[int] = mapped_column(Integer, nullable=False)
     char_end: Mapped[int] = mapped_column(Integer, nullable=False)
-    text: Mapped[str] = mapped_column(Text, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)  # Cleaned/normalized text
+    text_original: Mapped[str] = mapped_column(Text, nullable=False)  # Original text slice
     is_table_cell: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     table_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     row: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -856,7 +857,11 @@ class BaseSpan(Base):
     
     # Relationships
     document: Mapped["Document"] = relationship(back_populates="base_spans")
-    derived_spans: Mapped[List["DerivedSpan"]] = relationship(back_populates="parent_base_spans")
+    derived_spans: Mapped[List["DerivedSpan"]] = relationship(
+        "DerivedSpan", 
+        secondary="base_span_derived_span_association",
+        back_populates="parent_base_spans"
+    )
     
     __table_args__ = (
         ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
@@ -865,6 +870,7 @@ class BaseSpan(Base):
         Index("ix_base_spans_page", "page"),
         Index("ix_base_spans_char_range", "char_start", "char_end"),
         Index("ix_base_spans_table", "table_id", "row", "col"),
+        Index("ix_base_spans_text_original", "text_original"),
         CheckConstraint("char_end > char_start", name="ck_base_spans_char_range"),
         CheckConstraint("char_start >= 0", name="ck_base_spans_char_start_positive")
     )

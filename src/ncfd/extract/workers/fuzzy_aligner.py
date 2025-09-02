@@ -8,6 +8,7 @@ import re
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+from sqlalchemy import func
 try:
     from Levenshtein import ratio as levenshtein_ratio
 except ImportError:
@@ -17,7 +18,7 @@ except ImportError:
             return 1.0
         if not s1 or not s2:
             return 0.0
-        return 1.0 - (self._levenshtein_distance(s1, s2) / max(len(s1), len(s2)))
+        return 1.0 - (_levenshtein_distance(s1, s2) / max(len(s1), len(s2)))
     
     def _levenshtein_distance(s1, s2):
         if len(s1) < len(s2):
@@ -36,7 +37,8 @@ except ImportError:
         return previous_row[-1]
 
 from ..workers.base_worker import BaseWorker, WorkerResult
-from ...db.models import BaseSpan, DerivedSpan, Document
+from ..models import EvidenceSpan
+from ...db.models import BaseSpan, Document
 from ...db.session import get_session
 
 
@@ -150,18 +152,30 @@ class FuzzyAligner(BaseWorker):
                     'derived_span_id': None
                 }
             else:
-                # Create derived span
-                derived_span = self._create_derived_span(
-                    session, quote, normalized_quote, best_match['span'], doc_id
-                )
-                return {
-                    'quote': quote,
-                    'aligned': True,
-                    'match_type': 'derived',
-                    'span_id': best_match['span'].span_id,
-                    'similarity_score': best_match['similarity'],
-                    'derived_span_id': derived_span.derived_id
-                }
+                # Try to create derived span
+                try:
+                    derived_span = self._create_derived_span(
+                        session, quote, normalized_quote, best_match['span'], doc_id, best_match['similarity']
+                    )
+                    return {
+                        'quote': quote,
+                        'aligned': True,
+                        'match_type': 'derived',
+                        'span_id': best_match['span'].span_id,
+                        'similarity_score': best_match['similarity'],
+                        'derived_span_id': derived_span.span_id
+                    }
+                except ValueError:
+                    # Could not find valid position for derived span
+                    return {
+                        'quote': quote,
+                        'aligned': False,
+                        'match_type': 'none',
+                        'span_id': None,
+                        'similarity_score': best_match['similarity'],
+                        'derived_span_id': None,
+                        'error': 'No valid position found for derived span creation'
+                    }
         
         # No match found
         return {
@@ -177,6 +191,13 @@ class FuzzyAligner(BaseWorker):
     def _find_exact_match(self, normalized_quote: str, base_spans: List[BaseSpan]) -> Optional[BaseSpan]:
         """Find exact text match in base spans."""
         for span in base_spans:
+            # Try to match against original text first (if available)
+            if hasattr(span, 'text_original') and span.text_original:
+                normalized_span_original = self._normalize_text(span.text_original)
+                if normalized_quote == normalized_span_original:
+                    return span
+            
+            # Fallback to cleaned text
             normalized_span_text = self._normalize_text(span.text)
             if normalized_quote == normalized_span_text:
                 return span
@@ -188,7 +209,12 @@ class FuzzyAligner(BaseWorker):
         best_similarity = 0.0
         
         for span in base_spans:
-            normalized_span_text = self._normalize_text(span.text)
+            # Use original text for comparison if available, otherwise use cleaned text
+            span_text_for_comparison = span.text
+            if hasattr(span, 'text_original') and span.text_original:
+                span_text_for_comparison = span.text_original
+            
+            normalized_span_text = self._normalize_text(span_text_for_comparison)
             
             # Calculate similarity using multiple methods
             similarities = []
@@ -237,42 +263,107 @@ class FuzzyAligner(BaseWorker):
     def _is_contained_within(self, quote: str, span: BaseSpan) -> bool:
         """Check if quote is contained within the span text."""
         normalized_quote = self._normalize_text(quote)
-        normalized_span_text = self._normalize_text(span.text)
+        
+        # Use original text for comparison if available, otherwise use cleaned text
+        span_text_for_comparison = span.text
+        if hasattr(span, 'text_original') and span.text_original:
+            span_text_for_comparison = span.text_original
+        
+        normalized_span_text = self._normalize_text(span_text_for_comparison)
         
         return normalized_quote in normalized_span_text
     
     def _create_derived_span(self, session, original_quote: str, normalized_quote: str, 
-                            parent_span: BaseSpan, doc_id: int) -> DerivedSpan:
+                            parent_span: BaseSpan, doc_id: int, similarity_score: float) -> EvidenceSpan:
         """Create a derived span for a quote that doesn't exactly match any base span."""
-        # Find the best position in the parent span's text
-        parent_text = self._normalize_text(parent_span.text)
-        quote_start = parent_text.find(normalized_quote)
+        # Use original text for finding position if available, otherwise use cleaned text
+        parent_text_for_search = parent_span.text
+        if hasattr(parent_span, 'text_original') and parent_span.text_original:
+            parent_text_for_search = parent_span.text_original
         
-        if quote_start != -1:
-            # Quote found within parent span text
-            char_start = parent_span.char_start + quote_start
-            char_end = char_start + len(normalized_quote)
-        else:
-            # Quote not found, use approximate position
-            # This is a fallback - in practice, we should have found it above
-            char_start = parent_span.char_start
-            char_end = min(char_start + len(normalized_quote), parent_span.char_end)
-        
-        # Create derived span
-        derived_span = DerivedSpan(
-            doc_id=doc_id,
-            char_start=char_start,
-            char_end=char_end,
-            parent_span_ids=[parent_span.span_id],
-            text=original_quote,
-            similarity_score=0.85  # Default similarity for derived spans
+        # Try to find position with proper offset mapping
+        char_start, char_end = self._find_quote_position_with_offset_mapping(
+            original_quote, parent_text_for_search, parent_span.char_start
         )
         
-        # Save to database
-        session.add(derived_span)
-        session.commit()
+        if char_start is None:
+            # No valid position found - don't create derived span
+            raise ValueError("Could not find valid position for quote in parent text")
+        
+        # Create derived EvidenceSpan
+        derived_span = EvidenceSpan(
+            doc_id=str(doc_id),  # Convert to string for EvidenceSpan
+            quote=original_quote,
+            section=parent_span.section,
+            page=parent_span.page,
+            char_start=char_start,
+            char_end=char_end,
+            confidence=similarity_score,  # Use similarity as confidence
+            kind="derived",  # Mark as derived span
+            parent_span_ids=[str(parent_span.span_id)],  # Store parent span ID
+            created_by=self.name
+        )
         
         return derived_span
+    
+    def _find_quote_position_with_offset_mapping(self, original_quote: str, parent_text: str, 
+                                               parent_char_start: int) -> Tuple[Optional[int], Optional[int]]:
+        """Find the position of a quote in parent text with proper character offset mapping."""
+        # First try exact match in original text
+        quote_start = parent_text.find(original_quote)
+        if quote_start != -1:
+            char_start = parent_char_start + quote_start
+            char_end = char_start + len(original_quote)
+            return char_start, char_end
+        
+        # If exact match fails, try case-insensitive match
+        quote_start = parent_text.casefold().find(original_quote.casefold())
+        if quote_start != -1:
+            char_start = parent_char_start + quote_start
+            char_end = char_start + len(original_quote)
+            return char_start, char_end
+        
+        # If still no match, try whitespace-insensitive search with proper offset mapping
+        return self._find_whitespace_insensitive_position(original_quote, parent_text, parent_char_start)
+    
+    def _find_whitespace_insensitive_position(self, quote: str, parent_text: str, 
+                                            parent_char_start: int) -> Tuple[Optional[int], Optional[int]]:
+        """Find position using whitespace-insensitive search with proper offset mapping."""
+        # Create whitespace-stripped versions and track position mapping
+        quote_stripped = ''.join(quote.split())
+        parent_stripped, position_map = self._strip_whitespace_with_mapping(parent_text)
+        
+        # Find position in stripped text
+        stripped_start = parent_stripped.find(quote_stripped)
+        if stripped_start == -1:
+            return None, None
+        
+        # Map back to original positions
+        original_start = self._map_stripped_to_original_position(stripped_start, position_map)
+        original_end = self._map_stripped_to_original_position(stripped_start + len(quote_stripped), position_map)
+        
+        char_start = parent_char_start + original_start
+        char_end = parent_char_start + original_end
+        
+        return char_start, char_end
+    
+    def _strip_whitespace_with_mapping(self, text: str) -> Tuple[str, List[int]]:
+        """Strip whitespace from text and return mapping from stripped positions to original positions."""
+        stripped = []
+        position_map = []
+        
+        for i, char in enumerate(text):
+            if not char.isspace():
+                stripped.append(char)
+                position_map.append(i)
+        
+        return ''.join(stripped), position_map
+    
+    def _map_stripped_to_original_position(self, stripped_pos: int, position_map: List[int]) -> int:
+        """Map a position in stripped text back to original text position."""
+        if stripped_pos >= len(position_map):
+            return position_map[-1] + 1 if position_map else 0
+        return position_map[stripped_pos]
     
     def _normalize_text(self, text: str) -> str:
         """Normalize text for comparison."""
@@ -337,23 +428,35 @@ class FuzzyAligner(BaseWorker):
             }
     
     def validate_alignment(self, quote: str, span_id: int, doc_id: int) -> bool:
-        """Validate that a quote is properly aligned to a span."""
+        """Validate that a quote is properly aligned to a span (BaseSpan or DerivedSpan)."""
         try:
             with get_session() as session:
-                # Check if span exists and belongs to document
-                span = session.query(BaseSpan).filter(
+                # First try to find as BaseSpan
+                base_span = session.query(BaseSpan).filter(
                     BaseSpan.span_id == span_id,
                     BaseSpan.doc_id == doc_id
                 ).first()
                 
-                if not span:
-                    return False
+                if base_span:
+                    # Check if quote is contained within base span text
+                    normalized_quote = self._normalize_text(quote)
+                    normalized_span_text = self._normalize_text(base_span.text)
+                    return normalized_quote in normalized_span_text
                 
-                # Check if quote is contained within span text
-                normalized_quote = self._normalize_text(quote)
-                normalized_span_text = self._normalize_text(span.text)
+                # If not found as BaseSpan, try DerivedSpan
+                derived_span = session.query(DerivedSpan).filter(
+                    DerivedSpan.derived_id == span_id,
+                    DerivedSpan.doc_id == doc_id
+                ).first()
                 
-                return normalized_quote in normalized_span_text
+                if derived_span:
+                    # Check if quote matches derived span text
+                    normalized_quote = self._normalize_text(quote)
+                    normalized_span_text = self._normalize_text(derived_span.text)
+                    return normalized_quote == normalized_span_text
+                
+                # Neither BaseSpan nor DerivedSpan found
+                return False
                 
         except Exception:
             return False

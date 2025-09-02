@@ -1,3 +1,4 @@
+# src/ncfd/extract/workers/denominator_resolver.py
 """
 Denominator Resolver
 
@@ -14,6 +15,7 @@ from ..workers.base_worker import BaseWorker, WorkerResult
 from ...db.models import BaseSpan, Document
 from ...db.session import get_session
 from ..normalization.metric_registry import get_metric_registry
+from .interfaces.denominator_resolver import IDenominatorResolver, DenominatorResult
 
 
 @dataclass
@@ -43,7 +45,7 @@ class ResolvedDenominator:
     pattern_used: str
 
 
-class DenominatorResolver(BaseWorker):
+class DenominatorResolver(BaseWorker, IDenominatorResolver):
     """Worker for resolving analysis denominators from document spans."""
     
     def __init__(self):
@@ -84,17 +86,22 @@ class DenominatorResolver(BaseWorker):
                 # Resolve ambiguities
                 final_denominators = self._resolve_ambiguities(grouped_denominators)
                 
+                # Convert to standardized format
+                standardized_result = self._convert_to_standard_format(final_denominators)
+                
                 return WorkerResult(
                     success=True,
                     output={
-                        "resolved_denominators": final_denominators,
-                        "total_patterns_found": len(resolved_denominators),
-                        "metric_families_covered": list(final_denominators.keys()),
-                        "ambiguity_resolution": self._get_ambiguity_summary(grouped_denominators, final_denominators)
-                    },
-                    metadata={
-                        "doc_id": doc_id,
-                        "patterns_used": [p.name for p in self.denominator_patterns]
+                        "denominators": standardized_result,
+                        "processed_spans": len(spans),
+                        "extracted_denominators": standardized_result.count_extracted_denominators(),
+                        "metadata": {
+                            "doc_id": doc_id,
+                            "patterns_used": [p.name for p in self.denominator_patterns],
+                            "total_patterns_found": len(resolved_denominators),
+                            "metric_families_covered": list(final_denominators.keys()),
+                            "ambiguity_resolution": self._get_ambiguity_summary(grouped_denominators, final_denominators)
+                        }
                     }
                 )
                 
@@ -108,6 +115,56 @@ class DenominatorResolver(BaseWorker):
     def _initialize_patterns(self) -> List[DenominatorPattern]:
         """Initialize denominator extraction patterns."""
         patterns = [
+            # Fraction patterns (highest confidence for exact matches)
+            DenominatorPattern(
+                name="fraction_denominator",
+                pattern=r"\b(\d+)\s*/\s*(\d+)\b",
+                metric_family="response",
+                confidence=0.98,
+                section="Results",
+                examples=["3/19", "4/19", "15/25"]
+            ),
+            
+            # Response rate patterns with fractions
+            DenominatorPattern(
+                name="response_rate_fraction",
+                pattern=r"response\s+(?:rate|was)\s+\d+(?:\.\d+)?\s*%.*\(\s*\d+\s*/\s*(\d+)\s*\)",
+                metric_family="response",
+                confidence=0.95,
+                section="Results",
+                examples=["response rate was 15.8% (3/19)", "response was 21.1% (4/19)"]
+            ),
+            
+            # CA-125 specific patterns
+            DenominatorPattern(
+                name="ca125_fraction",
+                pattern=r"CA-?125.*\(\s*\d+\s*/\s*(\d+)\s*\)",
+                metric_family="response",
+                confidence=0.95,
+                section="Results",
+                examples=["CA-125 response rate was 21.1% (4/19)"]
+            ),
+            
+            # TTP/OS analysis patterns
+            DenominatorPattern(
+                name="ttp_os_analysis",
+                pattern=r"(?:TTP|OS|time[-\s]to[-\s]progression|overall\s+survival)\s+(?:analysis|evaluation)\s+(?:included|analyzed)\s*\(?\s*n\s*=\s*(\d+)\s*\)?",
+                metric_family="survival",
+                confidence=0.9,
+                section="Methods",
+                examples=["TTP and OS analysis included 22 patients", "OS analysis included n=22"]
+            ),
+            
+            # TTP/OS top-up query patterns
+            DenominatorPattern(
+                name="ttp_os_topup",
+                pattern=r"(?:TTP|OS|time[-\s]to[-\s]event)\s+(?:and\s+OS\s+)?analysis\s+(?:included|evaluated|analyzed)\s+(\d+)\s+patients",
+                metric_family="survival",
+                confidence=0.85,
+                section="Methods",
+                examples=["TTP and OS analysis included 22 patients", "time-to-event analysis included 22 patients"]
+            ),
+            
             # Response evaluation patterns
             DenominatorPattern(
                 name="response_evaluable",
@@ -196,15 +253,6 @@ class DenominatorResolver(BaseWorker):
             
             # Results section patterns (lower confidence)
             DenominatorPattern(
-                name="results_response",
-                pattern=r"(\d+)\s+patients?\s+(?:achieved|showed|had)\s+(?:response|CR|PR|SD)",
-                metric_family="response",
-                confidence=0.7,
-                section="Results",
-                examples=["19 patients achieved response", "19 patients showed PR"]
-            ),
-            
-            DenominatorPattern(
                 name="results_survival",
                 pattern=r"(\d+)\s+patients?\s+(?:were|are)\s+evaluable\s+for\s+(?:survival|TTP|OS)",
                 metric_family="survival",
@@ -246,7 +294,13 @@ class DenominatorResolver(BaseWorker):
                 
                 for match in matches:
                     try:
-                        n = int(match.group(1))
+                        # Handle fraction patterns specially
+                        if pattern.name == "fraction_denominator":
+                            # For fraction patterns, use the denominator (second group)
+                            n = int(match.group(2))
+                        else:
+                            # For all other patterns, use the first group
+                            n = int(match.group(1))
                         
                         resolved_denom = ResolvedDenominator(
                             n=n,
@@ -337,43 +391,68 @@ class DenominatorResolver(BaseWorker):
         
         return summary
     
-    def get_method_card_denominators(self, doc_id: int) -> Dict[str, Any]:
+    def _convert_to_standard_format(self, final_denominators: Dict[str, ResolvedDenominator]) -> DenominatorResult:
+        """Convert internal format to standardized DenominatorResult."""
+        result = DenominatorResult()
+        
+        for metric_family, denom in final_denominators.items():
+            if metric_family == "response":
+                result.response_n = denom.n
+                result.response_n_span_ids = [str(denom.span_id)]
+                result.confidence_scores["response"] = denom.confidence
+                result.patterns_used["response"] = denom.pattern_used
+            elif metric_family == "survival":
+                result.ttp_os_n = denom.n
+                result.ttp_os_n_span_ids = [str(denom.span_id)]
+                result.confidence_scores["ttp_os"] = denom.confidence
+                result.patterns_used["ttp_os"] = denom.pattern_used
+            elif metric_family == "safety":
+                result.safety_n = denom.n
+                result.safety_n_span_ids = [str(denom.span_id)]
+                result.confidence_scores["safety"] = denom.confidence
+                result.patterns_used["safety"] = denom.pattern_used
+            elif metric_family == "itt":
+                result.itt_n = denom.n
+                result.itt_n_span_ids = [str(denom.span_id)]
+                result.confidence_scores["itt"] = denom.confidence
+                result.patterns_used["itt"] = denom.pattern_used
+            elif metric_family == "per_protocol":
+                result.per_protocol_n = denom.n
+                result.per_protocol_n_span_ids = [str(denom.span_id)]
+                result.confidence_scores["per_protocol"] = denom.confidence
+                result.patterns_used["per_protocol"] = denom.pattern_used
+            elif metric_family == "total" or metric_family == "evaluable":
+                # Map generic totals to treated_n as fallback
+                if result.treated_n is None:
+                    result.treated_n = denom.n
+                    result.treated_n_span_ids = [str(denom.span_id)]
+                    result.confidence_scores["treated"] = denom.confidence
+                    result.patterns_used["treated"] = denom.pattern_used
+        
+        return result
+    
+    def get_method_card_denominators(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Get denominators formatted for MethodCard.analysis_denominators."""
         try:
-            with get_session() as session:
-                spans = session.query(BaseSpan).filter(BaseSpan.doc_id == doc_id).all()
-                resolved_denominators = self._resolve_denominators(spans)
-                grouped = self._group_denominators(resolved_denominators)
-                final = self._resolve_ambiguities(grouped)
-                
-                # Format for MethodCard
-                method_card_denominators = {}
-                
-                for metric_family, denom in final.items():
-                    if metric_family == "response":
-                        method_card_denominators["response_n"] = denom.n
-                    elif metric_family == "survival":
-                        method_card_denominators["ttp_os_n"] = denom.n
-                    elif metric_family == "safety":
-                        method_card_denominators["safety_n"] = denom.n
-                    elif metric_family == "itt":
-                        method_card_denominators["itt_n"] = denom.n
-                    elif metric_family == "per_protocol":
-                        method_card_denominators["per_protocol_n"] = denom.n
-                    else:
-                        method_card_denominators[f"{metric_family}_n"] = denom.n
-                
-                return method_card_denominators
+            result = self.process(inputs)
+            if not result.success:
+                return {"error": result.error_message}
+            
+            denominators = result.output.get("denominators")
+            if not denominators:
+                return {"error": "No denominators found"}
+            
+            return denominators.get_method_card_format()
                 
         except Exception as e:
             return {"error": str(e)}
     
     def attach_denominators_to_factsheet(self, factsheet_data: Dict[str, Any], 
-                                       doc_id: int) -> Tuple[bool, List[str]]:
+                                       inputs: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Attach correct denominators to ResultsFactsheet rows."""
         try:
             # Get denominators for this document
-            denominators = self.get_method_card_denominators(doc_id)
+            denominators = self.get_method_card_denominators(inputs)
             if "error" in denominators:
                 return False, [denominators["error"]]
             
@@ -385,14 +464,17 @@ class DenominatorResolver(BaseWorker):
                 
                 # Determine metric family
                 metric_id = row.get("metric", "")
-                metric_family = self._get_metric_family(metric_id)
+                metric_family = self._map_metric_to_denominator_family(metric_id)
                 
-                if metric_family and metric_family in denominators:
-                    # Attach denominator
-                    row["n"] = denominators[metric_family]
-                    row["analysis_set"] = metric_family
+                if metric_family:
+                    key = f"{metric_family}_n"
+                    if key in denominators:
+                        row["n"] = denominators[key]
+                        row["analysis_set"] = metric_family
+                    elif "n" not in row or row["n"] is None:
+                        errors.append(f"{row_prefix} No denominator found for metric {metric_id}")
                 else:
-                    # No denominator found for this metric
+                    # No metric family determined
                     if "n" not in row or row["n"] is None:
                         errors.append(f"{row_prefix} No denominator found for metric {metric_id}")
             
@@ -419,17 +501,36 @@ class DenominatorResolver(BaseWorker):
         else:
             return "general"
     
-    def validate_denominator_consistency(self, doc_id: int, factsheet_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _map_metric_to_denominator_family(self, metric_id: str) -> Optional[str]:
+        """Map specific metrics to their appropriate denominator families."""
+        metric_lower = metric_id.lower()
+        
+        # Response metrics
+        if any(term in metric_lower for term in ["orr", "orr_recist", "ca125", "ca125_response", "response"]):
+            return "response"
+        
+        # Survival metrics
+        if any(term in metric_lower for term in ["ttp", "median_ttp", "os", "median_os", "pfs", "median_pfs"]):
+            return "survival"
+        
+        # Safety metrics
+        if any(term in metric_lower for term in ["safety", "ae", "adverse"]):
+            return "safety"
+        
+        # Default to response for unknown metrics
+        return "response"
+    
+    def validate_denominator_consistency(self, inputs: Dict[str, Any], factsheet_data: Dict[str, Any]) -> Dict[str, Any]:
         """Validate that denominators are consistent across the factsheet."""
         try:
             # Get denominators for this document
-            denominators = self.get_method_card_denominators(doc_id)
+            denominators = self.get_method_card_denominators(inputs)
             if "error" in denominators:
                 return {"error": denominators["error"]}
             
             # Check consistency
             consistency_report = {
-                "doc_id": doc_id,
+                "doc_id": inputs.get("doc_id"),
                 "denominators_found": denominators,
                 "factsheet_consistency": {},
                 "overall_consistent": True

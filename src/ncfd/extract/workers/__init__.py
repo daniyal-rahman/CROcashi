@@ -11,6 +11,7 @@ from .span_indexer import SpanIndexer
 from .fuzzy_aligner import FuzzyAligner
 from .span_triage import SpanTriageWorker
 from .denominator_resolver import DenominatorResolver
+from .interfaces.denominator_resolver import create_denominator_resolver
 from .llm import (
     MethodAuditor,
     ResultsDistiller,
@@ -22,7 +23,9 @@ from .llm import (
 )
 from .deterministic import (
     GateValidator,
-    GateAssessor
+    GateAssessor,
+    DeterministicMethodAuditor,
+    DeterministicResultsDistiller
 )
 
 __all__ = [
@@ -33,6 +36,7 @@ __all__ = [
     "FuzzyAligner",
     "SpanTriageWorker",
     "DenominatorResolver",
+    "create_denominator_resolver",
     "MethodAuditor",
     "ResultsDistiller", 
     "GateProposer",
@@ -41,5 +45,7 @@ __all__ = [
     "FactsBinSelector",
     "SpanLimitedNormalizer",
     "GateValidator",
-    "GateAssessor"
+    "GateAssessor",
+    "DeterministicMethodAuditor",
+    "DeterministicResultsDistiller"
 ]

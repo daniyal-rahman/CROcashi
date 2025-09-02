@@ -1,4 +1,4 @@
-# src/ncfd/extract/validators.py
+# src/ncfd/extract/validators/validator_utils.py
 """
 Global validation rules for the study card system.
 
@@ -10,7 +10,8 @@ import json
 import re
 from typing import Dict, Any, List, Tuple, Optional
 from dataclasses import asdict
-from .models import ResultsFactsheet, Claim, MethodCard, EvidenceSpan
+from ..models import ResultsFactsheet, Claim, MethodCard, EvidenceSpan
+from .section_constraints import enforce_section_constraints
 
 
 class ValidationError(Exception):
@@ -153,11 +154,11 @@ class GlobalValidator:
         if 'input_hash' in artifact_dict:
             input_hash = artifact_dict['input_hash']
             if input_hash is None or input_hash == "":
-                errors.append(f"{artifact_type}: input_hash is null or empty")
+                errors.append(f"CRITICAL: {artifact_type}: input_hash is null or empty")
             elif not GlobalValidator._is_valid_hash(input_hash):
-                errors.append(f"{artifact_type}: Invalid input_hash format: {input_hash}")
+                errors.append(f"CRITICAL: {artifact_type}: Invalid input_hash format: {input_hash}")
         else:
-            errors.append(f"{artifact_type}: Missing input_hash field")
+            errors.append(f"CRITICAL: {artifact_type}: Missing input_hash field")
         
         # Check for span_ids or provenance_anchors
         has_span_refs = False
@@ -176,7 +177,7 @@ class GlobalValidator:
                         break
         
         if not has_span_refs:
-            errors.append(f"{artifact_type}: No span references found (span_ids or provenance_anchors)")
+            errors.append(f"CRITICAL: {artifact_type}: No span references found (span_ids or provenance_anchors)")
         
         return errors
     
@@ -239,7 +240,7 @@ class GlobalValidator:
         # Should be alphanumeric and at least 8 characters
         hash_pattern = r'^[A-Fa-f0-9]{8,}$'
         return bool(re.match(hash_pattern, hash_value))
-
+    
     @staticmethod
     def validate_results_factsheet_coverage(factsheet: ResultsFactsheet, spans: List[EvidenceSpan]) -> List[str]:
         """
@@ -297,8 +298,11 @@ class GlobalValidator:
                 violations.append(violation)
         elif len(expected_metrics) == 1:
             expected = expected_metrics[0]
+            # Always warn if only one family mentioned (policy toned down)
             if not any(expected in metric for metric in factsheet_metrics):
-                violations.append(f"WARN: ResultsFactsheet missing suggested metric: {expected} present in spans.")
+                violations.append(f"WARN: Only one results family mentioned ({expected}); include coverage where possible.")
+            else:
+                violations.append(f"WARN: Only one results family mentioned ({expected}); consider adding a second key metric if available.")
 
         # Check for pending denominators always
         if pending_denominators:
@@ -443,6 +447,34 @@ class GlobalValidator:
             raise AssertionError(error_message)
     
     @staticmethod
+    def validate_section_constraints(method_card: MethodCard, factsheet: ResultsFactsheet, 
+                                   spans: List[EvidenceSpan]) -> List[str]:
+        """
+        Validate section constraints for artifacts.
+        
+        Must-fail rule: Fields must come from appropriate sections.
+        """
+        violations = []
+        
+        try:
+            # Call the section constraints validator
+            is_valid, errors = enforce_section_constraints(
+                method_card=method_card,
+                results_factsheet=factsheet,
+                evidence_spans=spans
+            )
+            
+            if not is_valid:
+                # Convert errors to violations
+                for error in errors:
+                    violations.append(f"CRITICAL: {error}")
+            
+        except Exception as e:
+            violations.append(f"CRITICAL: Section constraint validation failed: {str(e)}")
+        
+        return violations
+    
+    @staticmethod
     def validate_comprehensive_system(factsheet: ResultsFactsheet, claims: List[Claim], 
                                    method_card: MethodCard, spans: List[EvidenceSpan]) -> List[str]:
         """
@@ -471,6 +503,10 @@ class GlobalValidator:
         # Validate Gehan design consistency
         gehan_violations = GlobalValidator.validate_gehan_design_consistency(method_card, spans)
         all_violations.extend(gehan_violations)
+        
+        # Validate section constraints
+        section_constraint_violations = GlobalValidator.validate_section_constraints(method_card, factsheet, spans)
+        all_violations.extend(section_constraint_violations)
         
         return all_violations
 
@@ -536,13 +572,13 @@ class ResultsFactsheetValidator:
         if 'span_ids' in result:
             span_ids = result['span_ids']
             if not isinstance(span_ids, list) or len(span_ids) == 0:
-                errors.append(f"Result[{index}]: span_ids must be non-empty list")
+                errors.append(f"CRITICAL: Result[{index}]: span_ids must be non-empty list")
             else:
                 for span_id in span_ids:
                     if not GlobalValidator._is_valid_span_id(span_id):
-                        errors.append(f"Result[{index}]: Invalid span_id: {span_id}")
+                        errors.append(f"CRITICAL: Result[{index}]: Invalid span_id: {span_id}")
         else:
-            errors.append(f"Result[{index}]: Missing span_ids field")
+            errors.append(f"CRITICAL: Result[{index}]: Missing span_ids field")
         
         # Validate timepoint rule
         if 'timepoint' in result and 'metric' in result:
@@ -552,7 +588,7 @@ class ResultsFactsheetValidator:
         # Validate n (denominator) - must not be default values
         if 'n' in result:
             if result['n'] in [100, 0, None]:  # Common default values
-                errors.append(f"Result[{index}]: n cannot be default value {result['n']}, must extract actual denominator")
+                errors.append(f"CRITICAL: Result[{index}]: n cannot be default value {result['n']}, must extract actual denominator")
         
         return errors
 
@@ -561,7 +597,7 @@ class MethodCardValidator:
     """Specific validator for MethodCard."""
     
     @staticmethod
-    def validate(method_card: Any) -> Tuple[bool, List[str]]:
+    def validate(method_card: Any, spans: Optional[List[Any]] = None) -> Tuple[bool, List[str]]:
         """Validate a MethodCard against Step 0 requirements."""
         errors = []
         
@@ -606,15 +642,105 @@ class MethodCardValidator:
                 if 'provenance_anchors' not in method_dict or not method_dict['provenance_anchors']:
                     errors.append("MethodCard: Missingness assumption MAR/MNAR requires provenance anchors")
         
+        # Validate CA-125 threshold consistency
+        if spans:
+            ca125_threshold_errors = MethodCardValidator._validate_ca125_thresholds(method_dict, spans)
+            errors.extend(ca125_threshold_errors)
+        
         return len(errors) == 0, errors
+    
+    @staticmethod
+    def _validate_ca125_thresholds(method_dict: Dict[str, Any], spans: List[Any]) -> List[str]:
+        """Validate that CA-125 threshold definitions are properly captured as assay_thresholds."""
+        errors = []
+        
+        # Check if any Methods spans contain CA-125 threshold definitions
+        ca125_methods_spans = []
+        for span in spans:
+            if hasattr(span, 'section') and 'methods' in span.section.lower():
+                if hasattr(span, 'quote'):
+                    quote = span.quote.lower()
+                    # Look for CA-125 threshold patterns
+                    if re.search(r'ca[- ]?125.*?(?:50%|50\s*percent)\s*(?:reduction|decline)', quote):
+                        ca125_methods_spans.append(span)
+        
+        # If we found CA-125 threshold definitions in Methods, check if they're captured in assay_thresholds
+        if ca125_methods_spans:
+            assay_thresholds = method_dict.get('assay_thresholds', [])
+            ca125_thresholds = [t for t in assay_thresholds if 'ca-125' in str(t).lower() or 'ca125' in str(t).lower()]
+            
+            if not ca125_thresholds:
+                # Auto-lift the threshold definition to assay_thresholds
+                span_ids = [span.span_id for span in ca125_methods_spans if hasattr(span, 'span_id')]
+                errors.append(f"CRITICAL: CA-125 threshold definition found in Methods spans {span_ids} but not captured in assay_thresholds. Auto-lift required.")
+        
+        return errors
+    
+    @staticmethod
+    def auto_lift_ca125_thresholds(method_card: Any, spans: List[Any]) -> bool:
+        """
+        Auto-lift CA-125 threshold definitions from Methods spans to assay_thresholds.
+        
+        Args:
+            method_card: The MethodCard to update
+            spans: List of evidence spans to search
+            
+        Returns:
+            True if thresholds were lifted, False otherwise
+        """
+        if not hasattr(method_card, 'assay_thresholds'):
+            return False
+        
+        # Check if any Methods spans contain CA-125 threshold definitions
+        ca125_methods_spans = []
+        for span in spans:
+            if hasattr(span, 'section') and 'methods' in span.section.lower():
+                if hasattr(span, 'quote'):
+                    quote = span.quote.lower()
+                    # Look for CA-125 threshold patterns
+                    if re.search(r'ca[- ]?125.*?(?:50%|50\s*percent)\s*(?:reduction|decline)', quote):
+                        ca125_methods_spans.append(span)
+        
+        if not ca125_methods_spans:
+            return False
+        
+        # Check if CA-125 thresholds already exist
+        existing_ca125 = [t for t in method_card.assay_thresholds if 'ca-125' in str(t).lower() or 'ca125' in str(t).lower()]
+        if existing_ca125:
+            return False  # Already exists
+        
+        # Extract threshold information from the span
+        for span in ca125_methods_spans:
+            quote = span.quote.lower()
+            # Extract the threshold value (default to 50 if not found)
+            threshold_match = re.search(r'(\d+\.?\d*)\s*%', quote)
+            threshold_value = float(threshold_match.group(1)) if threshold_match else 50.0
+            
+            # Add the threshold to the MethodCard
+            threshold_info = {
+                "assay_type": "CA-125",
+                "threshold": str(threshold_value),
+                "units": "percent",
+                "rationale": f"Auto-lifted from Methods span: {span.quote}",
+                "span_id": getattr(span, 'span_id', None)
+            }
+            
+            method_card.assay_thresholds.append(threshold_info)
+            
+            # Add span_id to field provenance if available
+            if hasattr(method_card, 'add_field_provenance') and hasattr(span, 'span_id'):
+                method_card.add_field_provenance('assay_thresholds', [span.span_id])
+        
+        return True
 
 
-def validate_all_artifacts(artifacts: List[Any]) -> Tuple[bool, List[str]]:
+def validate_all_artifacts(artifacts: List[Any], spans: Optional[List[Any]] = None) -> Tuple[bool, List[str]]:
     """
     Validate all artifacts against global rules.
     
     Args:
         artifacts: List of artifacts to validate
+        spans: Optional list of evidence spans for validation context
         
     Returns:
         Tuple of (all_valid, all_errors)
@@ -639,7 +765,7 @@ def validate_all_artifacts(artifacts: List[Any]) -> Tuple[bool, List[str]]:
             if not is_valid:
                 all_valid = False
         elif artifact_type == 'MethodCard':
-            is_valid, errors = MethodCardValidator.validate(artifact)
+            is_valid, errors = MethodCardValidator.validate(artifact, spans)
             all_errors.extend(errors)
             if not is_valid:
                 all_valid = False
@@ -649,3 +775,5 @@ def validate_all_artifacts(artifacts: List[Any]) -> Tuple[bool, List[str]]:
 
 def validate_artifacts(*args, **kwargs):  # back-compat shim
     return validate_all_artifacts(*args, **kwargs)
+
+

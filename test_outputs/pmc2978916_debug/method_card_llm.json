@@ -1,0 +1,127 @@
+{
+  "created_at": "2025-09-02 21:18:41.154784",
+  "created_by": null,
+  "version": 1,
+  "input_hash": "1c3657bf987b4b9c",
+  "parent_ids": [],
+  "provenance_span_ids": [],
+  "notes": [],
+  "id": "fb0d5633-4857-429e-b7ca-67a9d77270d2",
+  "status": "draft",
+  "metadata": {},
+  "doc_id": "pmc:PMC2978916",
+  "estimand": {
+    "population": "unknown",
+    "endpoint": "was overall response rate Secondary endpoints included progression-free survival and overall survival Statistical analysis was performed using log-rank test",
+    "intercurrent_policy": "unknown",
+    "summary_measure": "unknown"
+  },
+  "population_description": null,
+  "primary_endpoint": "ORR_RECIST",
+  "secondary_endpoints": [
+    "TTP_or_PFS",
+    "OS"
+  ],
+  "intercurrent_events_policy": null,
+  "summary_measure": null,
+  "alpha_structure": {
+    "sidedness": "not_reported",
+    "alpha_threshold": null,
+    "multiplicity_plan": "not_reported",
+    "hierarchy": "not_reported",
+    "gatekeeping": false
+  },
+  "alpha_level": null,
+  "is_one_sided": null,
+  "multiplicity_adjustment": null,
+  "gatekeeping_hierarchy": [],
+  "interim_looks": 1,
+  "interim_timing": null,
+  "spending_function": null,
+  "sample_size_reassessment": false,
+  "stop_rules": [],
+  "gehan_two_stage": true,
+  "design_archetype": "single_arm_phase2_gehan",
+  "analysis_set": {
+    "ITT": null,
+    "mITT": null,
+    "PP": null,
+    "safety": null,
+    "efficacy": null,
+    "stratification_factors": []
+  },
+  "stratification_factors": [],
+  "covariate_adjustment": [],
+  "missingness_assumption": "not_reported",
+  "missingness_pattern": null,
+  "imputation_method": "not_reported",
+  "tipping_point_analysis": null,
+  "endpoint_ascertainment": "RECIST",
+  "assessment_interval": "not_reported",
+  "is_blinded": false,
+  "adjudication_committee": null,
+  "protocol_features": {
+    "run_in": false,
+    "enrichment": false,
+    "crossover": false,
+    "rescue": false,
+    "washout": false
+  },
+  "run_in_period": null,
+  "enrichment_strategy": null,
+  "crossover_design": null,
+  "rescue_medication": null,
+  "assay_thresholds": [],
+  "dose_exposure_rationale": "Based on targeted therapy class considerations",
+  "target_engagement": null,
+  "pkpd_relationship": null,
+  "site_geography": {
+    "num_sites": "not_reported",
+    "regions": [],
+    "dispersion": "not_reported"
+  },
+  "number_of_sites": "not_reported",
+  "regions": [],
+  "dispersion_flag": null,
+  "design_risks": [
+    "single_arm_phase2",
+    "open_label",
+    "two_stage_selection"
+  ],
+  "study_phase": "phase_2",
+  "randomization_ratio": null,
+  "blinding_level": "none_open_label",
+  "treatment_duration": null,
+  "follow_up_duration": null,
+  "span_ids": [
+    "pmc:PMC2978916#sec:Methods:char100-150",
+    "pmc:PMC2978916#sec:Methods:char151-180",
+    "pmc:PMC2978916#sec:Methods:char200-250",
+    "pmc:PMC2978916#sec:Methods:char300-340",
+    "pmc:PMC2978916#sec:Methods:char400-450",
+    "pmc:PMC2978916#sec:Methods:char460-510",
+    "pmc:PMC2978916#sec:Methods:char520-570",
+    "pmc:PMC2978916#sec:Methods:char580-650",
+    "pmc:PMC2978916#sec:Methods:char660-720"
+  ],
+  "provenance_anchors": [
+    "pmc:PMC2978916#sec:Methods:char100-150",
+    "pmc:PMC2978916#sec:Methods:char151-180",
+    "pmc:PMC2978916#sec:Methods:char200-250",
+    "pmc:PMC2978916#sec:Methods:char300-340",
+    "pmc:PMC2978916#sec:Methods:char400-450",
+    "pmc:PMC2978916#sec:Methods:char460-510",
+    "pmc:PMC2978916#sec:Methods:char520-570",
+    "pmc:PMC2978916#sec:Methods:char580-650",
+    "pmc:PMC2978916#sec:Methods:char660-720"
+  ],
+  "field_span_map": {
+    "interim_design": [
+      "pmc:PMC2978916#sec:Methods:char151-180"
+    ],
+    "interim_looks": [
+      "pmc:PMC2978916#sec:Methods:char151-180"
+    ]
+  },
+  "warnings": []
+}

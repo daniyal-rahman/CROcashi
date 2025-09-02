@@ -319,6 +319,51 @@ class Claimizer(BaseWorker):
             (r'p\s*[<>=]\s*(\d+\.?\d*)', 'p_value', 'statistical'),
         ]
         
+        # Special handling for CA-125 threshold patterns in Methods section
+        if claim_type == 'methods_detail' and 'methods' in span.section.lower():
+            # Check for CA-125 threshold definition patterns
+            ca125_threshold_patterns = [
+                (r'CA[- ]?125.*?(?:defined as|threshold|≥|>=)\s*(\d+\.?\d*)\s*%', 'ca125_threshold'),
+                (r'CA[- ]?125.*?(?:50%|50\s*percent)\s*(?:reduction|decline)', 'ca125_threshold'),
+            ]
+            
+            for pattern, threshold_type in ca125_threshold_patterns:
+                matches = re.finditer(pattern, text, re.IGNORECASE)
+                for match in matches:
+                    if threshold_type == 'ca125_threshold':
+                        # Extract the threshold value
+                        if '50%' in match.group(0) or '50 percent' in match.group(0):
+                            threshold_value = 50.0
+                        else:
+                            # Extract numeric value from the pattern
+                            value_match = re.search(r'(\d+\.?\d*)', match.group(0))
+                            if value_match:
+                                threshold_value = float(value_match.group(1))
+                            else:
+                                continue
+                        
+                        # Create a methods_detail claim for assay threshold
+                        claim = Claim(
+                            claim_id=f"{span.doc_id}#claim_{len(claims)}",
+                            doc_id=span.doc_id,
+                            span_ids=[span.span_id],
+                            type='methods_detail',
+                            proposition=f"CA-125 threshold: {threshold_value}% reduction",
+                            stance=stance,
+                            value=threshold_value,
+                            units='percent',
+                            endpoint='assay_threshold',
+                            ci_lower=None,
+                            ci_upper=None,
+                            quality_score=self._calculate_quality_score(text, span.section),
+                            applicability_score=self._calculate_applicability_score(text, span.section)
+                        )
+                        
+                        claims.append(claim)
+                        
+                        # Skip creating a response_rate claim for this pattern
+                        continue
+        
         for pattern, unit_type, metric_name in numeric_patterns:
             matches = re.finditer(pattern, text, re.IGNORECASE)
             
@@ -326,6 +371,16 @@ class Claimizer(BaseWorker):
                 value = match.group(1)
                 match_start = match.start()
                 match_end = match.end()
+                
+                # Skip creating response_rate claims for CA-125 threshold patterns that were already processed
+                if unit_type == 'percent' and metric_name == 'response_rate':
+                    # Check if this percentage is part of a CA-125 threshold definition
+                    match_text = match.group(0)
+                    if re.search(r'CA[- ]?125.*?(?:50%|50\s*percent)\s*(?:reduction|decline)', text, re.IGNORECASE):
+                        # Check if this specific percentage matches the threshold pattern
+                        if '50' in match_text and any(word in text.lower() for word in ['ca-125', 'ca125']):
+                            print(f"DEBUG: Skipping {value}% as it appears to be a CA-125 threshold definition")
+                            continue
                 
                 # CI GUARD: Check if this percentage is within ±10 tokens of a CI pattern
                 if unit_type == 'percent':

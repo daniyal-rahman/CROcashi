@@ -1,3 +1,4 @@
+# src/ncfd/extract/workers/llm/method_auditor.py
 """
 Method Auditor Worker
 
@@ -326,6 +327,17 @@ class MethodAuditor(BaseWorker):
                     methods_spans.append(span)
         
         return methods_spans
+    
+    def _find_supporting_spans(self, spans: List[EvidenceSpan], pattern: str) -> List[str]:
+        """Find spans that contain a given regex pattern and return their span_ids."""
+        supporting_span_ids = []
+        compiled_pattern = re.compile(pattern, re.IGNORECASE)
+        
+        for span in spans:
+            if span.quote and compiled_pattern.search(span.quote):
+                supporting_span_ids.append(span.span_id)
+        
+        return supporting_span_ids
 
     def _extract_methodology(self, spans: List[EvidenceSpan], design_json: Dict[str, Any], 
                            pocket_context: PocketContextCard) -> Dict[str, Any]:
@@ -342,7 +354,7 @@ class MethodAuditor(BaseWorker):
         method_info['alpha_structure'] = self._extract_alpha_structure(combined_text)
         
         # Extract interim analysis plan
-        method_info['interim'] = self._extract_interim_plan(combined_text)
+        method_info['interim'] = self._extract_interim_plan(combined_text, spans)
         
         # Extract Gehan two-stage design and set design archetype
         gehan_result = self._extract_gehan_two_stage(combined_text)
@@ -359,17 +371,17 @@ class MethodAuditor(BaseWorker):
                 method_info['design_archetype'] = 'not_reported'
         # If gehan_result is None, don't set gehan_two_stage (leave as None)
         
+        # Extract survival method (KM vs inferred_KM)
+        method_info['survival_method'] = self._extract_survival_method(combined_text)
+        
         # Extract analysis sets
         method_info['analysis_set'] = self._extract_analysis_sets(combined_text, design_json)
         
         # Extract missingness policies
         method_info['missingness'] = self._extract_missingness_policies(combined_text)
         
-        # Extract endpoint ascertainment
+        # Extract endpoint ascertainment (includes assessment_interval)
         method_info['endpoint_ascertainment'] = self._extract_endpoint_ascertainment(combined_text)
-        
-        # Extract assessment interval (to prevent cadence from being extracted as effect_size)
-        method_info['assessment_interval'] = self._extract_assessment_interval(combined_text)
         
         # Extract protocol features
         method_info['protocol_features'] = self._extract_protocol_features(combined_text)
@@ -415,7 +427,7 @@ class MethodAuditor(BaseWorker):
                 print(f"WARNING: {warning_msg}")
         
         # Validate Gehan design must-fill rule
-        if method_info['gehan_two_stage']:
+        if method_info.get('gehan_two_stage'):
             if method_info['interim'].get('looks') != 1:
                 error_msg = f"CRITICAL: Gehan design detected but interim_looks != 1. Got: {method_info['interim'].get('looks')}"
                 warnings.append(error_msg)
@@ -505,15 +517,16 @@ class MethodAuditor(BaseWorker):
         
         return alpha_structure
 
-    def _extract_interim_plan(self, text: str) -> Dict[str, Any]:
+    def _extract_interim_plan(self, text: str, spans: List[EvidenceSpan]) -> Dict[str, Any]:
         """Extract interim analysis plan from text."""
         interim = {
             'design': 'not_reported',
-            'looks': 'unknown',
-            'timing': 'unknown',
-            'spending_function': 'unknown',
-            'stop_rules': 'unknown',
-            'ssr': False
+            'looks': None,
+            'timing': None,
+            'spending_function': None,
+            'stop_rules': None,
+            'ssr': False,
+            'field_provenance': {}  # Track which spans support each field
         }
         
         # Check for two-stage designs first
@@ -523,12 +536,16 @@ class MethodAuditor(BaseWorker):
                     interim['design'] = design
                     # Two-stage designs typically have 1 look after stage 1
                     interim['looks'] = 1
+                    # Track provenance for design and looks
+                    supporting_spans = self._find_supporting_spans(spans, pattern)
+                    interim['field_provenance']['design'] = supporting_spans
+                    interim['field_provenance']['looks'] = supporting_spans
                     break
             if interim['design'] != 'not_reported':
                 break
         
         # Extract number of looks (only if not already set by design)
-        if interim['looks'] == 'unknown':
+        if interim['looks'] is None:
             for pattern in self.interim_patterns['looks']:
                 match = re.search(pattern, text, re.IGNORECASE)
                 if match:
@@ -537,6 +554,9 @@ class MethodAuditor(BaseWorker):
                         interim['looks'] = 2
                     else:
                         interim['looks'] = int(match.group(1))
+                    # Track provenance for looks
+                    supporting_spans = self._find_supporting_spans(spans, pattern)
+                    interim['field_provenance']['looks'] = supporting_spans
                     break
         
         # Extract timing
@@ -544,6 +564,9 @@ class MethodAuditor(BaseWorker):
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 interim['timing'] = f"{match.group(1)} {match.group(2)}"
+                # Track provenance for timing
+                supporting_spans = self._find_supporting_spans(spans, pattern)
+                interim['field_provenance']['timing'] = supporting_spans
                 break
         
         # Extract spending function
@@ -557,11 +580,18 @@ class MethodAuditor(BaseWorker):
                     interim['spending_function'] = 'Lan-DeMets'
                 else:
                     interim['spending_function'] = 'specified'
+                # Track provenance for spending function
+                supporting_spans = self._find_supporting_spans(spans, pattern)
+                interim['field_provenance']['spending_function'] = supporting_spans
                 break
         
         # Check for sample size re-estimation
-        if re.search(r'sample\s+size\s+re.?estimation|SSR|sample\s+size\s+adjustment', text, re.IGNORECASE):
+        ssr_pattern = r'sample\s+size\s+re.?estimation|SSR|sample\s+size\s+adjustment'
+        if re.search(ssr_pattern, text, re.IGNORECASE):
             interim['ssr'] = True
+            # Track provenance for SSR
+            supporting_spans = self._find_supporting_spans(spans, ssr_pattern)
+            interim['field_provenance']['ssr'] = supporting_spans
         
         return interim
 
@@ -584,6 +614,33 @@ class MethodAuditor(BaseWorker):
         
         # Return None if not found (not False as default)
         return None
+
+    def _extract_survival_method(self, text: str) -> str:
+        """Extract survival method using explicit spans (KM vs inferred_KM)."""
+        # Check for explicit KM mentions (since we have a direct KM span)
+        km_patterns = [
+            r'kaplan.?meier',
+            r'km\s+method',
+            r'estimated\s+by\s+kaplan',
+            r'kaplan.?meier\s+method'
+        ]
+        
+        for pattern in km_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                return 'km'
+        
+        # Check for log-rank/Cox (inferred KM when only log-rank is present)
+        logrank_patterns = [
+            r'log.?rank',
+            r'cox\s+regression',
+            r'cox\s+proportional'
+        ]
+        
+        for pattern in logrank_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                return 'inferred_km'
+        
+        return 'not_reported'
 
     def _extract_analysis_sets(self, text: str, design_json: Dict[str, Any]) -> Dict[str, Any]:
         """Extract analysis set information from text."""
@@ -695,7 +752,10 @@ class MethodAuditor(BaseWorker):
                 ascertainment['criteria'] = 'RECIST'
                 break
         
-        # Check for assessment interval
+        # Check for assessment interval using comprehensive patterns
+        text_lower = text.lower()
+        
+        # First check the original endpoint ascertainment patterns
         for pattern in self.endpoint_ascertainment_patterns['assessment_interval']:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
@@ -706,6 +766,28 @@ class MethodAuditor(BaseWorker):
                 elif 'weeks' in pattern:
                     ascertainment['assessment_interval'] = 'fixed_weeks'
                 break
+        
+        # If not found, check the more comprehensive assessment interval patterns
+        if ascertainment['assessment_interval'] == 'not_reported':
+            for interval_type, patterns in self.assessment_interval_patterns.items():
+                for pattern in patterns:
+                    if re.search(pattern, text_lower):
+                        # Return standardized format
+                        if interval_type == 'every_6_weeks':
+                            ascertainment['assessment_interval'] = 'q6w'  # Standard abbreviation
+                        elif interval_type == 'weekly':
+                            ascertainment['assessment_interval'] = 'q1w'
+                        elif interval_type == 'biweekly':
+                            ascertainment['assessment_interval'] = 'q2w'
+                        elif interval_type == 'monthly':
+                            ascertainment['assessment_interval'] = 'q1m'
+                        elif interval_type == 'every_3_months':
+                            ascertainment['assessment_interval'] = 'q3m'
+                        else:
+                            ascertainment['assessment_interval'] = interval_type
+                        break
+                if ascertainment['assessment_interval'] != 'not_reported':
+                    break
         
         # Check for CEC vs local assessment
         for method, patterns in self.ascertainment_patterns.items():
@@ -920,10 +1002,64 @@ class MethodAuditor(BaseWorker):
 
     def _extract_study_phase(self, text: str) -> str:
         """Extract study phase from text."""
+        # First, try to normalize any phase text found in the text
+        normalized_text = self._normalize_phase_text(text)
+        
+        # Then extract using the normalized text
         for phase, pattern in self.study_phase_patterns.items():
-            if re.search(pattern, text, re.IGNORECASE):
+            if re.search(pattern, normalized_text, re.IGNORECASE):
                 return phase
         return 'not_reported'
+    
+    def _normalize_phase_text(self, text: str) -> str:
+        """
+        Normalize phase text by converting Roman numerals to Arabic numerals.
+        This helps ensure consistent phase extraction.
+        """
+        # Roman numeral to Arabic mapping
+        roman_to_arabic = {
+            'I': '1', 'II': '2', 'III': '3', 'IV': '4', 'V': '5',
+            'VI': '6', 'VII': '7', 'VIII': '8', 'IX': '9', 'X': '10'
+        }
+        
+        # Pattern to match "phase" followed by Roman numerals (including mixed patterns)
+        # Handle patterns like "phase I/II", "phase I and II", etc.
+        phase_roman_pattern = r'phase\s*([IiVvXx]+(?:\s*[/\s+and\s+]+\s*[IiVvXx]+)*)'
+        
+        def replace_roman(match):
+            roman_text = match.group(1).upper()
+            
+            # Handle mixed patterns like "I/II" or "I and II"
+            if '/' in roman_text:
+                parts = roman_text.split('/')
+                normalized_parts = []
+                for part in parts:
+                    part = part.strip()
+                    if part in roman_to_arabic:
+                        normalized_parts.append(roman_to_arabic[part])
+                    else:
+                        normalized_parts.append(part)
+                return f"phase {'/'.join(normalized_parts)}"
+            elif 'AND' in roman_text:
+                parts = roman_text.split('AND')
+                normalized_parts = []
+                for part in parts:
+                    part = part.strip()
+                    if part in roman_to_arabic:
+                        normalized_parts.append(roman_to_arabic[part])
+                    else:
+                        normalized_parts.append(part)
+                return f"phase {' and '.join(normalized_parts)}"
+            else:
+                # Single Roman numeral
+                if roman_text in roman_to_arabic:
+                    return f"phase {roman_to_arabic[roman_text]}"
+                return match.group(0)  # Return original if not found
+        
+        # Replace Roman numerals with Arabic numerals
+        normalized_text = re.sub(phase_roman_pattern, replace_roman, text, flags=re.IGNORECASE)
+        
+        return normalized_text
 
     def _extract_blinding_level(self, text: str) -> str:
         """Extract blinding level from text."""
@@ -1023,45 +1159,27 @@ class MethodAuditor(BaseWorker):
         
         return intervention
     
-    def _extract_assessment_interval(self, text: str) -> Optional[str]:
-        """
-        Extract assessment interval from text.
-        
-        This prevents cadence information from being extracted as effect_size.
-        Returns standardized interval format (e.g., "q6w", "every_6_weeks").
-        """
-        text_lower = text.lower()
-        
-        # Check for assessment interval patterns
-        for interval_type, patterns in self.assessment_interval_patterns.items():
-            for pattern in patterns:
-                if re.search(pattern, text_lower):
-                    # Return standardized format
-                    if interval_type == 'every_6_weeks':
-                        return 'q6w'  # Standard abbreviation
-                    elif interval_type == 'weekly':
-                        return 'q1w'
-                    elif interval_type == 'biweekly':
-                        return 'q2w'
-                    elif interval_type == 'monthly':
-                        return 'q1m'
-                    elif interval_type == 'every_3_months':
-                        return 'q3m'
-                    else:
-                        return interval_type
-        
-        return None
+
 
     def _create_method_card(self, method_info: Dict[str, Any], spans: List[EvidenceSpan]) -> MethodCard:
         """Create a MethodCard from extracted methodological information."""
         # Collect all span IDs for provenance
         span_ids = [span.span_id for span in spans]
         
+        # Get doc_id from spans
+        doc_id = None
+        if spans:
+            doc_id = spans[0].doc_id
+        
+        if not doc_id:
+            raise ValueError("Cannot create MethodCard without a valid doc_id from spans")
+        
         # Create the MethodCard with only explicitly extracted values (no defaults)
         method_card = MethodCard(
+            doc_id=doc_id,
             estimand=method_info['estimand'],  # Store as real object, not JSON string
             alpha_structure=method_info['alpha_structure'],  # Store as real object, not JSON string
-            interim_looks=method_info['interim'].get('looks', []),
+            interim_looks=method_info['interim'].get('looks'),
             interim_timing=method_info['interim'].get('timing'),
             spending_function=method_info['interim'].get('spending_function'),
             # Only set if explicitly extracted (not default False)
@@ -1075,7 +1193,7 @@ class MethodAuditor(BaseWorker):
             # Only set if explicitly extracted (not default False)
             tipping_point_analysis=method_info['missingness'].get('tipping_point') if 'tipping_point' in method_info['missingness'] else None,
             endpoint_ascertainment=method_info['endpoint_ascertainment'].get('criteria'),
-            assessment_interval=method_info.get('assessment_interval'),
+            assessment_interval=method_info['endpoint_ascertainment'].get('assessment_interval'),
             # Only set if explicitly extracted (not default False)
             is_blinded=method_info['endpoint_ascertainment'].get('blinded') if 'blinded' in method_info['endpoint_ascertainment'] else None,
             protocol_features=method_info['protocol_features'],
@@ -1096,5 +1214,11 @@ class MethodAuditor(BaseWorker):
         # Standardize provenance: use span_ids for machine checks, provenance_anchors as UI alias
         method_card.span_ids = span_ids
         method_card.provenance_anchors = span_ids  # Keep for backward compatibility
+        
+        # Add per-field provenance tracking
+        if 'interim' in method_info and 'field_provenance' in method_info['interim']:
+            for field_name, field_span_ids in method_info['interim']['field_provenance'].items():
+                if field_span_ids:  # Only add if there are supporting spans
+                    method_card.add_field_provenance(f'interim_{field_name}', field_span_ids)
         
         return method_card

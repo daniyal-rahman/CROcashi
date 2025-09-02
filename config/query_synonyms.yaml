@@ -1,0 +1,301 @@
+# Query Synonyms Configuration
+# ===========================
+
+# Must-hit synonyms for critical fields
+must_hit:
+  ttp:
+    - "time to progression"
+    - "progression-free survival"   # optional if paper conflates
+    - "ttp"
+  os:
+    - "overall survival"
+    - "median survival"
+    - "os"
+  cox:
+    - "Cox proportional hazards"
+    - "cox model"
+    - "cox regression"
+  recist:
+    - "RECIST"
+  gehan:
+    - "Gehan"
+  km:
+    - "Kaplan-Meier"
+    - "survival estimated by"
+    - "KM"
+  cadence:
+    - "every two cycles"
+    - "assessed every two cycles"
+
+# Disease-specific query synonyms
+disease_synonyms:
+  ovarian_cancer:
+    primary_terms:
+      - "ovarian cancer"
+      - "ovarian carcinoma"
+      - "epithelial ovarian cancer"
+      - "EOC"
+    response_terms:
+      - "CA-125 response"
+      - "CA125 response"
+      - "cancer antigen 125"
+      - "tumor marker response"
+    survival_terms:
+      - "progression-free survival"
+      - "PFS"
+      - "time to progression"
+      - "TTP"
+      - "overall survival"
+      - "OS"
+  
+  breast_cancer:
+    primary_terms:
+      - "breast cancer"
+      - "breast carcinoma"
+      - "metastatic breast cancer"
+      - "MBC"
+    response_terms:
+      - "objective response rate"
+      - "ORR"
+      - "complete response"
+      - "partial response"
+      - "stable disease"
+    survival_terms:
+      - "progression-free survival"
+      - "PFS"
+      - "overall survival"
+      - "OS"
+      - "disease-free survival"
+      - "DFS"
+  
+  lung_cancer:
+    primary_terms:
+      - "lung cancer"
+      - "non-small cell lung cancer"
+      - "NSCLC"
+      - "small cell lung cancer"
+      - "SCLC"
+    response_terms:
+      - "objective response rate"
+      - "ORR"
+      - "tumor response"
+      - "RECIST response"
+    survival_terms:
+      - "progression-free survival"
+      - "PFS"
+      - "overall survival"
+      - "OS"
+      - "time to progression"
+      - "TTP"
+
+# Endpoint-specific query synonyms
+endpoint_synonyms:
+  primary_endpoint:
+    response_rate:
+      - "primary endpoint"
+      - "primary efficacy endpoint"
+      - "primary objective"
+      - "primary outcome"
+      - "response rate"
+      - "objective response rate"
+      - "ORR"
+      - "overall response rate"
+    
+    survival:
+      - "primary endpoint"
+      - "primary efficacy endpoint"
+      - "primary objective"
+      - "primary outcome"
+      - "progression-free survival"
+      - "PFS"
+      - "overall survival"
+      - "OS"
+      - "time to progression"
+      - "TTP"
+    
+    safety:
+      - "primary endpoint"
+      - "primary safety endpoint"
+      - "primary objective"
+      - "primary outcome"
+      - "adverse events"
+      - "safety profile"
+      - "toxicity"
+      - "tolerability"
+  
+  secondary_endpoint:
+    response_rate:
+      - "secondary endpoint"
+      - "secondary efficacy endpoint"
+      - "secondary objective"
+      - "secondary outcome"
+      - "response rate"
+      - "objective response rate"
+      - "ORR"
+      - "overall response rate"
+    
+    survival:
+      - "secondary endpoint"
+      - "secondary efficacy endpoint"
+      - "secondary objective"
+      - "secondary outcome"
+      - "progression-free survival"
+      - "PFS"
+      - "overall survival"
+      - "OS"
+      - "time to progression"
+      - "TTP"
+    
+    safety:
+      - "secondary endpoint"
+      - "secondary safety endpoint"
+      - "secondary objective"
+      - "secondary outcome"
+      - "adverse events"
+      - "safety profile"
+      - "toxicity"
+      - "tolerability"
+
+# Method-specific query synonyms
+method_synonyms:
+  survival_analysis:
+    kaplan_meier:
+      - "Kaplan-Meier"
+      - "Kaplan Meier"
+      - "KM"
+      - "survival analysis"
+      - "survival curve"
+      - "survival estimation"
+    
+    log_rank:
+      - "log-rank test"
+      - "log rank test"
+      - "log-rank"
+      - "survival comparison"
+      - "survival test"
+    
+    cox_regression:
+      - "Cox regression"
+      - "Cox proportional hazards"
+      - "proportional hazards"
+      - "hazard ratio"
+      - "HR"
+      - "multivariate analysis"
+  
+  statistical_design:
+    gehan_design:
+      - "Gehan two-stage"
+      - "Gehan design"
+      - "two-stage design"
+      - "phase II design"
+      - "Simon design"
+      - "optimal design"
+    
+    interim_analysis:
+      - "interim analysis"
+      - "interim look"
+      - "interim assessment"
+      - "stopping rules"
+      - "early stopping"
+      - "futility analysis"
+    
+    sample_size:
+      - "sample size"
+      - "power calculation"
+      - "statistical power"
+      - "number of patients"
+      - "enrollment"
+      - "N"
+
+# Field-specific query synonyms
+field_synonyms:
+  endpoints:
+    primary:
+      - "primary endpoint"
+      - "primary objective"
+      - "primary outcome"
+      - "primary efficacy endpoint"
+      - "primary safety endpoint"
+    
+    secondary:
+      - "secondary endpoint"
+      - "secondary objective"
+      - "secondary outcome"
+      - "secondary efficacy endpoint"
+      - "secondary safety endpoint"
+    
+    response:
+      - "response rate"
+      - "objective response rate"
+      - "ORR"
+      - "overall response rate"
+      - "tumor response"
+      - "RECIST response"
+    
+    survival:
+      - "progression-free survival"
+      - "PFS"
+      - "overall survival"
+      - "OS"
+      - "time to progression"
+      - "TTP"
+      - "disease-free survival"
+      - "DFS"
+  
+  design:
+    randomization:
+      - "randomization"
+      - "randomized"
+      - "random assignment"
+      - "random allocation"
+    
+    blinding:
+      - "blinding"
+      - "blinded"
+      - "double-blind"
+      - "single-blind"
+      - "open-label"
+    
+    stratification:
+      - "stratification"
+      - "stratified"
+      - "stratified randomization"
+      - "prognostic factors"
+  
+  analysis:
+    population:
+      - "intent-to-treat"
+      - "ITT"
+      - "per-protocol"
+      - "PP"
+      - "modified intent-to-treat"
+      - "mITT"
+      - "evaluable population"
+      - "safety population"
+    
+    missing_data:
+      - "missing data"
+      - "missing values"
+      - "imputation"
+      - "last observation carried forward"
+      - "LOCF"
+      - "complete case analysis"
+
+# Query template patterns
+query_templates:
+  methods:
+    endpoints: "{disease} {endpoint_type} {endpoint_category}"
+    survival_method: "{disease} {survival_method} {endpoint_type}"
+    design: "{disease} {design_type} {endpoint_type}"
+    analysis: "{disease} {analysis_type} {endpoint_type}"
+  
+  results:
+    response: "{disease} {response_type} {endpoint_type}"
+    survival: "{disease} {survival_type} {endpoint_type}"
+    safety: "{disease} {safety_type} {endpoint_type}"
+  
+  examples:
+    ovarian_orr: "ovarian cancer objective response rate primary endpoint"
+    ovarian_pfs: "ovarian cancer progression-free survival primary endpoint"
+    breast_safety: "breast cancer adverse events safety endpoint"
+    lung_kaplan: "lung cancer Kaplan-Meier survival analysis"

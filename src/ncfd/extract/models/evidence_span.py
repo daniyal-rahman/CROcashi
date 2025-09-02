@@ -1,3 +1,4 @@
+# src/ncfd/extract/models/evidence_span.py
 """
 EvidenceSpan Model
 
@@ -5,7 +6,7 @@ Represents a span of text extracted from a document with provenance tracking.
 """
 
 from dataclasses import dataclass, field, asdict
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Literal
 from datetime import datetime
 import uuid
 
@@ -33,18 +34,24 @@ class EvidenceSpan:
     
     # Additional metadata
     table_id: Optional[str] = None  # For table spans
+    table_row: Optional[int] = None  # Row position in table (0-indexed)
+    table_col: Optional[int] = None  # Column position in table (0-indexed)
+    table_header_ids: List[str] = field(default_factory=list)  # Header span IDs for context
     figure_id: Optional[str] = None  # For figure spans
     supplementary_id: Optional[str] = None  # For supplementary material
     
+    # Span type and provenance
+    kind: Literal["base", "derived"] = "base"  # Distinguishes base vs derived spans
+    parent_span_ids: List[str] = field(default_factory=list)  # For derived spans, stores base parent IDs
+    
     # Provenance fields
-    id: str = field(default_factory=lambda: f"span_{str(uuid.uuid4())[:8]}")
+    internal_id: str = field(default_factory=lambda: f"span_{str(uuid.uuid4())[:8]}")
     status: str = "draft"
     metadata: Dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.utcnow)
     created_by: Optional[str] = None
     version: int = 1
     input_hash: str = field(default_factory=lambda: f"{uuid.uuid4().hex[:16]}")
-    parent_ids: list = field(default_factory=list)
     span_ids: list = field(default_factory=list)
     notes: list = field(default_factory=list)
     
@@ -61,6 +68,17 @@ class EvidenceSpan:
         # Validate confidence range
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError(f"Confidence must be between 0.0 and 1.0, got {self.confidence}")
+        
+        # Validate kind-specific constraints
+        if self.kind == "derived" and not self.parent_span_ids:
+            raise ValueError("Derived spans must have parent_span_ids")
+        elif self.kind == "base" and self.parent_span_ids:
+            raise ValueError("Base spans should not have parent_span_ids")
+        
+        # Validate table-specific constraints
+        if self.section.lower() == "table" and self.table_id:
+            if self.table_row is None or self.table_col is None:
+                raise ValueError("Table spans must have table_row and table_col specified")
     
     @property
     def span_id(self) -> str:
@@ -68,9 +86,14 @@ class EvidenceSpan:
         
         Follows the specification format: {doc_id}#sec:{section}:char{start}-{end}
         with optional page context for additional precision.
+        For tables: {doc_id}#table:{table_id}:r{row}c{col}
         """
         if self.section.lower() == "table" and self.table_id:
-            return f"{self.doc_id}#table:{self.table_id}:r*"
+            if self.table_row is not None and self.table_col is not None:
+                return f"{self.doc_id}#table:{self.table_id}:r{self.table_row}c{self.table_col}"
+            else:
+                # Fallback for table spans without row/col info
+                return f"{self.doc_id}#table:{self.table_id}:r*"
         elif self.section.lower() == "figure" and self.figure_id:
             return f"{self.doc_id}#fig:{self.figure_id}"
         elif self.char_start is not None and self.char_end is not None:
@@ -97,6 +120,31 @@ class EvidenceSpan:
     def is_table_span(self) -> bool:
         """Check if this is a table span."""
         return self.section.lower() == "table" and self.table_id is not None
+    
+    @property
+    def is_table_cell_span(self) -> bool:
+        """Check if this is a table cell span with precise row/column addressing."""
+        return self.is_table_span and self.table_row is not None and self.table_col is not None
+    
+    @property
+    def is_base_span(self) -> bool:
+        """Check if this is a base span."""
+        return self.kind == "base"
+    
+    @property
+    def is_derived_span(self) -> bool:
+        """Check if this is a derived span."""
+        return self.kind == "derived"
+    
+    @property
+    def has_parents(self) -> bool:
+        """Check if this span has parent spans."""
+        return len(self.parent_span_ids) > 0
+    
+    @property
+    def has_table_headers(self) -> bool:
+        """Check if this table span has header context."""
+        return len(self.table_header_ids) > 0
     
     @property
     def is_figure_span(self) -> bool:

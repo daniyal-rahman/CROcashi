@@ -6,12 +6,17 @@ Represents study methodology and design details derived from Methods/Protocol/SA
 
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
+from pydantic import model_validator, field_validator
 from .base import BaseModel, ProvenanceMixin
 
 
 @dataclass
 class MethodCard(BaseModel, ProvenanceMixin):
     """Study methodology and design details."""
+    # Document identifier - now required
+    doc_id: str = field(default="")  # Make it have a default to avoid dataclass ordering issues
+    
+    # Required fields first, then optional fields with defaults
     estimand: Optional[Dict[str, Any]] = None
     population_description: Optional[str] = None
     primary_endpoint: Optional[str] = None
@@ -38,7 +43,7 @@ class MethodCard(BaseModel, ProvenanceMixin):
     imputation_method: Optional[str] = None
     tipping_point_analysis: Optional[bool] = None
     endpoint_ascertainment: Optional[str] = None
-    assessment_interval: Optional[str] = None  # e.g., "q6w", "every_6_weeks", "monthly"
+    assessment_interval: Optional[str] = None  # Mirror of endpoint_ascertainment['assessment_interval'] - single source of truth
     is_blinded: Optional[bool] = None
     adjudication_committee: Optional[str] = None
     protocol_features: List[str] = field(default_factory=list)
@@ -63,7 +68,30 @@ class MethodCard(BaseModel, ProvenanceMixin):
     # Standardize provenance: use span_ids for machine checks, provenance_anchors as UI alias
     span_ids: List[str] = field(default_factory=list)  # Primary provenance field for machine checks
     provenance_anchors: List[str] = field(default_factory=list)  # UI alias, kept for backward compatibility
+    field_span_map: Dict[str, List[str]] = field(default_factory=dict)  # Per-field provenance tracking
     warnings: List[str] = field(default_factory=list)
+    
+    @model_validator(mode='before')
+    @classmethod
+    def validate_doc_id(cls, values):
+        """Ensure doc_id is always present and valid."""
+        if isinstance(values, dict):
+            doc_id = values.get('doc_id')
+            if doc_id is None or doc_id == "":
+                raise ValueError("doc_id is required and cannot be None or empty")
+            if not isinstance(doc_id, str):
+                raise ValueError(f"doc_id must be a string, got {type(doc_id)}")
+            if not doc_id.strip():
+                raise ValueError("doc_id cannot be empty or whitespace")
+        return values
+    
+    @field_validator('doc_id')
+    @classmethod
+    def validate_doc_id_format(cls, v):
+        """Validate doc_id format."""
+        if not v or not isinstance(v, str) or v == "":
+            raise ValueError(f"Invalid doc_id format: {v}")
+        return v
     
     def __post_init__(self):
         """Initialize provenance fields."""
@@ -82,6 +110,10 @@ class MethodCard(BaseModel, ProvenanceMixin):
     
     def validate(self) -> bool:
         """Validate the MethodCard."""
+        # Ensure doc_id is present
+        if not self.doc_id:
+            return False
+            
         if not self.primary_endpoint:
             return False
         if self.alpha_level is not None and (self.alpha_level <= 0 or self.alpha_level >= 1):
@@ -126,6 +158,17 @@ class MethodCard(BaseModel, ProvenanceMixin):
         """Add a design risk."""
         if risk not in self.design_risks:
             self.design_risks.append(risk)
+    
+    def add_field_provenance(self, field_name: str, span_ids: List[str]) -> None:
+        """Add span IDs for a specific field to track provenance."""
+        if field_name not in self.field_span_map:
+            self.field_span_map[field_name] = []
+        # Add unique span IDs
+        for span_id in span_ids:
+            if span_id not in self.field_span_map[field_name]:
+                self.field_span_map[field_name].append(span_id)
+    
+
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary with all fields."""
@@ -176,6 +219,7 @@ class MethodCard(BaseModel, ProvenanceMixin):
             "randomization_ratio": self.randomization_ratio,
             "blinding_level": self.blinding_level,
             "treatment_duration": self.treatment_duration,
-            "follow_up_duration": self.follow_up_duration
+            "follow_up_duration": self.follow_up_duration,
+            "field_span_map": self.field_span_map
         })
         return base_dict

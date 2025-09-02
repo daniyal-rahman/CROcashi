@@ -109,6 +109,22 @@ class MetricRegistry:
             }
         ))
         
+        self.register_metric(MetricDefinition(
+            metric_id="median_pfs",
+            name="Median Progression-Free Survival",
+            metric_type=MetricType.SURVIVAL,
+            description="Median progression-free survival time",
+            allowed_units=["weeks", "months", "days"],
+            default_unit="months",
+            normalize_to_unit="days",
+            normalization_factor=30.44,  # months to days (365.25/12)
+            validation_rules={
+                "min_value": 0,
+                "max_value": 5000,
+                "require_n": True
+            }
+        ))
+        
         # Response metrics
         self.register_metric(MetricDefinition(
             metric_id="orr_recist",
@@ -131,6 +147,22 @@ class MetricRegistry:
             name="CA-125 Response Rate",
             metric_type=MetricType.BIOMARKER,
             description="CA-125 response rate",
+            allowed_units=["%", "percent"],
+            default_unit="%",
+            normalize_to_unit="%",
+            validation_rules={
+                "min_value": 0,
+                "max_value": 100,
+                "require_n": True,
+                "require_ci": False
+            }
+        ))
+        
+        self.register_metric(MetricDefinition(
+            metric_id="response_rate",
+            name="Response Rate",
+            metric_type=MetricType.RESPONSE,
+            description="General response rate (non-RECIST)",
             allowed_units=["%", "percent"],
             default_unit="%",
             normalize_to_unit="%",
@@ -248,18 +280,14 @@ class MetricRegistry:
         
         # Perform normalization
         try:
-            if metric.normalization_factor:
-                normalized_value = value * metric.normalization_factor
-            else:
-                # Handle common unit conversions
-                normalized_value = self._convert_units(value, unit, metric.normalize_to_unit)
+            # Always use _convert_units() which handles the from→to unit pair correctly
+            normalized_value = self._convert_units(value, unit, metric.normalize_to_unit)
             
             return NormalizedValue(
                 original_value=value,
                 original_unit=unit,
                 normalized_value=normalized_value,
                 normalized_unit=metric.normalize_to_unit,
-                normalization_factor=metric.normalization_factor,
                 is_valid=True
             )
             
@@ -273,6 +301,10 @@ class MetricRegistry:
     
     def _convert_units(self, value: Union[float, int], from_unit: str, to_unit: str) -> float:
         """Convert between common units."""
+        # Normalize units to lowercase for comparison
+        from_unit = from_unit.lower()
+        to_unit = to_unit.lower()
+        
         # Time conversions
         if from_unit == "weeks" and to_unit == "days":
             return value * 7.0
@@ -298,30 +330,26 @@ class MetricRegistry:
         """Extract potential metrics from text using regex patterns."""
         extracted_metrics = []
         
-        # Pattern for survival metrics
+        # Pattern for survival metrics - using named groups to handle different layouts
         survival_patterns = [
-            r"median\s+(OS|overall\s+survival|PFS|progression[-\s]free\s+survival|TTP|time\s+to\s+progression)\s*[=:]\s*([\d\.]+)\s*(weeks?|months?|days?|years?)",
-            r"([\d\.]+)\s*(weeks?|months?|days?|years?)\s+median\s+(OS|overall\s+survival|PFS|progression[-\s]free\s+survival|TTP|time\s+to\s+progression)"
+            # "median OS = 13.1 months"
+            (re.compile(r"median\s+(?P<name>OS|overall\s+survival|PFS|progression[-\s]free\s+survival|TTP|time\s+to\s+progression)\s*[=:]\s*(?P<val>[\d\.]+)\s*(?P<unit>weeks?|months?|days?|years?)", re.I), "A"),
+            # "13.1 months median OS"
+            (re.compile(r"(?P<val>[\d\.]+)\s*(?P<unit>weeks?|months?|days?|years?)\s+median\s+(?P<name>OS|overall\s+survival|PFS|progression[-\s]free\s+survival|TTP|time\s+to\s+progression)", re.I), "B"),
         ]
         
-        for pattern in survival_patterns:
-            matches = re.finditer(pattern, text, re.IGNORECASE)
-            for match in matches:
-                if len(match.groups()) >= 3:
-                    metric_name = match.group(1) if match.group(1) else match.group(3)
-                    value = float(match.group(2))
-                    unit = match.group(3) if match.group(3) else match.group(2)
-                    
-                    # Map to metric ID
-                    metric_id = self._map_survival_metric(metric_name)
-                    if metric_id:
-                        extracted_metrics.append({
-                            "metric_id": metric_id,
-                            "value": value,
-                            "unit": unit,
-                            "text": match.group(0),
-                            "confidence": 0.8
-                        })
+        for rx, tag in survival_patterns:
+            for m in rx.finditer(text):
+                metric_id = self._map_survival_metric(m.group("name"))
+                if not metric_id:
+                    continue
+                extracted_metrics.append({
+                    "metric_id": metric_id,
+                    "value": float(m.group("val")),
+                    "unit": m.group("unit").lower(),
+                    "text": m.group(0),
+                    "confidence": 0.8
+                })
         
         # Pattern for response rates
         response_patterns = [
@@ -330,10 +358,10 @@ class MetricRegistry:
             r"(\d+)/(\d+)\s*\(([\d\.]+)%\)"  # n/N (percentage)
         ]
         
-        for pattern in response_patterns:
+        for i, pattern in enumerate(response_patterns):
             matches = re.finditer(pattern, text, re.IGNORECASE)
             for match in matches:
-                if "n/N" in pattern:
+                if i == 2:  # n/N format pattern (third pattern)
                     # Handle n/N format
                     n = int(match.group(1))
                     total = int(match.group(2))
@@ -350,7 +378,8 @@ class MetricRegistry:
                     })
                 else:
                     # Handle percentage format
-                    if "ORR" in pattern or "response" in pattern:
+                    matched_text = match.group(0).upper()
+                    if "ORR" in matched_text or "OVERALL RESPONSE" in matched_text:
                         metric_id = "orr_recist"
                     else:
                         metric_id = "response_rate"
@@ -393,8 +422,72 @@ class MetricRegistry:
         
         return len(errors) == 0, errors
     
+    def normalize_metric_row(self, row: Dict[str, Any]) -> Tuple[bool, List[str]]:
+        """
+        Normalize a single ResultsFactsheet row.
+        
+        Args:
+            row: Dictionary containing metric data
+            
+        Returns:
+            Tuple of (success, error_messages)
+        """
+        errors = []
+        
+        # Check required fields
+        required_fields = ["metric", "value", "unit"]
+        for field in required_fields:
+            if field not in row:
+                errors.append(f"Missing required field '{field}'")
+        
+        if errors:
+            return False, errors
+        
+        # Validate metric exists in registry
+        metric_id = row["metric"]
+        metric = self.get_metric(metric_id)
+        if not metric:
+            errors.append(f"Unknown metric '{metric_id}'")
+            return False, errors
+        
+        # Validate and normalize value
+        try:
+            value = float(row["value"])
+            unit = row["unit"]
+            
+            # Validate the metric value
+            n = int(row["n"]) if row.get("n") is not None else None
+            is_valid, validation_errors = self.validate_metric_value(metric_id, value, unit, n)
+            if not is_valid:
+                errors.extend(validation_errors)
+                return False, errors
+            
+            # Perform normalization if required
+            if metric.normalize_to_unit:
+                if unit != metric.normalize_to_unit:
+                    # Unit conversion needed
+                    normalized = self.normalize_value(metric_id, value, unit)
+                    if not normalized.is_valid:
+                        errors.append(normalized.error_message)
+                        return False, errors
+                    else:
+                        # Add normalized values to row
+                        row["value_normalized"] = normalized.normalized_value
+                        row["unit_normalized"] = normalized.normalized_unit
+                else:
+                    # Input already in target unit, but ensure normalized fields are set for consistency
+                    # This is especially important for survival metrics to ensure consistent output format
+                    row["value_normalized"] = value
+                    row["unit_normalized"] = unit
+            
+        except (ValueError, TypeError) as e:
+            errors.append(f"Invalid value format: {str(e)}")
+            return False, errors
+        
+        return True, errors
+    
     def _validate_factsheet_row(self, row: Dict[str, Any], row_index: int) -> List[str]:
-        """Validate a single ResultsFactsheet row."""
+        """Validate a single ResultsFactsheet row (validation only, no normalization)."""
         errors = []
         row_prefix = f"Row {row_index + 1}:"
         
@@ -414,7 +507,7 @@ class MetricRegistry:
             errors.append(f"{row_prefix} Unknown metric '{metric_id}'")
             return errors
         
-        # Validate value and unit
+        # Validate value and unit (validation only, no normalization)
         try:
             value = float(row["value"])
             unit = row["unit"]
@@ -424,15 +517,12 @@ class MetricRegistry:
             if not is_valid:
                 errors.extend([f"{row_prefix} {error}" for error in validation_errors])
             
-            # Check if normalization is required
+            # Check if normalization would be required (for validation purposes only)
             if metric.normalize_to_unit and unit != metric.normalize_to_unit:
                 normalized = self.normalize_value(metric_id, value, unit)
                 if not normalized.is_valid:
                     errors.append(f"{row_prefix} {normalized.error_message}")
-                else:
-                    # Add normalized values to row
-                    row["value_normalized"] = normalized.normalized_value
-                    row["unit_normalized"] = normalized.normalized_unit
+                # Note: We don't add normalized values here - that's done by normalize_metric_row
             
         except (ValueError, TypeError) as e:
             errors.append(f"{row_prefix} Invalid value format: {str(e)}")

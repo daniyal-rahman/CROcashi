@@ -50,10 +50,23 @@ class TriageQuery:
     """A query for span triage."""
     field_name: str
     query_text: str
-    section: Optional[str] = None
+    section: Optional[str] = None  # Normalized section string ("Methods"|"Results"|"Table")
     priority: int = 1  # Higher priority = more important
     must_fill: bool = False
     metric_family: Optional[str] = None
+    
+    def __post_init__(self):
+        """Post-initialization to normalize section if needed."""
+        from ..section_normalizer import section_normalizer
+        
+        if isinstance(self.section, str):
+            # Normalize string section to canonical form
+            normalized = section_normalizer.normalize_section(self.section)
+            # Convert back to string using the primary section name
+            self.section = section_normalizer.get_primary_section_name(normalized)
+        elif self.section is None:
+            # Default to "Methods" section (string)
+            self.section = "Methods"
 
 
 class SpanTriageWorker(BaseWorker):
@@ -88,8 +101,8 @@ class SpanTriageWorker(BaseWorker):
                         error_message=f"Document {doc_id} not found"
                     )
                 
-                # Build indices if not already built
-                if not self.indexer.bm25_index:
+                # Build indices if not already built for this document
+                if getattr(self.indexer, "_indexed_doc_id", None) != doc_id:
                     self.indexer.process({"doc_id": doc_id})
                 
                 # Generate default queries if none provided
@@ -117,7 +130,9 @@ class SpanTriageWorker(BaseWorker):
             )
     
     def _generate_default_queries(self, required_fields: List[str]) -> List[TriageQuery]:
-        """Generate default queries for common required fields."""
+        """Generate default queries for common required fields using expanded synonyms."""
+        from ..query_synonym_manager import query_synonym_manager
+        
         default_queries = []
         
         # Methods section queries
@@ -128,27 +143,48 @@ class SpanTriageWorker(BaseWorker):
             ])
         
         if "ascertainment" in required_fields:
+            # Use expanded RECIST synonyms
+            recist_synonyms = query_synonym_manager.get_must_hit_synonyms("recist")
+            recist_query = " ".join(recist_synonyms) if recist_synonyms else "RECIST criteria response assessment"
+            
             default_queries.extend([
-                TriageQuery("recist_criteria", "RECIST criteria response assessment", "Methods", 1, True),
+                TriageQuery("recist_criteria", recist_query, "Methods", 1, True),
                 TriageQuery("assessment_interval", "assessment interval every cycles", "Methods", 1, False)
             ])
         
         if "survival_method" in required_fields:
+            # Use expanded KM and Cox synonyms
+            km_synonyms = query_synonym_manager.get_must_hit_synonyms("km")
+            cox_synonyms = query_synonym_manager.get_must_hit_synonyms("cox")
+            
+            km_query = " ".join(km_synonyms) if km_synonyms else "Kaplan-Meier survival analysis"
+            cox_query = " ".join(cox_synonyms) if cox_synonyms else "log-rank test Cox regression"
+            
             default_queries.extend([
-                TriageQuery("kaplan_meier", "Kaplan-Meier survival analysis", "Methods", 1, True),
-                TriageQuery("log_rank", "log-rank test Cox regression", "Methods", 1, False)
+                TriageQuery("kaplan_meier", km_query, "Methods", 1, True),
+                TriageQuery("log_rank", cox_query, "Methods", 1, False)
             ])
         
         if "design_archetype" in required_fields:
+            # Use expanded Gehan synonyms
+            gehan_synonyms = query_synonym_manager.get_must_hit_synonyms("gehan")
+            gehan_query = " ".join(gehan_synonyms) if gehan_synonyms else "Gehan two-stage design"
+            
             default_queries.extend([
-                TriageQuery("gehan_design", "Gehan two-stage design", "Methods", 1, True),
+                TriageQuery("gehan_design", gehan_query, "Methods", 1, True),
                 TriageQuery("interim_looks", "interim analysis stopping rules", "Methods", 1, True)
             ])
         
         if "analysis_denominators" in required_fields:
+            # Use expanded TTP/OS synonyms
+            ttp_synonyms = query_synonym_manager.get_must_hit_synonyms("ttp")
+            os_synonyms = query_synonym_manager.get_must_hit_synonyms("os")
+            
+            ttp_os_query = " ".join(ttp_synonyms + os_synonyms) if ttp_synonyms and os_synonyms else "TTP OS analysis included patients"
+            
             default_queries.extend([
                 TriageQuery("response_n", "evaluable for response patients", "Methods", 1, True),
-                TriageQuery("ttp_os_n", "TTP OS analysis included patients", "Methods", 1, True)
+                TriageQuery("ttp_os_n", ttp_os_query, "Methods", 1, True)
             ])
         
         if "site_geography" in required_fields:
@@ -165,9 +201,16 @@ class SpanTriageWorker(BaseWorker):
             ])
         
         if "survival_medians" in required_fields:
+            # Use expanded TTP/OS synonyms for median queries
+            ttp_synonyms = query_synonym_manager.get_must_hit_synonyms("ttp")
+            os_synonyms = query_synonym_manager.get_must_hit_synonyms("os")
+            
+            median_ttp_query = "median " + " ".join(ttp_synonyms) if ttp_synonyms else "median time to progression"
+            median_os_query = "median " + " ".join(os_synonyms) if os_synonyms else "median overall survival"
+            
             default_queries.extend([
-                TriageQuery("median_ttp", "median time to progression", "Results", 1, True),
-                TriageQuery("median_os", "median overall survival", "Results", 1, True)
+                TriageQuery("median_ttp", median_ttp_query, "Results", 1, True),
+                TriageQuery("median_os", median_os_query, "Results", 1, True)
             ])
         
         # Table queries
@@ -191,6 +234,11 @@ class SpanTriageWorker(BaseWorker):
         # Track selected spans
         selected_spans = defaultdict(list)
         must_hit_spans = defaultdict(list)
+        
+        # FIXED: Initialize must-fill fields upfront to ensure top-up runs for empty fields
+        must_fill_field_names = {query.field_name for query in queries if query.must_fill}
+        for field_name in must_fill_field_names:
+            must_hit_spans[field_name] = []  # Initialize with empty list
         
         # First pass: process all queries
         for query in queries:
@@ -301,6 +349,35 @@ class SpanTriageWorker(BaseWorker):
         
         return topup_results
     
+    def _build_parent_children_mapping(self, required_fields: List[str]) -> Dict[str, List[str]]:
+        """Build mapping from parent field names to their child query field names."""
+        parent_to_children = {}
+        
+        for field in required_fields:
+            if field == "endpoints":
+                parent_to_children[field] = ["endpoints_primary", "endpoints_secondary"]
+            elif field == "ascertainment":
+                parent_to_children[field] = ["recist_criteria", "assessment_interval"]
+            elif field == "survival_method":
+                parent_to_children[field] = ["kaplan_meier", "log_rank"]
+            elif field == "design_archetype":
+                parent_to_children[field] = ["gehan_design", "interim_looks"]
+            elif field == "analysis_denominators":
+                parent_to_children[field] = ["itt_population", "pp_population"]
+            elif field == "response_breakdown":
+                parent_to_children[field] = ["orr_recist", "response_breakdown"]
+            elif field == "survival_medians":
+                parent_to_children[field] = ["median_os", "median_pfs"]
+            elif field == "safety_summary":
+                parent_to_children[field] = ["ae_summary", "grade_breakdown"]
+            elif field == "table_processing":
+                parent_to_children[field] = ["survival_table", "response_table"]
+            else:
+                # For fields without children, use the field name itself
+                parent_to_children[field] = [field]
+        
+        return parent_to_children
+    
     def _generate_topup_queries(self, field_name: str) -> List[TriageQuery]:
         """Generate additional queries for top-up attempts."""
         topup_queries = []
@@ -380,16 +457,31 @@ class SpanTriageWorker(BaseWorker):
             if not triage_result.success:
                 return {"error": triage_result.error_message}
             
+            # FIXED: Create parent→children mapping for coverage calculation
+            parent_to_children = self._build_parent_children_mapping(required_fields)
+            
             # Check coverage
             coverage = {}
+            must_hit_spans = triage_result.output.get("must_hit_spans", {})
+            selected_spans = triage_result.output.get("selected_spans", {})
+            
             for field in required_fields:
-                must_hit_spans = triage_result.output.get("must_hit_spans", {})
-                selected_spans = triage_result.output.get("selected_spans", {})
+                # Get all child field names for this parent field
+                child_fields = parent_to_children.get(field, [field])  # Fallback to field itself if no children
                 
-                field_spans = must_hit_spans.get(field, []) + selected_spans.get(field, [])
+                # Sum spans across all child fields
+                total_spans = []
+                for child_field in child_fields:
+                    child_must_hit = must_hit_spans.get(child_field, [])
+                    child_selected = selected_spans.get(child_field, [])
+                    total_spans.extend(child_must_hit + child_selected)
+                
                 coverage[field] = {
-                    "spans_found": len(field_spans),
-                    "adequate": len(field_spans) > 0
+                    "spans_found": len(total_spans),
+                    "adequate": len(total_spans) > 0,
+                    "child_fields": child_fields,
+                    "child_coverage": {child: len(must_hit_spans.get(child, []) + selected_spans.get(child, [])) 
+                                     for child in child_fields}
                 }
             
             return {

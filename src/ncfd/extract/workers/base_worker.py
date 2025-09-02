@@ -114,12 +114,20 @@ class BaseWorker(ABC):
             # Add input IDs as parent IDs if they exist
             parent_ids = []
             for key, value in inputs.items():
-                if hasattr(value, 'id'):
-                    parent_ids.append(value.id)
+                if hasattr(value, 'span_id'):
+                    # Use span_id as canonical identifier for EvidenceSpan objects
+                    parent_ids.append(value.span_id)
+                elif hasattr(value, 'internal_id'):
+                    # Use internal_id for other objects
+                    parent_ids.append(value.internal_id)
                 elif isinstance(value, list):
                     for item in value:
-                        if hasattr(item, 'id'):
-                            parent_ids.append(item.id)
+                        if hasattr(item, 'span_id'):
+                            # Use span_id as canonical identifier for EvidenceSpan objects
+                            parent_ids.append(item.span_id)
+                        elif hasattr(item, 'internal_id'):
+                            # Use internal_id for other objects
+                            parent_ids.append(item.internal_id)
             if parent_ids:
                 output.parent_ids = parent_ids
         return output

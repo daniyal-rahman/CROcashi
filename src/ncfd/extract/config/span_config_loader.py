@@ -14,10 +14,10 @@ from pathlib import Path
 @dataclass
 class SpanGenerationConfig:
     """Configuration for span generation."""
-    min_sentence_length: int = 50
+    min_sentence_length: int = 12
     max_sentence_length: int = 400
-    min_table_cell_length: int = 10
-    max_table_cell_length: int = 200
+    min_table_cell_length: int = 1  # Reduced from 10 to capture short numeric values
+    max_table_cell_length: int = 500  # Increased from 200 to allow longer cells
     preserve_hyphens: bool = False
     normalize_whitespace: bool = True
     include_paragraph_spans: bool = False
