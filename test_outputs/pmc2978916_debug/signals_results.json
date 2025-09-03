@@ -1,0 +1,80 @@
+{
+  "doc_id": "pmc:PMC2978916",
+  "study_card": {
+    "study_id": "pmc:PMC2978916",
+    "is_pivotal": false,
+    "single_arm": true,
+    "primary_type": "proportion",
+    "arms": {
+      "t": {
+        "n": null,
+        "dropout": null
+      },
+      "c": {
+        "n": null,
+        "dropout": null
+      }
+    },
+    "analysis_plan": {
+      "alpha": 0.05,
+      "one_sided": false,
+      "two_sided": true,
+      "assumed_p_c": null,
+      "assumed_delta_abs": null,
+      "hr_alt": null,
+      "planned_events": null,
+      "alloc_ratio": 1.0,
+      "blinding": "open",
+      "interim_design": "gehan",
+      "planned_interims": 1
+    },
+    "primary_result": {
+      "ITT": {
+        "estimate": null,
+        "p": null
+      },
+      "PP": null
+    },
+    "subgroups": [],
+    "narrative_highlights_subgroup": false,
+    "endpoint_subjective_unblinded": false,
+    "historical_control_rate": null,
+    "mcid_abs": null,
+    "N_total": null,
+    "events_observed": null
+  },
+  "signals": {
+    "S1": {
+      "fired": false,
+      "severity": "L",
+      "reason": "no trial versions provided",
+      "value": null,
+      "evidence_ids": [],
+      "low_cert_inputs": false
+    },
+    "S2": {
+      "fired": false,
+      "severity": "L",
+      "value": null,
+      "reason": "not pivotal",
+      "evidence_ids": [],
+      "low_cert_inputs": false
+    },
+    "S3": {
+      "fired": false,
+      "severity": "L",
+      "value": null,
+      "reason": "no unadjusted subgroup-only wins",
+      "evidence_ids": [],
+      "low_cert_inputs": false
+    },
+    "S4": {
+      "fired": false,
+      "severity": "L",
+      "value": null,
+      "reason": "no PP set",
+      "evidence_ids": [],
+      "low_cert_inputs": false
+    }
+  }
+}

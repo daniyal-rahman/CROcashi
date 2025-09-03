@@ -1,0 +1,52 @@
+{
+  "doc_id": "NCT04388254",
+  "method_card": {
+    "primary_endpoint": "ADAS-Cog11",
+    "is_pivotal": false,
+    "design_archetype": "randomized_withdrawal_after_OLE",
+    "alpha_level": null,
+    "is_one_sided": null,
+    "arms": {
+      "t": {"n": 78, "dropout": 0.15},
+      "c": {"n": 77, "dropout": 0.08}
+    },
+    "primary_result": {
+      "ITT": {"estimate": 0.57, "p": null, "significant": false},
+      "PP": null
+    },
+    "subgroups": [
+      {"name": "Mild AD", "p": null, "significant": false, "adjusted": false, "pre_specified_interaction": false},
+      {"name": "Moderate AD", "p": null, "significant": false, "adjusted": false, "pre_specified_interaction": false}
+    ],
+    "analysis_plan": {
+      "planned_interims": 0,
+      "assumed_p_c": null,
+      "assumed_delta_abs": null
+    },
+    "indication": "alzheimers_disease",
+    "study_phase": "phase_2",
+    "blinding_level": "double_blind",
+    "endpoint_ascertainment": "ADAS-Cog11",
+    "interim_looks": 0,
+    "gehan_two_stage": false,
+    "assessment_interval": "unknown"
+  },
+  "results_factsheet": {
+    "results": [
+      {"metric": "adas_cog11_change_drug", "value": 0.92, "units": "points", "n": 78},
+      {"metric": "adas_cog11_change_placebo", "value": 1.49, "units": "points", "n": 77},
+      {"metric": "adas_cog11_difference", "value": 0.57, "units": "points", "n": 155, "significant": false}
+    ]
+  },
+  "claims": [
+    {"type": "design_fact", "proposition": "blinding: double-blind"},
+    {"type": "design_fact", "proposition": "interim_design: no planned interims"},
+    {"type": "design_fact", "proposition": "endpoint: ADAS-Cog11 mean change over 6 months"},
+    {"type": "effect_size", "proposition": "adas_cog11_difference: 0.57 points", "value": 0.57, "units": "points", "significant": false},
+    {"type": "operational", "proposition": "randomized_withdrawal: 12-mo OLE → 6-mo RCT"},
+    {"type": "limitation", "proposition": "not_de_novo_efficacy: company-reported cognitive separation"},
+    {"type": "limitation", "proposition": "withdrawal_design: not standard efficacy RCT"},
+    {"type": "limitation", "proposition": "overall_significant: false"},
+    {"type": "limitation", "proposition": "subgroup_significant: false"}
+  ]
+}

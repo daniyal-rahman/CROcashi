@@ -1,0 +1,55 @@
+# Deterministic Synthesis Configuration
+
+# Field precedence for resolving conflicts across document types
+field_precedence:
+  primary_endpoint: ["Registry", "Paper", "FDA", "PR", "Abstract"]
+  n_total: ["Registry", "Paper", "PR", "Abstract"]
+  effect_primary: ["Paper", "PR", "Registry", "Abstract"]
+  p_value: ["Paper", "PR", "Registry", "Abstract"]
+  itt_status: ["Paper", "PR", "Registry", "Abstract"]
+  dropout_missing_itt_pct: ["Paper", "PR", "Registry", "Abstract"]
+  interim_looks: ["Registry", "Paper", "PR", "Abstract"]
+  alpha_spending: ["Registry", "Paper", "PR", "Abstract"]
+  subgroup_multiplicity: ["Paper", "PR", "Registry", "Abstract"]
+  randomization: ["Registry", "Paper", "PR", "Abstract"]
+  blinding: ["Registry", "Paper", "PR", "Abstract"]
+  sponsor: ["Registry", "PR", "Paper", "Abstract"]
+  est_primary_completion_date: ["Registry", "PR", "Paper", "Abstract"]
+
+# Severity buckets for risk assessment
+severity_buckets:
+  critical: [0.90, 1.00]
+  high: [0.80, 0.90]
+  medium: [0.60, 0.80]
+  low: [0.40, 0.60]
+
+# Gate templates for red flag descriptions
+gate_templates:
+  G1: "Alpha-Meltdown: endpoint changed post-registration and trial is underpowered."
+  G2: "Analysis-Gaming: subgroup-only win without multiplicity; ITT neutral with dropout asymmetry."
+  G3: "Plausibility: claimed effect exceeds class priors with weak design (single-arm or multiple looks)."
+  G4: "p-Hacking: p-value near 0.05 alongside endpoint/subgroup shifts."
+
+# Coverage requirements for different trial types
+coverage_requirements:
+  pivotal:
+    - primary_endpoint
+    - n_total
+    - itt_status
+    - effect_primary_or_p_value
+  phase2:
+    - primary_endpoint
+    - n_total
+    - effect_primary_or_p_value
+
+# Output constraints
+max_tokens: 2000
+max_sentences_per_section: 10
+
+# GPT-5 thinking model trigger threshold
+gpt5_threshold: 0.85  # Trigger GPT-5 analysis when P_fail >= 0.85
+
+# Validation settings
+require_references: true
+min_study_cards: 1
+max_missing_fields: 2

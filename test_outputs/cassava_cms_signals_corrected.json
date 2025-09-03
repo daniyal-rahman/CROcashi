@@ -1,0 +1,188 @@
+{
+  "doc_id": "NCT04388254",
+  "study_card": {
+    "study_id": "NCT04388254",
+    "is_pivotal": false,
+    "single_arm": false,
+    "primary_type": "other",
+    "arms": {
+      "t": {
+        "n": null,
+        "dropout": null
+      },
+      "c": {
+        "n": null,
+        "dropout": null
+      }
+    },
+    "analysis_plan": {
+      "alpha": 0.05,
+      "one_sided": false,
+      "two_sided": true,
+      "assumed_p_c": null,
+      "assumed_delta_abs": null,
+      "hr_alt": null,
+      "planned_events": null,
+      "alloc_ratio": 1.0
+    },
+    "primary_result": {
+      "ITT": {
+        "estimate": null,
+        "p": null
+      },
+      "PP": null
+    },
+    "subgroups": [
+      {
+        "name": "Mild AD",
+        "p": null,
+        "significant": false,
+        "adjusted": false,
+        "pre_specified_interaction": false
+      },
+      {
+        "name": "Moderate AD",
+        "p": null,
+        "significant": false,
+        "adjusted": false,
+        "pre_specified_interaction": false
+      }
+    ],
+    "narrative_highlights_subgroup": false,
+    "endpoint_subjective_unblinded": false,
+    "historical_control_rate": null,
+    "mcid_abs": null,
+    "N_total": null,
+    "events_observed": null
+  },
+  "signals": {
+    "S1": {
+      "fired": false,
+      "severity": "L",
+      "value": null,
+      "reason": "Material endpoint change late",
+      "evidence_ids": [],
+      "low_cert_inputs": false
+    },
+    "S2": {
+      "fired": false,
+      "severity": "L",
+      "value": null,
+      "reason": "not pivotal",
+      "evidence_ids": [],
+      "low_cert_inputs": false
+    },
+    "S3": {
+      "fired": false,
+      "severity": "L",
+      "value": null,
+      "reason": "no unadjusted subgroup-only wins",
+      "evidence_ids": [],
+      "low_cert_inputs": false
+    },
+    "S4": {
+      "fired": false,
+      "severity": "L",
+      "value": null,
+      "reason": "no PP set",
+      "evidence_ids": [],
+      "low_cert_inputs": false
+    },
+    "S5": {
+      "fired": false,
+      "severity": "L",
+      "value": null,
+      "reason": "no primary result",
+      "evidence_ids": [],
+      "low_cert_inputs": false
+    },
+    "S6": {
+      "fired": false,
+      "severity": "L",
+      "value": null,
+      "reason": "insufficient interims or alpha spending specified",
+      "evidence_ids": [],
+      "low_cert_inputs": false
+    },
+    "S7": {
+      "fired": false,
+      "severity": "L",
+      "value": null,
+      "reason": "not single arm",
+      "evidence_ids": [],
+      "low_cert_inputs": false
+    },
+    "S8": {
+      "fired": false,
+      "severity": "L",
+      "value": null,
+      "reason": "no p-value",
+      "evidence_ids": [],
+      "low_cert_inputs": false
+    },
+    "S9": {
+      "fired": false,
+      "severity": "L",
+      "value": null,
+      "reason": "missing OS or PFS HR",
+      "evidence_ids": [],
+      "low_cert_inputs": false
+    }
+  },
+  "gates": {
+    "G1": {
+      "fired": false,
+      "severity": "L",
+      "supporting_signals": [],
+      "reason": "no alpha meltdown signals",
+      "likelihood_ratio": 1.0
+    },
+    "G2": {
+      "fired": false,
+      "severity": "L",
+      "supporting_signals": [],
+      "reason": "no analysis gaming signals",
+      "likelihood_ratio": 1.0
+    },
+    "G3": {
+      "fired": false,
+      "severity": "L",
+      "supporting_signals": [],
+      "reason": "no plausibility signals",
+      "likelihood_ratio": 1.0
+    },
+    "G4": {
+      "fired": false,
+      "severity": "L",
+      "supporting_signals": [],
+      "reason": "no p-hacking signals",
+      "likelihood_ratio": 1.0
+    }
+  },
+  "scoring": {
+    "score": {
+      "trial_id": "NCT04388254",
+      "prior_pi": 0.54,
+      "logit_prior": 0.16034265007517948,
+      "sum_log_lr": 0.0,
+      "logit_post": 0.16034265007517948,
+      "p_fail": 0.54,
+      "fired_gates": [],
+      "fired_signals": [],
+      "evidence_span": "extraction_span",
+      "source_study_id": "NCT04388254"
+    },
+    "summary": {
+      "trial_id": "NCT04388254",
+      "risk_level": "MODERATE RISK - Some concerning signals",
+      "p_failure": "54.0%",
+      "prior_pi": "54.0%",
+      "logit_change": "0.00",
+      "fired_gates": [],
+      "fired_signals": [],
+      "total_lr": "1.00",
+      "evidence_span": "extraction_span",
+      "source_study": "NCT04388254"
+    }
+  }
+}
