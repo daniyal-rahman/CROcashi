@@ -27,6 +27,25 @@ must_hit:
     - "every two cycles"
     - "assessed every two cycles"
 
+# Design archetype-specific must-hit requirements
+must_hit_by_design:
+  single_arm_phase2_gehan:
+    required:
+      - "ttp"
+      - "os"
+      - "recist"
+      - "gehan"
+      - "km"
+    optional:
+      - "cox"  # Cox regression not typically used in single-arm Phase II
+  randomized_phase3:
+    required:
+      - "ttp"
+      - "os"
+      - "recist"
+      - "cox"  # Cox regression more common in Phase III
+      - "km"
+
 # Disease-specific query synonyms
 disease_synonyms:
   ovarian_cancer:

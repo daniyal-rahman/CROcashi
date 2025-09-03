@@ -3,6 +3,8 @@ Late Fusion Orchestrator
 
 Implements dual-path processing by default, combining LLM and deterministic workers
 with global validators for provenance, units, and section constraints.
+
+Updated to implement LLM-first, provenance-second architecture.
 """
 
 import time
@@ -21,6 +23,7 @@ import logging
 from ..models import (
     EvidenceSpan, MethodCard, ResultsFactsheet, Claim
 )
+from ..models.llm_extraction_draft import LLMExtractionDraft
 from ..validators import validate_all_artifacts
 from ..workers.interfaces.denominator_resolver import create_denominator_resolver
 
@@ -29,9 +32,9 @@ class LateFusionOrchestrator:
     """
     Orchestrates dual-path processing with late fusion of LLM and deterministic results.
     
-    Implements the dual-path architecture from the Study Card Overhaul:
-    - LLM Path: MethodAuditor, ResultsDistiller, Claimizer, CounterEvidenceMiner
-    - Deterministic Path: GateValidator, GateAssessor
+    Updated to implement LLM-first, provenance-second architecture:
+    - LLM Path: LLMResultsDrafter → ProvenanceBacktracer → ResultsFinalizer
+    - Deterministic Path: DeterministicResultsDistiller (unchanged)
     - Late Fusion: Combines results with global validation
     """
     
@@ -53,6 +56,10 @@ class LateFusionOrchestrator:
         self.enable_deterministic_path = self.config.get('enable_deterministic_path', True)
         self.enable_late_fusion = self.config.get('enable_late_fusion', True)
         
+        # LLM-first architecture configuration
+        self.llm_path_config = self.config.get('llm_path', {})
+        self.fusion_config = self.config.get('fusion', {})
+        
         # Fusion configuration
         self.epsilon_pct = self.config.get('epsilon_pct', 0.05)  # 5% tolerance for equality
         self.denom_precedence = self.config.get('denom_precedence', ['table', 'results', 'abstract'])
@@ -66,23 +73,38 @@ class LateFusionOrchestrator:
         self._initialize_workers()
         
     def _initialize_workers(self):
-        """Initialize worker instances based on configuration."""
+        """Initialize workers based on configuration."""
         if self.enable_llm_path:
             try:
                 # Dynamic imports to avoid SQLAlchemy conflicts
+                from ..workers.llm.llm_results_drafter import LLMResultsDrafter
+                from ..workers.provenance_backtracer import ProvenanceBacktracer
+                from ..workers.results_finalizer import ResultsFinalizer
                 from ..workers.llm.method_auditor import MethodAuditor
-                from ..workers.llm.results_distiller import ResultsDistiller
                 from ..workers.llm.claimizer import Claimizer
                 from ..workers.llm.counter_evidence_miner import CounterEvidenceMiner
                 
+                # LLM-first architecture workers
                 self.llm_workers = {
+                    'llm_results_drafter': LLMResultsDrafter(),
+                    'provenance_backtracer': ProvenanceBacktracer(
+                        bm25_topk=self.llm_path_config.get('backtrace', {}).get('bm25_topk', 20),
+                        fuzzy_threshold=self.llm_path_config.get('backtrace', {}).get('fuzzy_threshold', 0.86),
+                        numeric_strict=self.llm_path_config.get('backtrace', {}).get('numeric_strict', True),
+                        section_bonus=self.llm_path_config.get('backtrace', {}).get('section_bonus', 0.1),
+                        allow_table_only=self.llm_path_config.get('backtrace', {}).get('allow_table_only', True)
+                    ),
+                    'results_finalizer': ResultsFinalizer(
+                        prefer_deterministic_if_tie=self.fusion_config.get('prefer_deterministic_if_tie', True),
+                        min_provenance_score=self.fusion_config.get('min_provenance_score', 0.75),
+                        hard_fail_if_missing_spans=self.fusion_config.get('hard_fail_if_missing_spans', True)
+                    ),
                     'method_auditor': MethodAuditor(),
                     'denominator_resolver': create_denominator_resolver("llm"),
-                    'results_distiller': ResultsDistiller(),
                     'claimizer': Claimizer(),
                     'counter_evidence_miner': CounterEvidenceMiner()
                 }
-                self.logger.info("LLM path workers initialized")
+                self.logger.info("LLM path workers initialized (LLM-first architecture)")
             except ImportError as e:
                 self.logger.warning(f"Could not initialize LLM workers: {e}")
                 self.llm_workers = {}
@@ -90,185 +112,108 @@ class LateFusionOrchestrator:
         if self.enable_deterministic_path:
             try:
                 # Dynamic imports to avoid SQLAlchemy conflicts
-                from ..workers.deterministic.gate_validator import GateValidator
-                from ..workers.deterministic.gate_assessor import GateAssessor
                 from ..workers.deterministic.method_auditor import DeterministicMethodAuditor
                 from ..workers.deterministic.results_distiller import DeterministicResultsDistiller
+                from ..workers.deterministic.gate_validator import GateValidator
+                from ..workers.deterministic.gate_assessor import GateAssessor
                 
                 self.deterministic_workers = {
-                    'gate_validator': GateValidator(),
-                    'gate_assessor': GateAssessor(),
                     'method_auditor': DeterministicMethodAuditor(),
+                    'denominator_resolver': create_denominator_resolver("deterministic"),
                     'results_distiller': DeterministicResultsDistiller(),
-                    'denominator_resolver': create_denominator_resolver("deterministic")
+                    'gate_validator': GateValidator(),
+                    'gate_assessor': GateAssessor()
                 }
                 self.logger.info("Deterministic path workers initialized")
             except ImportError as e:
                 self.logger.warning(f"Could not initialize deterministic workers: {e}")
                 self.deterministic_workers = {}
-    
-    def process_pipeline(
-        self, 
-        evidence_spans: List[EvidenceSpan],
-        trial_context: Dict[str, Any],
-        design_json: Optional[Dict[str, Any]] = None,
-        pocket_context: Optional[Any] = None
-    ) -> Dict[str, Any]:
+
+    def process(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Run the complete dual-path pipeline with late fusion.
+        Process evidence spans through dual-path architecture with late fusion.
         
-        Args:
-            evidence_spans: List of evidence spans to process
-            trial_context: Trial context information
-            design_json: Optional design JSON for MethodAuditor
-            pocket_context: Optional pocket context card
-            
-        Returns:
-            Dictionary containing all pipeline outputs
+        Updated to implement LLM-first, provenance-second architecture:
+        1. Deterministic Path: Process pre-triaged spans
+        2. LLM Path: Read raw text → Draft results → Backtrace spans → Finalize
+        3. Late Fusion: Merge and validate final results
         """
         start_time = time.time()
-        self.logger.info("Starting dual-path pipeline processing")
         
         pipeline_results = {
             'success': False,
-            'pipeline_config': {
-                'enable_llm_path': self.enable_llm_path,
-                'enable_deterministic_path': self.enable_deterministic_path,
-                'enable_late_fusion': self.enable_late_fusion
-            },
+            'method_card': None,
+            'results_factsheet': None,
+            'claims': None,
+            'contradicting_claims': None,
+            'ambiguity_ledger': {},
             'execution_time': 0.0,
             'errors': [],
             'warnings': []
         }
         
-        # Initialize artifacts for persistence
-        llm_claims = []
-        llm_facts = []
-        deterministic_claims = []
-        deterministic_facts = []
-        
         try:
-            # Step 1: Span validation and preprocessing
-            self.logger.info("Step 1: Validating and preprocessing evidence spans")
-            validation_result = self._validate_spans(evidence_spans)
-            if not validation_result['is_valid']:
-                pipeline_results['errors'].extend(validation_result['errors'])
+            # Extract inputs
+            evidence_spans = inputs.get('evidence_spans', [])
+            trial_context = inputs.get('trial_context', {})
+            design_json = inputs.get('design_json', {})
+            pocket_context = inputs.get('pocket_context', None)
+            raw_doc_text = inputs.get('raw_doc_text', "")
+            
+            # Get doc_id
+            doc_id = None
+            if evidence_spans:
+                doc_id = evidence_spans[0].doc_id
+            elif trial_context:
+                doc_id = trial_context.get('doc_id')
+            
+            if not doc_id:
+                pipeline_results['errors'].append("Cannot process without valid doc_id")
                 return pipeline_results
             
-            # Step 2: LLM Path Processing
-            llm_results = {}
-            if self.enable_llm_path:
-                self.logger.info("Step 2: Processing LLM path")
-                llm_results = self._process_llm_path(
-                    evidence_spans, trial_context, design_json, pocket_context
-                )
-                if not llm_results['success']:
-                    pipeline_results['errors'].extend(llm_results['errors'])
-                    return pipeline_results
-                
-                # Extract claims and facts from LLM results for persistence
-                if llm_results.get('claims'):
-                    llm_claims = llm_results['claims']
-                if llm_results.get('facts'):
-                    llm_facts = llm_results['facts']
+            # Step 1: Validate spans
+            self.logger.info("Step 1: Validating evidence spans")
+            span_validation = self._validate_spans(evidence_spans)
+            if not span_validation['is_valid']:
+                pipeline_results['warnings'].extend(span_validation['warnings'])
             
-            # Step 3: Deterministic Path Processing
+            # Step 2: Process deterministic path
             deterministic_results = {}
             if self.enable_deterministic_path:
-                self.logger.info("Step 3: Processing deterministic path")
+                self.logger.info("Step 2: Processing deterministic path")
                 deterministic_results = self._process_deterministic_path(
-                    evidence_spans, trial_context, llm_results
+                    evidence_spans, trial_context, design_json, pocket_context
                 )
                 if not deterministic_results['success']:
-                    pipeline_results['warnings'].extend(deterministic_results['warnings'])
-                
-                # Extract claims and facts from deterministic results for persistence
-                if deterministic_results.get('claims'):
-                    deterministic_claims = deterministic_results['claims']
-                if deterministic_results.get('facts'):
-                    deterministic_facts = deterministic_results['facts']
+                    pipeline_results['warnings'].extend(deterministic_results['errors'])
             
-            # Step 4: Persist pre-fusion artifacts (before fusion/validation)
-            self.logger.info("Step 4: Persisting pre-fusion artifacts")
-            self._persist_pre_fusion_artifacts(
-                llm_claims, llm_facts, deterministic_claims, deterministic_facts,
-                llm_results, deterministic_results
-            )
+            # Step 3: Process LLM path (LLM-first architecture)
+            llm_results = {}
+            if self.enable_llm_path:
+                self.logger.info("Step 3: Processing LLM path (LLM-first architecture)")
+                llm_results = self._process_llm_path_llm_first(
+                    evidence_spans, trial_context, design_json, pocket_context, raw_doc_text, doc_id
+                )
+                if not llm_results['success']:
+                    pipeline_results['warnings'].extend(llm_results['errors'])
             
-            # Step 5: Late Fusion and Global Validation
+            # Step 4: Late fusion and finalization
             fusion_results = {}
             if self.enable_late_fusion:
-                self.logger.info("Step 5: Late fusion and global validation")
-                try:
-                    # Prepare inputs for the fuse() method
-                    fusion_inputs = {
-                        'llm_method_card': llm_results.get('method_card'),
-                        'llm_results_factsheet': llm_results.get('results_factsheet'),
-                        'deterministic_method_card': deterministic_results.get('method_card'),
-                        'deterministic_results_factsheet': deterministic_results.get('results_factsheet'),
-                        'evidence_spans': evidence_spans
-                    }
-                    
-                    # Call fuse() directly
-                    fusion_result = self.fuse(fusion_inputs)
-                    
-                    # Convert the result format to match the expected interface
-                    if fusion_result['success']:
-                        # Collect all artifacts for the legacy interface
-                        all_artifacts = []
-                        
-                        if fusion_result.get('method_card'):
-                            all_artifacts.append(fusion_result['method_card'])
-                        
-                        if fusion_result.get('results_factsheet'):
-                            all_artifacts.append(fusion_result['results_factsheet'])
-                        
-                        # Add LLM-only artifacts (claims, contradicting_claims)
-                        if llm_results.get('claims'):
-                            all_artifacts.extend(llm_results['claims'])
-                        
-                        if llm_results.get('contradicting_claims'):
-                            for family_claims in llm_results['contradicting_claims'].values():
-                                all_artifacts.extend(family_claims)
-                        
-                        fusion_results = {
-                            'success': True,
-                            'fused_artifacts': all_artifacts,
-                            'method_card': fusion_result.get('method_card'),
-                            'results_factsheet': fusion_result.get('results_factsheet'),
-                            'ambiguity_ledger': fusion_result.get('ambiguity_ledger', {}),
-                            'execution_time': fusion_result.get('execution_time', 0.0),
-                            'errors': []
-                        }
-                    else:
-                        fusion_results = {
-                            'success': False,
-                            'fused_artifacts': [],
-                            'errors': [fusion_result.get('error_message', 'Fusion failed')],
-                            'execution_time': fusion_result.get('execution_time', 0.0)
-                        }
-                    
-                    if not fusion_results['success']:
-                        pipeline_results['errors'].extend(fusion_results['errors'])
-                        # Write failure report but continue to final output preparation
-                        self._write_failure_report(fusion_results['errors'], llm_results, deterministic_results)
-                        
-                except Exception as e:
-                    self.logger.error(f"Fusion failed with exception: {str(e)}")
-                    fusion_results = {
-                        'success': False,
-                        'fused_artifacts': [],
-                        'errors': [f"Fusion failed with exception: {str(e)}"],
-                        'execution_time': 0.0
-                    }
+                self.logger.info("Step 4: Late fusion and finalization")
+                fusion_results = self._perform_late_fusion_llm_first(
+                    deterministic_results, llm_results, evidence_spans, doc_id
+                )
+                if not fusion_results['success']:
                     pipeline_results['errors'].extend(fusion_results['errors'])
-                    # Write failure report but continue to final output preparation
-                    self._write_failure_report(fusion_results['errors'], llm_results, deterministic_results)
+                else:
+                    # Update pipeline results with fused artifacts
+                    pipeline_results.update(fusion_results)
             
-            # Step 6: Final validation and output preparation
-            self.logger.info("Step 6: Final validation and output preparation")
-            final_results = self._prepare_final_output(
-                llm_results, deterministic_results, fusion_results
+            # Step 5: Final validation and output preparation
+            self.logger.info("Step 5: Final validation and output preparation")
+            final_results = self._prepare_final_output_llm_first(
+                deterministic_results, llm_results, fusion_results
             )
             
             # Update pipeline results
@@ -282,12 +227,283 @@ class LateFusionOrchestrator:
             self.logger.error(f"Pipeline failed with error: {str(e)}")
             pipeline_results['errors'].append(f"Pipeline execution failed: {str(e)}")
             pipeline_results['execution_time'] = time.time() - start_time
-            
-            # Write failure report even if pipeline fails completely
-            self._write_failure_report(pipeline_results['errors'], llm_results, deterministic_results)
         
         return pipeline_results
-    
+
+    def process_pipeline(self, evidence_spans: List[EvidenceSpan], trial_context: Dict[str, Any], 
+                        design_json: Optional[Dict[str, Any]] = None, pocket_context: Optional[Any] = None,
+                        raw_doc_text: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Backward compatibility method that delegates to process().
+        
+        This method exists to maintain compatibility with existing test scripts
+        that call process_pipeline() instead of process().
+        """
+        # Create mock raw_doc_text if not provided (for backward compatibility)
+        if raw_doc_text is None:
+            raw_doc_text = self._create_mock_raw_doc_text(evidence_spans)
+        
+        inputs = {
+            'evidence_spans': evidence_spans,
+            'trial_context': trial_context,
+            'design_json': design_json or {},
+            'pocket_context': pocket_context,
+            'raw_doc_text': raw_doc_text
+        }
+        
+        return self.process(inputs)
+
+    def _create_mock_raw_doc_text(self, evidence_spans: List[EvidenceSpan]) -> str:
+        """Create mock raw document text from evidence spans for backward compatibility."""
+        if not evidence_spans:
+            return ""
+        
+        # Get doc_id from first span
+        doc_id = evidence_spans[0].doc_id
+        
+        # Create a mock document structure
+        sections = {}
+        for span in evidence_spans:
+            section = span.section.lower()
+            if section not in sections:
+                sections[section] = []
+            sections[section].append(span.quote)
+        
+        # Build mock document text
+        mock_text = f"Document: {doc_id}\n\n"
+        
+        for section_name, quotes in sections.items():
+            mock_text += f"{section_name.title()}\n"
+            mock_text += "\n".join(quotes)
+            mock_text += "\n\n"
+        
+        return mock_text
+
+    def _process_llm_path_llm_first(self, evidence_spans: List[EvidenceSpan], 
+                                   trial_context: Dict[str, Any], design_json: Dict[str, Any],
+                                   pocket_context: Any, raw_doc_text: str, doc_id: str) -> Dict[str, Any]:
+        """
+        Process the LLM path using LLM-first, provenance-second architecture.
+        
+        Flow:
+        1. LLMResultsDrafter: Read raw text → Draft results with verbatim quotes
+        2. ProvenanceBacktracer: Find spans for LLM draft results
+        3. ResultsFinalizer: Merge with deterministic results (if any)
+        """
+        llm_results = {
+            'success': False,
+            'method_card': None,
+            'results_factsheet': None,
+            'claims': None,
+            'contradicting_claims': None,
+            'errors': [],
+            'execution_time': 0.0
+        }
+        
+        start_time = time.time()
+        
+        try:
+            # Step 3a: LLM Results Drafter
+            if 'llm_results_drafter' in self.llm_workers and raw_doc_text:
+                self.logger.info("Step 3a: Running LLM Results Drafter")
+                drafter_result = self.llm_workers['llm_results_drafter'].process({
+                    'raw_doc_text': raw_doc_text,
+                    'doc_id': doc_id,
+                    'trial_context': trial_context
+                })
+                
+                if drafter_result.success:
+                    llm_results_draft = drafter_result.output.get('results_draft')
+                    llm_results['results_draft'] = llm_results_draft
+                    llm_results['raw_doc_text'] = raw_doc_text  # Store for provenance backtracing
+                else:
+                    llm_results['errors'].append(f"LLM Results Drafter failed: {drafter_result.error_message}")
+            
+            # Step 3b: Provenance Backtracer
+            if 'provenance_backtracer' in self.llm_workers and llm_results.get('results_draft'):
+                self.logger.info("Step 3b: Running Provenance Backtracer")
+                backtracer_result = self.llm_workers['provenance_backtracer'].process({
+                    'llm_extraction_draft': llm_results['results_draft'],
+                    'raw_doc_text': raw_doc_text,
+                    'evidence_spans': evidence_spans
+                })
+                
+                if backtracer_result.success:
+                    llm_results['results_draft'] = backtracer_result.output.get('llm_extraction_draft')
+                else:
+                    llm_results['errors'].append(f"Provenance Backtracer failed: {backtracer_result.error_message}")
+            
+            # Step 3c: Method Auditor (unchanged)
+            if 'method_auditor' in self.llm_workers:
+                self.logger.info("Step 3c: Running Method Auditor")
+                method_result = self.llm_workers['method_auditor'].process({
+                    'evidence_spans': [s for s in evidence_spans if s.section.lower() in ['methods', 'protocol', 'sap']],
+                    'design_json': design_json or {},
+                    'pocket_context': pocket_context
+                })
+                
+                if method_result.success:
+                    llm_results['method_card'] = method_result.output.get('method_card')
+                else:
+                    llm_results['errors'].append(f"Method Auditor failed: {method_result.error_message}")
+            
+            # Step 3d: Denominator Resolver
+            denominators = None
+            if 'denominator_resolver' in self.llm_workers:
+                self.logger.info("Step 3d: Running Denominator Resolver")
+                denominator_result = self.llm_workers['denominator_resolver'].process({
+                    'evidence_spans': evidence_spans
+                })
+                
+                if denominator_result.success:
+                    denominators = denominator_result.output.get('denominators')
+                    llm_results['denominators'] = denominators
+                else:
+                    llm_results['errors'].append(f"Denominator Resolver failed: {denominator_result.error_message}")
+            
+            # Step 3e: Claimizer
+            if 'claimizer' in self.llm_workers:
+                self.logger.info("Step 3e: Running Claimizer")
+                claim_result = self.llm_workers['claimizer'].process({
+                    'evidence_spans': evidence_spans
+                })
+                
+                if claim_result.success:
+                    llm_results['claims'] = claim_result.output.get('claims')
+                else:
+                    llm_results['errors'].append(f"Claimizer failed: {claim_result.error_message}")
+            
+            # Step 3f: Counter Evidence Miner
+            if 'counter_evidence_miner' in self.llm_workers:
+                self.logger.info("Step 3f: Running Counter Evidence Miner")
+                counter_result = self.llm_workers['counter_evidence_miner'].process({
+                    'corpus_spans': evidence_spans,
+                    'gate_families': ['G1_signal', 'G2_mechanism_delivery', 'G3_design'],
+                    'existing_claims': llm_results.get('claims', [])
+                })
+                
+                if counter_result.success:
+                    llm_results['contradicting_claims'] = counter_result.output.get('contradicting_claims')
+                else:
+                    llm_results['errors'].append(f"Counter Evidence Miner failed: {counter_result.error_message}")
+            
+            # Check if we have the minimum required outputs
+            if llm_results.get('results_draft') or llm_results.get('method_card'):
+                llm_results['success'] = True
+            else:
+                llm_results['errors'].append("Missing required outputs from LLM path")
+            
+            llm_results['execution_time'] = time.time() - start_time
+            
+        except Exception as e:
+            llm_results['errors'].append(f"LLM path processing failed: {str(e)}")
+            llm_results['execution_time'] = time.time() - start_time
+        
+        return llm_results
+
+    def _perform_late_fusion_llm_first(self, deterministic_results: Dict[str, Any],
+                                      llm_results: Dict[str, Any], evidence_spans: List[EvidenceSpan],
+                                      doc_id: str) -> Dict[str, Any]:
+        """
+        Perform late fusion using LLM-first architecture.
+        
+        Uses ResultsFinalizer to merge deterministic and LLM results.
+        """
+        fusion_results = {
+            'success': False,
+            'results_factsheet': None,
+            'method_card': None,
+            'ambiguity_ledger': {},
+            'errors': [],
+            'execution_time': 0.0
+        }
+        
+        start_time = time.time()
+        
+        try:
+            # Use Results Finalizer to merge results
+            if 'results_finalizer' in self.llm_workers:
+                self.logger.info("Running Results Finalizer")
+                
+                finalizer_inputs = {
+                    'doc_id': doc_id,
+                    'denominators': llm_results.get('denominators', {})
+                }
+                
+                # Add deterministic results if available
+                if deterministic_results.get('results_factsheet'):
+                    finalizer_inputs['deterministic_results'] = deterministic_results['results_factsheet']
+                
+                # Add LLM results if available (after provenance backtracing)
+                if llm_results.get('results_draft'):
+                    # First run provenance backtracer if available
+                    if 'provenance_backtracer' in self.llm_workers:
+                        self.logger.info("Step 3b: Running Provenance Backtracer")
+                        
+                        # Create LLMExtractionDraft from LLMResultsDraft
+                        from ..models.llm_extraction_draft import LLMExtractionDraft
+                        llm_extraction_draft = LLMExtractionDraft(
+                            doc_id=doc_id,
+                            results_draft=llm_results['results_draft']
+                        )
+                        
+                        backtracer_inputs = {
+                            'llm_extraction_draft': llm_extraction_draft,
+                            'raw_doc_text': llm_results.get('raw_doc_text', ''),
+                            'doc_id': doc_id
+                        }
+                        backtracer_result = self.llm_workers['provenance_backtracer'].process(backtracer_inputs)
+                        
+                        if backtracer_result.success:
+                            # Extract the results draft from the extraction draft
+                            backtraced_extraction_draft = backtracer_result.output.get('llm_extraction_draft')
+                            if backtraced_extraction_draft and backtraced_extraction_draft.results_draft:
+                                finalizer_inputs['llm_results_draft'] = backtraced_extraction_draft.results_draft
+                            else:
+                                finalizer_inputs['llm_results_draft'] = llm_results['results_draft']
+                        else:
+                            self.logger.warning(f"Provenance backtracing failed: {backtracer_result.error_message}")
+                            # Still pass the original draft, but it won't have spans
+                            finalizer_inputs['llm_results_draft'] = llm_results['results_draft']
+                    else:
+                        finalizer_inputs['llm_results_draft'] = llm_results['results_draft']
+                
+                finalizer_result = self.llm_workers['results_finalizer'].process(finalizer_inputs)
+                
+                if finalizer_result.success:
+                    fusion_results['results_factsheet'] = finalizer_result.output.get('results_factsheet')
+                    fusion_results['ambiguity_ledger'] = finalizer_result.output.get('ambiguity_ledger', {})
+                    fusion_results['success'] = True
+                else:
+                    fusion_results['errors'].append(f"Results Finalizer failed: {finalizer_result.error_message}")
+            
+            # For method card, prefer LLM if available, otherwise use deterministic
+            if llm_results.get('method_card'):
+                fusion_results['method_card'] = llm_results['method_card']
+            elif deterministic_results.get('method_card'):
+                fusion_results['method_card'] = deterministic_results['method_card']
+            
+            fusion_results['execution_time'] = time.time() - start_time
+            
+        except Exception as e:
+            fusion_results['errors'].append(f"Late fusion failed: {str(e)}")
+            fusion_results['execution_time'] = time.time() - start_time
+        
+        return fusion_results
+
+    def _prepare_final_output_llm_first(self, deterministic_results: Dict[str, Any],
+                                       llm_results: Dict[str, Any], fusion_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Prepare final output for LLM-first architecture."""
+        final_results = {
+            'method_card': fusion_results.get('method_card'),
+            'results_factsheet': fusion_results.get('results_factsheet'),
+            'claims': llm_results.get('claims'),
+            'contradicting_claims': llm_results.get('contradicting_claims'),
+            'ambiguity_ledger': fusion_results.get('ambiguity_ledger', {})
+        }
+        
+        return final_results
+
     def _validate_spans(self, evidence_spans: List[EvidenceSpan]) -> Dict[str, Any]:
         """Validate evidence spans against span-specific rules only."""
         validation_result = {
@@ -380,114 +596,12 @@ class LateFusionOrchestrator:
         
         return concepts
     
-    def _process_llm_path(
-        self, 
-        evidence_spans: List[EvidenceSpan],
-        trial_context: Dict[str, Any],
-        design_json: Optional[Dict[str, Any]],
-        pocket_context: Optional[Any]
-    ) -> Dict[str, Any]:
-        """Process the LLM path with all LLM workers."""
-        llm_results = {
-            'success': False,
-            'method_card': None,
-            'results_factsheet': None,
-            'claims': None,
-            'contradicting_claims': None,
-            'errors': [],
-            'execution_time': 0.0
-        }
-        
-        start_time = time.time()
-        
-        try:
-            # Method Auditor
-            if 'method_auditor' in self.llm_workers:
-                self.logger.info("Running Method Auditor")
-                method_result = self.llm_workers['method_auditor'].process({
-                    'evidence_spans': [s for s in evidence_spans if s.section.lower() in ['methods', 'protocol', 'sap']],
-                    'design_json': design_json or {},
-                    'pocket_context': pocket_context
-                })
-                
-                if method_result.success:
-                    llm_results['method_card'] = method_result.output.get('method_card')
-                else:
-                    llm_results['errors'].append(f"Method Auditor failed: {method_result.error_message}")
-            
-            # Denominator Resolver
-            denominators = None
-            if 'denominator_resolver' in self.llm_workers:
-                self.logger.info("Running Denominator Resolver")
-                denominator_result = self.llm_workers['denominator_resolver'].process({
-                    'evidence_spans': evidence_spans
-                })
-                
-                if denominator_result.success:
-                    denominators = denominator_result.output.get('denominators')
-                    llm_results['denominators'] = denominators
-                else:
-                    llm_results['errors'].append(f"Denominator Resolver failed: {denominator_result.error_message}")
-            
-            # Results Distiller
-            if 'results_distiller' in self.llm_workers:
-                self.logger.info("Running Results Distiller")
-                results_result = self.llm_workers['results_distiller'].process({
-                    'evidence_spans': [s for s in evidence_spans if s.section.lower() in ['results', 'abstract', 'table']],
-                    'trial_context': trial_context,
-                    'denominators': denominators
-                })
-                
-                if results_result.success:
-                    llm_results['results_factsheet'] = results_result.output.get('results_factsheet')
-                else:
-                    llm_results['errors'].append(f"Results Distiller failed: {results_result.error_message}")
-            
-            # Claimizer
-            if 'claimizer' in self.llm_workers:
-                self.logger.info("Running Claimizer")
-                claim_result = self.llm_workers['claimizer'].process({
-                    'evidence_spans': evidence_spans
-                })
-                
-                if claim_result.success:
-                    llm_results['claims'] = claim_result.output.get('claims')
-                else:
-                    llm_results['errors'].append(f"Claimizer failed: {claim_result.error_message}")
-            
-            # Counter Evidence Miner
-            if 'counter_evidence_miner' in self.llm_workers:
-                self.logger.info("Running Counter Evidence Miner")
-                counter_result = self.llm_workers['counter_evidence_miner'].process({
-                    'corpus_spans': evidence_spans,
-                    'gate_families': ['G1_signal', 'G2_mechanism_delivery', 'G3_design'],
-                    'existing_claims': llm_results.get('claims', [])
-                })
-                
-                if counter_result.success:
-                    llm_results['contradicting_claims'] = counter_result.output.get('contradicting_claims')
-                else:
-                    llm_results['errors'].append(f"Counter Evidence Miner failed: {counter_result.error_message}")
-            
-            # Check if we have the minimum required outputs
-            if llm_results['method_card'] and llm_results['results_factsheet']:
-                llm_results['success'] = True
-            else:
-                llm_results['errors'].append("Missing required outputs from LLM path")
-            
-            llm_results['execution_time'] = time.time() - start_time
-            
-        except Exception as e:
-            llm_results['errors'].append(f"LLM path processing failed: {str(e)}")
-            llm_results['execution_time'] = time.time() - start_time
-        
-        return llm_results
-    
     def _process_deterministic_path(
         self, 
         evidence_spans: List[EvidenceSpan],
         trial_context: Dict[str, Any],
-        llm_results: Dict[str, Any]
+        design_json: Dict[str, Any],
+        pocket_context: Any
     ) -> Dict[str, Any]:
         """Process the deterministic path with rule-based workers."""
         deterministic_results = {

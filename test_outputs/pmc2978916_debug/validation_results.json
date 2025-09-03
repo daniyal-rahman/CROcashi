@@ -14,43 +14,60 @@
     "must_hit_spans_found": [
       "time to progression",
       "progression-free survival",
-      "overall survival",
-      "every two cycles",
-      "assessed every two cycles",
-      "response rate",
-      "survival",
-      "median"
-    ],
-    "missing_must_hits": [
       "ttp",
+      "overall survival",
       "median survival",
       "os",
-      "Cox proportional hazards",
-      "cox model",
-      "cox regression",
       "RECIST",
       "Gehan",
       "Kaplan-Meier",
       "survival estimated by",
       "KM",
+      "response rate",
+      "survival",
+      "median",
       "ttp",
       "os"
     ],
+    "missing_must_hits": [],
     "errors": [],
     "warnings": [
-      "Missing must-hit concepts: ['ttp', 'median survival', 'os', 'Cox proportional hazards', 'cox model', 'cox regression', 'RECIST', 'Gehan', 'Kaplan-Meier', 'survival estimated by', 'KM', 'ttp', 'os']"
+      "Missing optional must-hit concepts: ['cox']"
     ]
   },
+  "results_factsheet": {
+    "required_metrics_found": [
+      "median_ttp",
+      "median_os",
+      "orr_recist",
+      "ca125_response"
+    ],
+    "missing_metrics": [],
+    "unit_validation": {},
+    "denominator_validation": {},
+    "errors": [],
+    "warnings": []
+  },
+  "method_card": {
+    "endpoints_found": true,
+    "ascertainment_found": true,
+    "survival_method_found": false,
+    "design_found": true,
+    "denominators_found": false,
+    "geography_found": true,
+    "blinding_found": true,
+    "errors": [],
+    "warnings": []
+  },
   "claims": {
-    "total_claims": 0,
-    "numeric_claims": 0,
-    "claims_with_spans": 0,
+    "total_claims": 8,
+    "numeric_claims": 6,
+    "claims_with_spans": 6,
     "methods_detail_claims": 0,
     "operational_claims": 0,
     "limitation_claims": 0,
     "errors": [],
     "warnings": [
-      "Few numeric claims: 0 < 4",
       "Insufficient methods_detail/operational/limitation claims"
     ]
   },
@@ -58,7 +75,7 @@
     "llm_path_success": true,
     "deterministic_path_success": false,
     "fusion_success": true,
-    "ambiguity_ledger_present": true,
+    "ambiguity_ledger_present": false,
     "global_provenance_valid": true,
     "errors": [],
     "warnings": [

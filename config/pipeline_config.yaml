@@ -26,6 +26,24 @@ orchestration:
   alert_on_slow_execution: true
   slow_execution_threshold_minutes: 60
 
+# LLM Path Configuration (LLM-first, provenance-second architecture)
+llm_path:
+  mode: "raw_first"         # vs "span_limited"
+  require_quotes: true
+  backtrace:
+    bm25_topk: 20
+    dense_topk: 10
+    fuzzy_threshold: 0.86
+    numeric_strict: true
+    section_bonus: 0.1
+    allow_table_only: true
+
+# Fusion Configuration
+fusion:
+  prefer_deterministic_if_tie: true
+  min_provenance_score: 0.75
+  hard_fail_if_missing_spans: true
+
 # CT.gov Pipeline Configuration
 ctgov:
   # Pipeline settings

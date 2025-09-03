@@ -40,7 +40,7 @@ def setup_logging(verbose: bool = False, debug: bool = False):
     )
 
 
-def run_test_with_graceful_handling(output_dir: str = None) -> Dict[str, Any]:
+def run_test_with_graceful_handling(output_dir: str = None, strict: bool = False) -> Dict[str, Any]:
     """Run the test with graceful handling of validation failures."""
     
     # Create test runner
@@ -76,7 +76,11 @@ def run_test_with_graceful_handling(output_dir: str = None) -> Dict[str, Any]:
             test_runner._validate_span_counts_and_must_hits(triaged_spans)
             logger.info("✅ Span counts validation passed")
         except Exception as e:
-            logger.warning(f"⚠️  Span counts validation failed: {e}")
+            if strict:
+                logger.error(f"❌ Span counts validation failed: {e}")
+                return {'success': False, 'errors': [str(e)]}
+            else:
+                logger.warning(f"⚠️  Span counts validation failed: {e}")
         
         # Step 5: Run fuzzy alignment
         logger.info("=== STEP 5: Running fuzzy alignment ===")
@@ -92,8 +96,17 @@ def run_test_with_graceful_handling(output_dir: str = None) -> Dict[str, Any]:
             # Analyze extraction results
             analyze_extraction_results(extraction_results)
             
+            # Check for LLM artifacts in strict mode
+            if strict:
+                if not extraction_results.get('results_factsheet') and not extraction_results.get('method_card'):
+                    error_msg = "Dual-path extraction produced no LLM artifacts"
+                    logger.error(f"❌ {error_msg}")
+                    return {'success': False, 'errors': [error_msg]}
+            
         except Exception as e:
             logger.error(f"❌ Dual-path extraction failed: {e}")
+            if strict:
+                return {'success': False, 'errors': [str(e)]}
             # Create mock results for validation
             extraction_results = {
                 'method_card': None,
@@ -167,56 +180,48 @@ def analyze_extraction_results(extraction_results: Dict[str, Any]):
     
     logger.info("📊 EXTRACTION RESULTS ANALYSIS:")
     
-    # Check LLM path results
-    llm_method_card = extraction_results.get('llm_method_card')
-    llm_results_factsheet = extraction_results.get('llm_results_factsheet')
-    
-    if llm_method_card:
-        logger.info("✅ LLM MethodCard produced")
-        logger.info(f"   - Primary endpoint: {getattr(llm_method_card, 'primary_endpoint', 'None')}")
-        logger.info(f"   - Design archetype: {getattr(llm_method_card, 'design_archetype', 'None')}")
-        logger.info(f"   - Span coverage: {len(getattr(llm_method_card, 'span_ids', []))} spans")
-    else:
-        logger.warning("⚠️  No LLM MethodCard produced")
-    
-    if llm_results_factsheet:
-        logger.info("✅ LLM ResultsFactsheet produced")
-        logger.info(f"   - Results count: {len(getattr(llm_results_factsheet, 'results', []))}")
-        logger.info(f"   - Doc ID: {getattr(llm_results_factsheet, 'doc_id', 'None')}")
-        
-        # Analyze individual results
-        for i, result in enumerate(getattr(llm_results_factsheet, 'results', [])):
-            logger.info(f"   - Result {i}: {result.get('metric_type', 'Unknown')} = {result.get('value_native', 'None')} {result.get('unit_native', '')}")
-    else:
-        logger.warning("⚠️  No LLM ResultsFactsheet produced")
-    
-    # Check deterministic path results
-    det_method_card = extraction_results.get('deterministic_method_card')
-    det_results_factsheet = extraction_results.get('deterministic_results_factsheet')
-    
-    if det_method_card:
-        logger.info("✅ Deterministic MethodCard produced")
-    else:
-        logger.warning("⚠️  No deterministic MethodCard produced")
-    
-    if det_results_factsheet:
-        logger.info("✅ Deterministic ResultsFactsheet produced")
-    else:
-        logger.warning("⚠️  No deterministic ResultsFactsheet produced")
-    
-    # Check fusion results
+    # Check LLM-first architecture results
     method_card = extraction_results.get('method_card')
     results_factsheet = extraction_results.get('results_factsheet')
     
     if method_card:
-        logger.info("✅ Fused MethodCard produced")
+        logger.info("✅ MethodCard produced (LLM-first architecture)")
+        # Analyze key fields
+        primary_endpoint = getattr(method_card, 'primary_endpoint', None)
+        secondary_endpoints = getattr(method_card, 'secondary_endpoints', [])
+        design_archetype = getattr(method_card, 'design_archetype', None)
+        gehan_two_stage = getattr(method_card, 'gehan_two_stage', None)
+        
+        if primary_endpoint:
+            logger.info(f"   - Primary endpoint: {primary_endpoint}")
+        if secondary_endpoints:
+            logger.info(f"   - Secondary endpoints: {secondary_endpoints}")
+        if design_archetype:
+            logger.info(f"   - Design archetype: {design_archetype}")
+        if gehan_two_stage:
+            logger.info(f"   - Gehan two-stage: {gehan_two_stage}")
     else:
-        logger.warning("⚠️  No fused MethodCard produced")
+        logger.warning("⚠️  No MethodCard produced")
     
     if results_factsheet:
-        logger.info("✅ Fused ResultsFactsheet produced")
+        logger.info("✅ ResultsFactsheet produced (LLM-first architecture)")
+        results = getattr(results_factsheet, 'results', [])
+        logger.info(f"   - Results count: {len(results)}")
+        
+        # Analyze individual results
+        for i, result in enumerate(results):
+            metric = result.get('metric', 'Unknown')
+            value = result.get('value', 'None')
+            units = result.get('units', '')
+            source = result.get('source', 'unknown')
+            provenance_score = result.get('provenance_score', 0)
+            trust_score = result.get('trust_score', 0)
+            
+            logger.info(f"   - Result {i}: {metric} = {value} {units} (source: {source}, provenance: {provenance_score:.2f}, trust: {trust_score:.2f})")
     else:
-        logger.warning("⚠️  No fused ResultsFactsheet produced")
+        logger.warning("⚠️  No ResultsFactsheet produced")
+    
+    # Note: MethodCard and ResultsFactsheet are already checked above in LLM-first architecture section
     
     # Check claims
     claims = extraction_results.get('claims', [])
@@ -331,6 +336,12 @@ def main():
         help='Enable debug logging'
     )
     
+    parser.add_argument(
+        '--strict',
+        action='store_true',
+        help='Enable strict mode - fail if LLM artifacts are missing'
+    )
+    
     args = parser.parse_args()
     
     # Setup logging
@@ -344,9 +355,10 @@ def main():
     logger = logging.getLogger(__name__)
     logger.info(f"Starting PMC2978916 debug test")
     logger.info(f"Output directory: {output_dir}")
+    logger.info(f"Strict mode: {args.strict}")
     
     try:
-        results = run_test_with_graceful_handling(str(output_dir))
+        results = run_test_with_graceful_handling(str(output_dir), strict=args.strict)
         
         # Analyze and report results
         analyze_test_results(results, str(output_dir))
