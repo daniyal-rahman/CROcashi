@@ -3,14 +3,14 @@
 Detailed GPT-5 analysis for the Cassava trial.
 """
 
+import json
 import sys
 import asyncio
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from ncfd.synthesis.gpt5_thinking_hook import GPT5ThinkingHook
+from ncfd.backtest.outcomes import BacktestOutcomes
+from ncfd.catalyst.backtest import BacktestRunner
+from ncfd.config import get_config
 
 
 async def analyze_cassava_trial():

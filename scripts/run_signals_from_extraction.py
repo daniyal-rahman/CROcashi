@@ -1,35 +1,15 @@
 #!/usr/bin/env python3
 """
-CLI runner to demo S1-S9 signals, gates, and scoring on extraction results.
-
-Usage:
-    python scripts/run_signals_from_extraction.py --extraction-json test_outputs/pmc2978916_debug/extraction_results.json
+Run signals from extraction data.
 """
 
 import json
-import argparse
 import sys
 from pathlib import Path
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from ncfd.signals.study_card_mapper import build_study_card
-from ncfd.signals.primitives import (
-    S1_endpoint_changed, 
-    S2_underpowered_pivotal, 
-    S3_subgroup_only_no_multiplicity, 
-    S4_itt_vs_pp_dropout,
-    S5_implausible_vs_graveyard,
-    S6_many_interims_no_spending,
-    S7_single_arm_where_rct_standard,
-    S7b_randomized_withdrawal_after_OLE,
-    S8_pvalue_cusp_or_heaping,
-    S9_os_pfs_contradiction
-)
-from ncfd.signals.types import SignalResult
-from ncfd.signals.gates import evaluate_all_gates
-from ncfd.signals.scoring import score_trial, get_default_prior_pi, interpret_score, format_score_summary
+from ncfd.signals.primitives import SignalPrimitives
+from ncfd.signals.scoring import SignalScoring
+from ncfd.config import get_config
 
 
 def main():

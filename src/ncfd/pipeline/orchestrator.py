@@ -21,6 +21,7 @@ from dataclasses import dataclass, field, asdict
 from .ctgov_pipeline import CtgovPipeline
 from .sec_pipeline import SecPipeline
 from ..ingest.pubmed.pipeline import PubMedPipeline
+from ..orchestrate.lit_queue import LiteratureQueue
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,9 @@ class UnifiedPipelineOrchestrator:
         self.sec_pipeline = SecPipeline(config.get('sec', {}))
         self.pubmed_pipeline = PubMedPipeline(config.get('pubmed', {}))
         
+        # Initialize literature queue for trial prioritization
+        self.literature_queue = LiteratureQueue(config.get('literature_queue', {}))
+        
         # Orchestration state
         self.state_file = Path(config.get('state_file', '.state/unified_orchestrator.json'))
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
@@ -164,8 +168,8 @@ class UnifiedPipelineOrchestrator:
         Returns:
             Orchestration result
         """
-        execution_id = f"daily_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
-        start_time = datetime.utcnow()
+        execution_id = f"daily_{datetime.now(datetime.UTC).strftime('%Y%m%d_%H%M%S')}"
+        start_time = datetime.now(datetime.UTC)
         
         self.logger.info(f"Starting daily ingestion: {execution_id}")
         
@@ -184,7 +188,7 @@ class UnifiedPipelineOrchestrator:
                 result = self._run_sequential_execution(force_full_scan)
             
             # Update execution result
-            self.current_execution.end_time = datetime.utcnow()
+            self.current_execution.end_time = datetime.now(datetime.UTC)
             self.current_execution.ctgov_result = result.get('ctgov')
             self.current_execution.pubmed_result = result.get('pubmed')
             self.current_execution.sec_result = result.get('sec')
@@ -211,7 +215,7 @@ class UnifiedPipelineOrchestrator:
             error_msg = f"Error in daily ingestion: {e}"
             self.logger.error(error_msg)
             self.current_execution.errors.append(error_msg)
-            self.current_execution.end_time = datetime.utcnow()
+            self.current_execution.end_time = datetime.now(datetime.UTC)
             self.current_execution.finalize()
             return self.current_execution
     
@@ -254,7 +258,7 @@ class UnifiedPipelineOrchestrator:
     
     def _execute_ctgov_pipeline(self, force_full_scan: bool) -> Optional[PipelineExecutionResult]:
         """Execute CT.gov pipeline."""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(datetime.UTC)
         self.logger.info("Executing CT.gov pipeline")
         
         try:
@@ -266,7 +270,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="ctgov",
                 success=result.success,
                 start_time=start_time,
-                end_time=datetime.utcnow(),
+                end_time=datetime.now(datetime.UTC),
                 trials_processed=result.trials_processed,
                 trials_updated=result.trials_updated,
                 trials_new=result.trials_new,
@@ -288,7 +292,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="ctgov",
                 success=False,
                 start_time=start_time,
-                end_time=datetime.utcnow(),
+                end_time=datetime.now(datetime.UTC),
                 errors=[error_msg]
             )
             
@@ -296,7 +300,7 @@ class UnifiedPipelineOrchestrator:
     
     def _execute_pubmed_pipeline(self, force_full_scan: bool) -> Optional[PipelineExecutionResult]:
         """Execute PubMed pipeline."""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(datetime.UTC)
         self.logger.info("Executing PubMed pipeline")
         
         try:
@@ -340,7 +344,7 @@ class UnifiedPipelineOrchestrator:
                         pipeline_name="pubmed",
                         success=True,
                         start_time=start_time,
-                        end_time=datetime.utcnow(),
+                        end_time=datetime.now(datetime.UTC),
                         documents_processed=0,
                         documents_failed=0,
                         warnings=["PubMed pipeline requires async context for full execution"]
@@ -370,7 +374,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="pubmed",
                 success=result.get('success', False),
                 start_time=start_time,
-                end_time=datetime.utcnow(),
+                end_time=datetime.now(datetime.UTC),
                 documents_processed=result.get('documents_processed', 0),
                 documents_failed=result.get('documents_failed', 0),
                 errors=result.get('errors', []),
@@ -389,7 +393,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="pubmed",
                 success=False,
                 start_time=start_time,
-                end_time=datetime.utcnow(),
+                end_time=datetime.now(datetime.UTC),
                 errors=[error_msg]
             )
             
@@ -397,7 +401,7 @@ class UnifiedPipelineOrchestrator:
     
     def _execute_sec_pipeline(self, force_full_scan: bool) -> Optional[PipelineExecutionResult]:
         """Execute SEC pipeline."""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(datetime.UTC)
         self.logger.info("Executing SEC pipeline")
         
         try:
@@ -409,7 +413,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="sec",
                 success=result.success,
                 start_time=start_time,
-                end_time=datetime.utcnow(),
+                end_time=datetime.now(datetime.UTC),
                 filings_processed=result.filings_processed,
                 filings_successful=result.filings_successful,
                 filings_failed=result.filings_failed,
@@ -431,7 +435,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="sec",
                 success=False,
                 start_time=start_time,
-                end_time=datetime.utcnow(),
+                end_time=datetime.now(datetime.UTC),
                 errors=[error_msg]
             )
             
@@ -446,7 +450,7 @@ class UnifiedPipelineOrchestrator:
                 return False
             
             last_run_time = datetime.fromisoformat(last_ctgov_run)
-            time_since_run = datetime.utcnow() - last_run_time
+            time_since_run = datetime.now(datetime.UTC) - last_run_time
             
             # Require CT.gov to have run within the last 24 hours
             return time_since_run < timedelta(hours=24)
@@ -473,7 +477,7 @@ class UnifiedPipelineOrchestrator:
             Orchestration result
         """
         execution_id = f"backfill_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}"
-        start_time = datetime.utcnow()
+        start_time = datetime.now(datetime.UTC)
         
         self.logger.info(f"Starting backfill: {execution_id}")
         
@@ -498,7 +502,7 @@ class UnifiedPipelineOrchestrator:
                     results['sec'] = self._execute_sec_backfill(start_date, end_date)
             
             # Update execution result
-            self.current_execution.end_time = datetime.utcnow()
+            self.current_execution.end_time = datetime.now(datetime.UTC)
             self.current_execution.ctgov_result = results.get('ctgov')
             self.current_execution.pubmed_result = results.get('pubmed')
             self.current_execution.sec_result = results.get('sec')
@@ -519,13 +523,13 @@ class UnifiedPipelineOrchestrator:
             error_msg = f"Error in backfill: {e}"
             self.logger.error(error_msg)
             self.current_execution.errors.append(error_msg)
-            self.current_execution.end_time = datetime.utcnow()
+            self.current_execution.end_time = datetime.now(datetime.UTC)
             self.current_execution.finalize()
             return self.current_execution
     
     def _execute_ctgov_backfill(self, start_date: datetime, end_date: datetime) -> Optional[PipelineExecutionResult]:
         """Execute CT.gov backfill."""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(datetime.UTC)
         self.logger.info("Executing CT.gov backfill")
         
         try:
@@ -535,7 +539,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="ctgov",
                 success=False,
                 start_time=start_time,
-                end_time=datetime.utcnow(),
+                end_time=datetime.now(datetime.UTC),
                 errors=["CT.gov backfill not yet implemented"]
             )
             
@@ -547,7 +551,7 @@ class UnifiedPipelineOrchestrator:
     
     def _execute_pubmed_backfill(self, start_date: datetime, end_date: datetime) -> Optional[PipelineExecutionResult]:
         """Execute PubMed backfill."""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(datetime.UTC)
         self.logger.info("Executing PubMed backfill")
         
         try:
@@ -572,7 +576,7 @@ class UnifiedPipelineOrchestrator:
                         pipeline_name="pubmed",
                         success=False,
                         start_time=start_time,
-                        end_time=datetime.utcnow(),
+                        end_time=datetime.now(datetime.UTC),
                         errors=["PubMed backfill requires async context for full execution"]
                     )
                     return execution_result
@@ -596,7 +600,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="pubmed",
                 success=result.get('success', False),
                 start_time=start_time,
-                end_time=datetime.utcnow(),
+                end_time=datetime.now(datetime.UTC),
                 documents_processed=result.get('documents_processed', 0),
                 documents_failed=result.get('documents_failed', 0),
                 errors=result.get('errors', []),
@@ -612,7 +616,7 @@ class UnifiedPipelineOrchestrator:
     
     def _execute_sec_backfill(self, start_date: datetime, end_date: datetime) -> Optional[PipelineExecutionResult]:
         """Execute SEC backfill."""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(datetime.UTC)
         self.logger.info("Executing SEC backfill")
         
         try:
@@ -624,7 +628,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="sec",
                 success=result.success,
                 start_time=start_time,
-                end_time=datetime.utcnow(),
+                end_time=datetime.now(datetime.UTC),
                 filings_processed=result.filings_processed,
                 filings_successful=result.filings_successful,
                 filings_failed=result.filings_failed,

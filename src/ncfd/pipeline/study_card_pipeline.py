@@ -162,7 +162,7 @@ class StudyCardPipeline:
     
     def execute(self, trial_id: str, trial_context: Dict[str, Any]) -> StudyCardPipelineResult:
         """Execute the complete study card pipeline."""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(datetime.UTC)
         result = StudyCardPipelineResult(
             trial_id=trial_id,
             success=False,
@@ -354,7 +354,7 @@ class StudyCardPipeline:
             
             # Mark pipeline as successful
             result.success = True
-            result.end_time = datetime.utcnow()
+            result.end_time = datetime.now(datetime.UTC)
             
             # Recalculate processing time after setting end_time
             result.processing_time_seconds = (result.end_time - result.start_time).total_seconds()
@@ -368,7 +368,7 @@ class StudyCardPipeline:
             logger.info(f"Study card pipeline completed successfully for trial {trial_id}")
             
         except Exception as e:
-            result.end_time = datetime.utcnow()
+            result.end_time = datetime.now(datetime.UTC)
             result.errors.append(f"Pipeline execution failed: {str(e)}")
             
             # Recalculate processing time after setting end_time

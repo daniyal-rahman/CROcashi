@@ -62,7 +62,17 @@ class PubMedPipeline:
         self._validate_config()
         
         # Initialize components
-        self.client = PubMedClient(self.config.get('client_config', {}))
+        client_config = self.config.get('client_config', {})
+        self.client = PubMedClient(
+            api_key=client_config.get('api_key'),
+            rate_limit_per_sec=client_config.get('rate_limit_requests_per_minute', 8) // 60,  # Convert per minute to per second
+            batch_size=client_config.get('batch_size', 100),
+            max_retries=client_config.get('max_retries', 3),
+            timeout_seconds=client_config.get('timeout_seconds', 30),
+            circuit_breaker_threshold=client_config.get('circuit_breaker_threshold', 5),
+            email=client_config.get('email', 'ncfd@example.com'),
+            tool=client_config.get('tool', 'NCFD')
+        )
         self.mapper = PubMedMapper(self.config.get('mapper_config', {}))
         self.query_builder = PubMedQueryBuilder(self.config.get('query_config', {}))
         self.batch_processor = PubMedBatchProcessor(self.client, self.config.get('max_concurrent_requests', 5))
@@ -582,7 +592,7 @@ class PubMedPipeline:
                                 doc['text']['fulltext_text'] = fulltext_content
                                 doc['text']['char_count_fulltext'] = len(fulltext_content)
                                 doc['text']['fulltext_ttl_date'] = (
-                                    datetime.utcnow() + timedelta(days=self.config.fulltext_ttl_days)
+                                    datetime.now(datetime.UTC) + timedelta(days=self.config.fulltext_ttl_days)
                                 ).isoformat()
                                 doc['content_type'] = 'fulltext'
                                 fulltext_docs.append(doc)

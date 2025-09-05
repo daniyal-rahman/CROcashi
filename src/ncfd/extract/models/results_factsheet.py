@@ -235,36 +235,36 @@ class ResultsFactsheet(BaseModel, ProvenanceMixin):
         
         # If factsheet has doc_id, validate it matches
         if self.doc_id and span_doc_id and self.doc_id != span_doc_id:
-            print(f"DEBUG: Factsheet doc_id '{self.doc_id}' does not match span_ids doc_id '{span_doc_id}'")
+            logger.debug(f"Factsheet doc_id '{self.doc_id}' does not match span_ids doc_id '{span_doc_id}'")
             return False
         
         # Validate timepoint rules
         if 'timepoint' in result and result['timepoint'] is not None and result['metric'].startswith('median_'):
-            print(f"DEBUG: Timepoint not allowed for median metrics: {result['metric']}")
+            logger.debug(f"Timepoint not allowed for median metrics: {result['metric']}")
             return False  # Reject timepoint with median metrics
         if result['metric'] in (MetricType.OS_FIXED_TIME.value, MetricType.PFS_FIXED_TIME.value):
             if not result.get('timepoint'):
-                print(f"DEBUG: {result['metric']} requires timepoint (e.g., 12_month)")
+                logger.debug(f"{result['metric']} requires timepoint (e.g., 12_month)")
                 return False
             # Validate timepoint format for fixed-time metrics
             import re
             timepoint_pattern = r"^\d+_(week|month|year)s?$"
             if not re.match(timepoint_pattern, result['timepoint']):
-                print(f"DEBUG: Invalid timepoint format '{result['timepoint']}'. Expected format: number_unit (e.g., 12_month)")
+                logger.debug(f"Invalid timepoint format '{result['timepoint']}'. Expected format: number_unit (e.g., 12_month)")
                 return False
         
         # Validate analysis_set if present
         if 'analysis_set' in result and result['analysis_set'] is not None:
             valid_analysis_sets = [e.value for e in AnalysisSetType]
             if result['analysis_set'] not in valid_analysis_sets:
-                print(f"DEBUG: Invalid analysis_set '{result['analysis_set']}'. Must be one of {valid_analysis_sets}")
+                logger.debug(f"Invalid analysis_set '{result['analysis_set']}'. Must be one of {valid_analysis_sets}")
                 return False
         
         # Validate summary_statistic if present
         if 'summary_statistic' in result:
             allowed_summary_stats = {'median', 'proportion', 'percentage', 'mean', 'hazard_ratio', 'not_specified', None}
             if result['summary_statistic'] not in allowed_summary_stats:
-                print(f"DEBUG: Invalid summary_statistic: {result['summary_statistic']}")
+                logger.debug(f"Invalid summary_statistic: {result['summary_statistic']}")
                 return False
 
         # HR-specific constraints

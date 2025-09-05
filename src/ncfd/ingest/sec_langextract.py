@@ -154,7 +154,7 @@ class SecLangExtractor:
                 endpoints_mentioned=[extraction_result.primary_endpoint_outcome] if extraction_result.primary_endpoint_outcome else [],
                 safety_signals=extraction_result.safety_events,
                 program_changes=[extraction_result.event_description] if "discontinuation" in extraction_result.event_type.lower() else [],
-                extracted_at=datetime.utcnow(),
+                extracted_at=datetime.now(datetime.UTC),
                 extraction_method="langextract_gemini",
                 confidence=extraction_result.confidence,
                 evidence_spans=extraction_result.evidence_spans
@@ -208,7 +208,7 @@ class SecLangExtractor:
                 regulatory_updates=extraction_result.fda_interactions + extraction_result.regulatory_milestones,
                 pipeline_changes=[extraction_result.pipeline_stage] if extraction_result.pipeline_stage else [],
                 risk_factors=[],  # Not extracted in this schema
-                extracted_at=datetime.utcnow(),
+                extracted_at=datetime.now(datetime.UTC),
                 extraction_method="langextract_gemini",
                 confidence=extraction_result.confidence,
                 evidence_spans=extraction_result.evidence_spans
@@ -438,7 +438,7 @@ Remember: ONLY extract what is explicitly stated. If in doubt, use null.
         Returns:
             Extraction result with all extracted items
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(datetime.UTC)
         extracted_items = []
         errors = []
         warnings = []
@@ -459,7 +459,7 @@ Remember: ONLY extract what is explicitly stated. If in doubt, use null.
                 errors.append(error_msg)
                 logger.error(error_msg)
         
-        processing_time = (datetime.utcnow() - start_time).total_seconds()
+        processing_time = (datetime.now(datetime.UTC) - start_time).total_seconds()
         
         # Create extraction result
         result = ExtractionResult(

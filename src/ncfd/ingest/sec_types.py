@@ -8,7 +8,7 @@ sections, and extracted information with proper validation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, UTC, datetime
 from typing import List, Optional, Dict, Any, Union
 from enum import Enum
 
@@ -41,7 +41,7 @@ class ContentHash:
         self.algorithm = algorithm
         self.hash_value = self._compute_hash(content)
         self.content_length = len(content)
-        self.computed_at = datetime.utcnow()
+        self.computed_at = datetime.now(UTC)
     
     def _compute_hash(self, content: str) -> str:
         """Compute hash of content."""

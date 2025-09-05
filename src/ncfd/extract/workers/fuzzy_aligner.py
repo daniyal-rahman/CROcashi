@@ -366,24 +366,9 @@ class FuzzyAligner(BaseWorker):
         return position_map[stripped_pos]
     
     def _normalize_text(self, text: str) -> str:
-        """Normalize text for comparison."""
-        if not text:
-            return ""
-        
-        normalized = text
-        
-        if self.config.normalize_text:
-            # Remove extra whitespace
-            normalized = re.sub(r'\s+', ' ', normalized)
-            normalized = normalized.strip()
-            
-            # Remove punctuation (optional)
-            # normalized = re.sub(r'[^\w\s]', '', normalized)
-        
-        if not self.config.preserve_case:
-            normalized = normalized.lower()
-        
-        return normalized
+        """Normalize text for comparison using shared TextNormalizer."""
+        from ..utils.text_normalization import TextNormalizer
+        return TextNormalizer.normalize_text(text, self.config)
     
     def align_single_quote(self, quote: str, doc_id: int) -> Dict[str, Any]:
         """Align a single quote (convenience method)."""

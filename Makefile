@@ -64,7 +64,7 @@ endef
         review_list review_show review_accept review_reject \
         batch_dry batch_persist \
         subs_inspect subs_dry subs_load subs_build subs_link subs_link_load \
-        review_fill run_all ingest_ctgov \
+        review_fill run_all \
         ingest_sec_tickers ingest_sec_filings ingest_sec_backfill ingest_sec_status ingest_sec_all
 
 # --- Help ---
@@ -108,7 +108,7 @@ help: ## Show this help message
 	@echo "  review_show        - Show review queue item (use RQ=id)"
 	@echo "  review_accept      - Accept review (use RQ=id CID=company_id)"
 	@echo "  review_reject      - Reject review (use RQ=id)"
-	@echo "  ingest_ctgov       - Ingest ClinicalTrials.gov data"
+
 	@echo "  ingest_sec_tickers - Ingest SEC company tickers and securities"
 	@echo "  ingest_sec_filings - Run SEC filings pipeline for daily monitoring"
 	@echo "  ingest_sec_backfill - Run SEC filings backfill"
@@ -293,12 +293,11 @@ alembic: ## Run alembic command (use ARGS='history' or other commands)
 
 # --- Data Processing ---
 
-# ClinicalTrials.gov ingestion
+# ClinicalTrials.gov ingestion (use unified orchestrator instead)
 SINCE ?= 2000-01-01
 SINCE := $(or $(CTG_SINCE),$(SINCE))
 
-ingest_ctgov: ## Ingest ClinicalTrials.gov data (use SINCE=YYYY-MM-DD)
-	CONFIG_PROFILE=local $(PYTHON) scripts/ingest_ctgov.py --since $(SINCE)
+
 
 # SEC data ingestion
 SEC_JSON ?= data/sec/company_tickers_exchange.json
@@ -329,23 +328,23 @@ ingest_sec_all: ## Run all SEC ingestion tasks (tickers, filings, status)
 
 # Resolver CLI commands
 run_id: ## Generate run ID for tracking
-	$(PYTHON) -c "from datetime import datetime; print(datetime.utcnow().strftime('resolver-%Y%m%dT%H%M%SZ'))"
+	$(PYTHON) -c "from datetime import datetime, UTC; print(datetime.now(UTC).strftime('resolver-%Y%m%dT%H%M%SZ'))"
 
 resolve_one: ## Resolve single sponsor (use SPONSOR='company name')
-	PYTHONPATH=src $(PYTHON) -m ncfd.mapping.cli resolve-one "$(SPONSOR)" --cfg config/resolver.yaml --k 25
+	$(PYTHON) -m ncfd.mapping.cli resolve-one "$(SPONSOR)" --cfg config/resolver.yaml --k 25
 
 resolve_batch: ## Resolve batch of sponsors
-	PYTHONPATH=src $(PYTHON) -m ncfd.mapping.cli resolve-batch --cfg config/resolver.yaml --limit 25
+	$(PYTHON) -m ncfd.mapping.cli resolve-batch --cfg config/resolver.yaml --limit 25
 
 resolve_one_persist: ## Resolve single sponsor and persist results (use SPONSOR='name' NCT=id RUN_ID=id)
-	PYTHONPATH=src $(PYTHON) -m ncfd.mapping.cli resolve-one "$(SPONSOR)" --cfg config/resolver.yaml --k 25 --persist --nct $(NCT) --run-id $(RUN_ID)
+	$(PYTHON) -m ncfd.mapping.cli resolve-one "$(SPONSOR)" --cfg config/resolver.yaml --k 25 --persist --nct $(NCT) --run-id $(RUN_ID)
 
 # Review queue management
 review_list: ## List items in review queue
-	@PYTHONPATH=src $(PYTHON) -m ncfd.mapping.cli review-list
+	@$(PYTHON) -m ncfd.mapping.cli review-list
 
 review_show: ## Show review queue item (use RQ=id)
-	@PYTHONPATH=src $(PYTHON) -m ncfd.mapping.cli review-show $(RQ)
+	@$(PYTHON) -m ncfd.mapping.cli review-show $(RQ)
 
 # Usage: make review_accept RQ=123 CID=6968 [APPLY=1]
 review_accept: ## Accept review (use RQ=id CID=company_id [APPLY=1])
@@ -355,43 +354,43 @@ endif
 ifndef CID
 	$(error Provide CID=<company_id>)
 endif
-	@PYTHONPATH=src $(PYTHON) -m ncfd.mapping.cli review-accept $(RQ) --company-id $(CID) $(if $(APPLY),--apply-trial,)
+	@$(PYTHON) -m ncfd.mapping.cli review-accept $(RQ) --company-id $(CID) $(if $(APPLY),--apply-trial,)
 
 # Usage: make review_reject RQ=123 [LABEL=1]
 review_reject: ## Reject review (use RQ=id [LABEL=1])
 ifndef RQ
 	$(error Provide RQ=<rq_id>)
 endif
-	@PYTHONPATH=src $(PYTHON) -m ncfd.mapping.cli review-reject $(RQ) $(if $(LABEL),--label,)
+	@$(PYTHON) -m ncfd.mapping.cli review-reject $(RQ) $(if $(LABEL),--label,)
 
 # Batch processing
 batch_dry: ## Run batch resolution in dry-run mode (use N=number)
-	PYTHONPATH=src $(PYTHON) -m ncfd.mapping.cli resolve-batch --limit $(N) --cfg config/resolver.yaml
+	$(PYTHON) -m ncfd.mapping.cli resolve-batch --limit $(N) --cfg config/resolver.yaml
 
 batch_persist: ## Run batch resolution and persist results (use N=number RUN_ID=id)
-	PYTHONPATH=src $(PYTHON) -m ncfd.mapping.cli resolve-batch --limit $(N) --cfg config/resolver.yaml --persist --run-id $(RUN_ID) --apply-trial
+	$(PYTHON) -m ncfd.mapping.cli resolve-batch --limit $(N) --cfg config/resolver.yaml --persist --run-id $(RUN_ID) --apply-trial
 
 # Subsidiaries processing
 SINCE ?= 2018-01-01
 LIM ?= 200
 
 subs_inspect: ## Inspect subsidiary data
-	@PYTHONPATH=src $(PYTHON) -m ncfd.ingest.subsidiaries inspect
+	@$(PYTHON) -m ncfd.ingest.subsidiaries inspect
 
 subs_dry: ## Dry run subsidiary processing (use SINCE=YYYY-MM-DD LIM=number)
-	@PYTHONPATH=src $(PYTHON) -m ncfd.ingest.subsidiaries dry --since $(SINCE) --limit $(LIM)
+	@$(PYTHON) -m ncfd.ingest.subsidiaries dry --since $(SINCE) --limit $(LIM)
 
 subs_load: ## Load subsidiary data (use SINCE=YYYY-MM-DD LIM=number)
-	@PYTHONPATH=src $(PYTHON) -m ncfd.ingest.subsidiaries load --since $(SINCE) --limit $(LIM)
+	@$(PYTHON) -m ncfd.ingest.subsidiaries load --since $(SINCE) --limit $(LIM)
 
 subs_build: ## Alias for subs_load (kept for compatibility)
 	$(MAKE) subs_load
 
 subs_link: ## Link subsidiaries (use LIM=number)
-	@PYTHONPATH=src $(PYTHON) -m ncfd.ingest.subs_link dry --limit $(LIM)
+	@$(PYTHON) -m ncfd.ingest.subs_link dry --limit $(LIM)
 
 subs_link_load: ## Load subsidiary links
-	@PYTHONPATH=src $(PYTHON) -m ncfd.ingest.subs_link load
+	@$(PYTHON) -m ncfd.ingest.subs_link load
 
 # Review queue population
 review_fill: ## Populate review queue from trials (no-decisions)
@@ -406,7 +405,7 @@ run_all: ## Full setup: start database, run migrations, ingest data
 	$(MAKE) db_up
 	$(MAKE) db_wait
 	$(MAKE) migrate_up
-	$(MAKE) ingest_ctgov
+
 	$(MAKE) ingest_sec_tickers
 
 # --- Legacy Aliases (for backward compatibility) ---
@@ -424,7 +423,7 @@ resolve_batch_auto: ## Resolve batch of trials using auto-decider cascade
 	@echo "   - Run ID: $$(date -u +%Y%m%dT%H%M%SZ)"
 	@RUN_ID=$$(date -u +%Y%m%dT%H%M%SZ); \
 	echo "RUN_ID=$$RUN_ID"; \
-	PYTHONPATH=src $(PYTHON) -m ncfd.mapping.cli resolve-batch \
+	$(PYTHON) -m ncfd.mapping.cli resolve-batch \
 		--limit $(or $(N),100) \
 		--persist \
 		--apply-trial \

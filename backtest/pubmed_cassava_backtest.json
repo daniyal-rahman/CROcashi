@@ -1,0 +1,42 @@
+{
+  "test_info": {
+    "date": "2025-09-04T05:51:35.368175+00:00",
+    "trial_id": "NCT04388254",
+    "test_type": "PubMed Literature Review Backtest"
+  },
+  "pipeline_results": {
+    "total_documents": 14,
+    "documents_by_stage": {
+      "U0": 7,
+      "U1": 7
+    },
+    "documents_by_relevance": {},
+    "documents_by_shortability": {},
+    "top_documents": []
+  },
+  "llm_verification": {
+    "error": "type object 'datetime.datetime' has no attribute 'UTC'",
+    "llm_found_trials": 0,
+    "llm_found_papers": 0,
+    "llm_confidence": 0.0
+  },
+  "summary": {
+    "pipeline_performance": {
+      "total_documents_found": 14,
+      "high_relevance_documents": 0,
+      "high_shortability_documents": 0,
+      "relevance_coverage": 0.0,
+      "shortability_coverage": 0.0
+    },
+    "llm_verification": {
+      "llm_found_papers": 0,
+      "llm_confidence": 0.0,
+      "pipeline_vs_llm": "14 vs 0 papers"
+    },
+    "quality_assessment": {
+      "pipeline_quality": "needs_improvement",
+      "llm_agreement": "low",
+      "overall_verdict": "fail"
+    }
+  }
+}

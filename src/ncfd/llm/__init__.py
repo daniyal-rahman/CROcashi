@@ -1,0 +1,23 @@
+"""
+LLM Abstraction Layer
+
+This package provides a modular, provider-agnostic interface for LLM interactions.
+Supports OpenAI, Anthropic, and Gemini with unified request/response handling.
+"""
+
+from .models import LLMRequest, LLMResponse, LLMError
+from .base_provider import BaseLLMProvider
+from .factory import LLMProviderFactory
+from .config import LLMConfig, load_llm_config
+from .providers.openai_provider import OpenAIProvider
+
+__all__ = [
+    "LLMRequest",
+    "LLMResponse", 
+    "LLMError",
+    "BaseLLMProvider",
+    "LLMProviderFactory",
+    "LLMConfig",
+    "load_llm_config",
+    "OpenAIProvider"
+]

@@ -13,6 +13,7 @@ from .factsbin_selector import FactsBinSelector
 from .span_limited_normalizer import SpanLimitedNormalizer
 from .claimizer import Claimizer
 from .counter_evidence_miner import CounterEvidenceMiner
+from .mechanistic_dose_researcher import MechanisticDoseResearcher
 
 __all__ = [
     "MethodAuditor",
@@ -23,5 +24,6 @@ __all__ = [
     "FactsBinSelector",
     "SpanLimitedNormalizer",
     "Claimizer",
-    "CounterEvidenceMiner"
+    "CounterEvidenceMiner",
+    "MechanisticDoseResearcher"
 ]

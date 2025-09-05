@@ -334,54 +334,9 @@ class DeterministicMethodAuditor(BaseWorker):
         return 'not_reported'
     
     def _normalize_phase_text(self, text: str) -> str:
-        """
-        Normalize phase text by converting Roman numerals to Arabic numerals.
-        This helps ensure consistent phase extraction.
-        """
-        # Roman numeral to Arabic mapping
-        roman_to_arabic = {
-            'I': '1', 'II': '2', 'III': '3', 'IV': '4', 'V': '5',
-            'VI': '6', 'VII': '7', 'VIII': '8', 'IX': '9', 'X': '10'
-        }
-        
-        # Pattern to match "phase" followed by Roman numerals (including mixed patterns)
-        # Handle patterns like "phase I/II", "phase I and II", etc.
-        phase_roman_pattern = r'phase\s*([IiVvXx]+(?:\s*[/\s+and\s+]+\s*[IiVvXx]+)*)'
-        
-        def replace_roman(match):
-            roman_text = match.group(1).upper()
-            
-            # Handle mixed patterns like "I/II" or "I and II"
-            if '/' in roman_text:
-                parts = roman_text.split('/')
-                normalized_parts = []
-                for part in parts:
-                    part = part.strip()
-                    if part in roman_to_arabic:
-                        normalized_parts.append(roman_to_arabic[part])
-                    else:
-                        normalized_parts.append(part)
-                return f"phase {'/'.join(normalized_parts)}"
-            elif 'AND' in roman_text:
-                parts = roman_text.split('AND')
-                normalized_parts = []
-                for part in parts:
-                    part = part.strip()
-                    if part in roman_to_arabic:
-                        normalized_parts.append(roman_to_arabic[part])
-                    else:
-                        normalized_parts.append(part)
-                return f"phase {' and '.join(normalized_parts)}"
-            else:
-                # Single Roman numeral
-                if roman_text in roman_to_arabic:
-                    return f"phase {roman_to_arabic[roman_text]}"
-                return match.group(0)  # Return original if not found
-        
-        # Replace Roman numerals with Arabic numerals
-        normalized_text = re.sub(phase_roman_pattern, replace_roman, text, flags=re.IGNORECASE)
-        
-        return normalized_text
+        """Normalize phase text using shared TextNormalizer."""
+        from ...utils.text_normalization import TextNormalizer
+        return TextNormalizer.normalize_phase_text(text)
     
     def _extract_gehan_two_stage(self, spans: List[EvidenceSpan]) -> Optional[bool]:
         """Extract Gehan two-stage design using explicit Gehan span."""

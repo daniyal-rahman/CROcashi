@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, UTC
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Generator
 import json
@@ -25,6 +25,7 @@ from ..ingest.ctgov_types import ComprehensiveTrialFields, IngestionResult, Spon
 from ..db.session import get_session
 from ..db.models import Trial, TrialVersion, Company, CtgovIngestState
 from ..config import get_config
+from .asset_resolver import AssetResolver, AssetMatch
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,11 @@ class CtgovPipelineConfig:
     focus_intervention_types: List[str] = field(default_factory=lambda: ["DRUG", "BIOLOGICAL"])
     focus_study_types: List[str] = field(default_factory=lambda: ["INTERVENTIONAL"])
     
+    # Asset resolution
+    asset_resolution_enabled: bool = True
+    create_new_assets: bool = True
+    min_asset_confidence: float = 0.7
+    
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> CtgovPipelineConfig:
         """Create config from dictionary."""
@@ -88,6 +94,7 @@ class CtgovPipeline:
         # Initialize components
         self.client = CtgovClient(base_url=self.config.api_base_url)
         self.change_detector = CtgovChangeDetector()
+        self.asset_resolver = AssetResolver()
         
         # State management
         self.state_file = Path('.state/ctgov_pipeline.json')
@@ -101,8 +108,9 @@ class CtgovPipeline:
             'trials_new': 0,
             'changes_detected': 0,
             'significant_changes': 0,
-            'errors': [],
-            'warnings': []
+            'assets_resolved': 0,
+            'assets_created': 0,
+            'trial_asset_links': 0
         }
         
         self.logger.info("CT.gov Pipeline initialized")
@@ -117,7 +125,7 @@ class CtgovPipeline:
         Returns:
             IngestionResult with processing statistics
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(UTC)
         self.logger.info("Starting CT.gov daily ingestion")
         
         try:
@@ -127,7 +135,7 @@ class CtgovPipeline:
                 since_date = self._get_last_update_date()
             
             if since_date is None:
-                since_date = datetime.utcnow() - timedelta(days=self.config.default_since_days)
+                since_date = datetime.now(UTC) - timedelta(days=self.config.default_since_days)
             
             self.logger.info(f"Ingesting trials since: {since_date}")
             
@@ -139,10 +147,10 @@ class CtgovPipeline:
             
             # Update cursor
             if self.config.save_cursor and result.success:
-                self._update_last_update_date(datetime.utcnow())
+                self._update_last_update_date(datetime.now(UTC))
             
             # Calculate processing time
-            result.processing_time_seconds = (datetime.utcnow() - start_time).total_seconds()
+            result.processing_time_seconds = (datetime.now(UTC) - start_time).total_seconds()
             
             self.logger.info(f"CT.gov ingestion completed: {result.trials_processed} trials processed")
             return result
@@ -154,7 +162,7 @@ class CtgovPipeline:
             return IngestionResult(
                 success=False,
                 errors=[error_msg],
-                processing_time_seconds=(datetime.utcnow() - start_time).total_seconds()
+                processing_time_seconds=(datetime.now(UTC) - start_time).total_seconds()
             )
     
     def run_limited_ingestion(self, 
@@ -174,7 +182,7 @@ class CtgovPipeline:
         Returns:
             IngestionResult with processing statistics
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(UTC)
         self.logger.info(f"Starting limited CT.gov ingestion: max_studies={max_studies}")
         
         try:
@@ -192,7 +200,7 @@ class CtgovPipeline:
             )
             
             # Calculate processing time
-            result.processing_time_seconds = (datetime.utcnow() - start_time).total_seconds()
+            result.processing_time_seconds = (datetime.now(UTC) - start_time).total_seconds()
             
             self.logger.info(f"Limited CT.gov ingestion completed: {result.trials_processed} trials processed")
             return result
@@ -204,7 +212,7 @@ class CtgovPipeline:
             return IngestionResult(
                 success=False,
                 errors=[error_msg],
-                processing_time_seconds=(datetime.utcnow() - start_time).total_seconds()
+                processing_time_seconds=(datetime.now(UTC) - start_time).total_seconds()
             )
     
     def _run_ingestion_with_limits(self, 
@@ -335,6 +343,28 @@ class CtgovPipeline:
             self.logger.warning(f"Error applying additional filters: {e}")
             return True  # Default to including if filter fails
     
+    def _extract_comprehensive_trial_fields(self, raw_trial: Dict[str, Any]) -> ComprehensiveTrialFields:
+        """Extract comprehensive trial fields from raw CT.gov data using the client."""
+        try:
+            # Use the client's extraction method instead of duplicating logic
+            return self.client.extract_comprehensive_fields(raw_trial)
+        except Exception as e:
+            self.logger.error(f"Error extracting comprehensive trial fields: {e}")
+            # Fallback to basic extraction
+            return self._extract_basic_trial_fields(raw_trial)
+    
+    def _extract_basic_trial_fields(self, raw_trial: Dict[str, Any]) -> ComprehensiveTrialFields:
+        """Fallback basic extraction if comprehensive extraction fails."""
+        protocol = raw_trial.get('protocolSection', {})
+        identification = protocol.get('identificationModule', {})
+        
+        return ComprehensiveTrialFields(
+            nct_id=identification.get('nctId', ''),
+            brief_title=identification.get('briefTitle'),
+            official_title=identification.get('officialTitle'),
+            raw_jsonb=raw_trial
+        )
+    
     def _extract_phase(self, study: Dict[str, Any]) -> Optional[str]:
         """Extract trial phase from study data."""
         try:
@@ -363,278 +393,6 @@ class CtgovPipeline:
             return None
         except Exception:
             return None
-    
-    def _extract_comprehensive_trial_fields(self, raw_trial: Dict[str, Any]) -> ComprehensiveTrialFields:
-        """Extract comprehensive trial fields from raw CT.gov data as per spec."""
-        try:
-            protocol = raw_trial.get('protocolSection', {})
-            identification = protocol.get('identificationModule', {})
-            design = protocol.get('designModule', {})
-            status_module = protocol.get('statusModule', {})
-            arms_interventions = protocol.get('armsInterventionsModule', {})
-            conditions = protocol.get('conditionsModule', {})
-            outcomes = protocol.get('outcomesModule', {})
-            enrollment = protocol.get('enrollmentModule', {})
-            sponsor = protocol.get('sponsorCollaboratorsModule', {})
-            
-            # Extract sponsor information
-            sponsor_info = self._extract_sponsor_info(sponsor)
-            
-            # Extract trial design
-            trial_design = self._extract_trial_design(design)
-            
-            # Extract interventions
-            interventions = self._extract_interventions(arms_interventions)
-            
-            # Extract conditions
-            conditions_list = self._extract_conditions(conditions)
-            
-            # Extract outcomes
-            outcomes_list = self._extract_outcomes(outcomes)
-            
-            # Extract enrollment info
-            enrollment_info = self._extract_enrollment_info(enrollment)
-            
-            # Extract statistical analysis
-            statistical_analysis = self._extract_statistical_analysis(outcomes)
-            
-            # Extract locations
-            locations = self._extract_locations(protocol.get('leadSponsorModule', {}))
-            
-            # Create comprehensive trial fields
-            trial_fields = ComprehensiveTrialFields(
-                nct_id=identification.get('nctId', ''),
-                brief_title=identification.get('briefTitle'),
-                official_title=identification.get('officialTitle'),
-                acronym=identification.get('acronym'),
-                sponsor_info=sponsor_info,
-                study_type=self._extract_study_type(design),
-                phase=self._extract_phase_enum(design),
-                status=self._extract_status_enum(status_module),
-                trial_design=trial_design,
-                interventions=interventions,
-                conditions=conditions_list,
-                outcomes=outcomes_list,
-                enrollment_info=enrollment_info,
-                statistical_analysis=statistical_analysis,
-                locations=locations,
-                raw_jsonb=raw_trial
-            )
-            
-            return trial_fields
-            
-        except Exception as e:
-            self.logger.error(f"Error extracting comprehensive trial fields: {e}")
-            # Fallback to basic extraction
-            return self._extract_basic_trial_fields(raw_trial)
-    
-    def _extract_basic_trial_fields(self, raw_trial: Dict[str, Any]) -> ComprehensiveTrialFields:
-        """Fallback basic extraction if comprehensive extraction fails."""
-        protocol = raw_trial.get('protocolSection', {})
-        identification = protocol.get('identificationModule', {})
-        
-        return ComprehensiveTrialFields(
-            nct_id=identification.get('nctId', ''),
-            brief_title=identification.get('briefTitle'),
-            official_title=identification.get('officialTitle'),
-            raw_jsonb=raw_trial
-        )
-    
-    def _extract_sponsor_info(self, sponsor_module: Dict[str, Any]) -> SponsorInfo:
-        """Extract detailed sponsor information."""
-        try:
-            lead_sponsor = sponsor_module.get('leadSponsor', {})
-            collaborators = sponsor_module.get('collaborators', [])
-            responsible_party = sponsor_module.get('responsibleParty', {})
-            
-            return SponsorInfo(
-                lead_sponsor_name=lead_sponsor.get('name'),
-                lead_sponsor_cik=lead_sponsor.get('cik'),
-                lead_sponsor_lei=lead_sponsor.get('lei'),
-                lead_sponsor_country=lead_sponsor.get('country'),
-                collaborators=[c.get('name', '') for c in collaborators if c.get('name')],
-                responsible_party_name=responsible_party.get('name'),
-                responsible_party_type=responsible_party.get('type'),
-                agency_class=sponsor_module.get('agencyClass')
-            )
-        except Exception as e:
-            self.logger.warning(f"Error extracting sponsor info: {e}")
-            return SponsorInfo()
-    
-    def _extract_trial_design(self, design_module: Dict[str, Any]) -> TrialDesign:
-        """Extract trial design information."""
-        try:
-            return TrialDesign(
-                allocation=design_module.get('allocation'),
-                masking=design_module.get('masking'),
-                masking_description=design_module.get('maskingDescription'),
-                primary_purpose=design_module.get('primaryPurpose'),
-                intervention_model=design_module.get('interventionModel'),
-                time_perspective=design_module.get('timePerspective'),
-                observational_model=design_module.get('observationalModel')
-            )
-        except Exception as e:
-            self.logger.warning(f"Error extracting trial design: {e}")
-            return TrialDesign()
-    
-    def _extract_interventions(self, arms_interventions: Dict[str, Any]) -> List[Intervention]:
-        """Extract intervention information."""
-        try:
-            interventions = []
-            for int_data in arms_interventions.get('interventions', []):
-                intervention = Intervention(
-                    name=int_data.get('name', ''),
-                    type=self._extract_intervention_type(int_data.get('type')),
-                    description=int_data.get('description'),
-                    arm_labels=int_data.get('armLabels', []),
-                    other_names=int_data.get('otherNames', []),
-                    drug_codes=int_data.get('drugCodes', [])
-                )
-                interventions.append(intervention)
-            return interventions
-        except Exception as e:
-            self.logger.warning(f"Error extracting interventions: {e}")
-            return []
-    
-    def _extract_conditions(self, conditions_module: Dict[str, Any]) -> List[Condition]:
-        """Extract condition information."""
-        try:
-            conditions = []
-            if isinstance(conditions_module, dict):
-                for cond_data in conditions_module.get('conditions', []):
-                    if isinstance(cond_data, dict):
-                        condition = Condition(
-                            name=cond_data.get('name', ''),
-                            synonyms=cond_data.get('synonyms', [])
-                        )
-                        conditions.append(condition)
-            return conditions
-        except Exception as e:
-            self.logger.warning(f"Error extracting conditions: {e}")
-            return []
-    
-    def _extract_outcomes(self, outcomes_module: Dict[str, Any]) -> List[Outcome]:
-        """Extract outcome information."""
-        try:
-            outcomes = []
-            for outcome_data in outcomes_module.get('outcomes', []):
-                outcome = Outcome(
-                    name=outcome_data.get('name', ''),
-                    type=outcome_data.get('type'),
-                    description=outcome_data.get('description'),
-                    time_frame=outcome_data.get('timeFrame'),
-                    is_primary=outcome_data.get('isPrimary', False)
-                )
-                outcomes.append(outcome)
-            return outcomes
-        except Exception as e:
-            self.logger.warning(f"Error extracting outcomes: {e}")
-            return []
-    
-    def _extract_enrollment_info(self, enrollment_module: Dict[str, Any]) -> EnrollmentInfo:
-        """Extract enrollment information."""
-        try:
-            if not isinstance(enrollment_module, dict):
-                return EnrollmentInfo()
-                
-            return EnrollmentInfo(
-                count=enrollment_module.get('actualEnrollment'),
-                type='ACTUAL' if enrollment_module.get('actualEnrollment') else 'ESTIMATED',
-                age_min=enrollment_module.get('minimumAge'),
-                age_max=enrollment_module.get('maximumAge'),
-                sex=enrollment_module.get('sex'),
-                healthy_volunteers=enrollment_module.get('healthyVolunteers')
-            )
-        except Exception as e:
-            self.logger.warning(f"Error extracting enrollment info: {e}")
-            return EnrollmentInfo()
-    
-    def _extract_statistical_analysis(self, outcomes_module: Dict[str, Any]) -> StatisticalAnalysis:
-        """Extract statistical analysis information."""
-        try:
-            if not isinstance(outcomes_module, dict):
-                return StatisticalAnalysis()
-                
-            return StatisticalAnalysis(
-                statistical_method=outcomes_module.get('statisticalMethod'),
-                alpha_level=outcomes_module.get('alphaLevel'),
-                power=outcomes_module.get('power'),
-                sample_size_calculation=outcomes_module.get('sampleSizeCalculation'),
-                interim_analyses=outcomes_module.get('interimAnalyses'),
-                multiplicity_adjustment=outcomes_module.get('multiplicityAdjustment')
-            )
-        except Exception as e:
-            self.logger.warning(f"Error extracting statistical analysis: {e}")
-            return StatisticalAnalysis()
-    
-    def _extract_locations(self, lead_sponsor_module: Dict[str, Any]) -> List[Location]:
-        """Extract location information."""
-        try:
-            locations = []
-            for loc_data in lead_sponsor_module.get('locations', []):
-                location = Location(
-                    facility_name=loc_data.get('facility', ''),
-                    city=loc_data.get('city'),
-                    state=loc_data.get('state'),
-                    country=loc_data.get('country'),
-                    status=loc_data.get('status')
-                )
-                locations.append(location)
-            return locations
-        except Exception as e:
-            self.logger.warning(f"Error extracting locations: {e}")
-            return []
-    
-    def _extract_study_type(self, design_module: Dict[str, Any]) -> StudyType:
-        """Extract study type."""
-        try:
-            study_type = design_module.get('studyType', '').upper()
-            if study_type == 'INTERVENTIONAL':
-                return StudyType.INTERVENTIONAL
-            elif study_type == 'OBSERVATIONAL':
-                return StudyType.OBSERVATIONAL
-            elif study_type == 'EXPANDED_ACCESS':
-                return StudyType.EXPANDED_ACCESS
-            else:
-                return StudyType.INTERVENTIONAL  # Default
-        except Exception:
-            return StudyType.INTERVENTIONAL
-    
-    def _extract_phase_enum(self, design_module: Dict[str, Any]) -> TrialPhase:
-        """Extract trial phase as enum."""
-        try:
-            phases = design_module.get('phases', [])
-            if phases:
-                phase_str = phases[0].upper().replace(' ', '_')
-                for phase_enum in TrialPhase:
-                    if phase_enum.value == phase_str:
-                        return phase_enum
-            return TrialPhase.PHASE2  # Default
-        except Exception:
-            return TrialPhase.PHASE2
-    
-    def _extract_status_enum(self, status_module: Dict[str, Any]) -> TrialStatus:
-        """Extract trial status as enum."""
-        try:
-            status_str = status_module.get('overallStatus', '').upper().replace(' ', '_')
-            for status_enum in TrialStatus:
-                if status_enum.value == status_str:
-                    return status_enum
-            return TrialStatus.UNKNOWN
-        except Exception:
-            return TrialStatus.UNKNOWN
-    
-    def _extract_intervention_type(self, type_str: str) -> InterventionType:
-        """Extract intervention type as enum."""
-        try:
-            if type_str:
-                type_upper = type_str.upper()
-                for int_type in InterventionType:
-                    if int_type.value == type_upper:
-                        return int_type
-            return InterventionType.DRUG  # Default
-        except Exception:
-            return InterventionType.DRUG
     
     def _passes_filters(self, 
                        trial_fields: ComprehensiveTrialFields,
@@ -696,7 +454,7 @@ class CtgovPipeline:
                 
                 new_version = TrialVersion(
                     trial_id=existing_trial.trial_id,
-                    captured_at=datetime.utcnow(),
+                    captured_at=datetime.now(UTC),
                     raw_jsonb=raw_data,
                     sha256=sha256_hash,
                     primary_endpoint_text=trial_fields.primary_endpoint_text,
@@ -708,7 +466,11 @@ class CtgovPipeline:
                 
                 # Update trial fields
                 self._update_trial_fields(existing_trial, trial_fields)
-                existing_trial.last_seen_at = datetime.utcnow()
+                existing_trial.last_seen_at = datetime.now(UTC)
+                
+                # Handle asset resolution for updated trials
+                if self.config.asset_resolution_enabled:
+                    self._handle_asset_resolution(session, existing_trial, trial_fields, result)
                 
                 result.trials_updated += 1
                 result.changes_detected += len(changes['changes'])
@@ -717,7 +479,7 @@ class CtgovPipeline:
                 self.logger.info(f"Updated trial {trial_fields.nct_id}: {len(changes['changes'])} changes")
             else:
                 # No changes, just update last seen
-                existing_trial.last_seen_at = datetime.utcnow()
+                existing_trial.last_seen_at = datetime.now(UTC)
                 
         except Exception as e:
             self.logger.error(f"Error handling trial update for {trial_fields.nct_id}: {e}")
@@ -748,6 +510,10 @@ class CtgovPipeline:
                     status_value = str(trial_fields.status) if trial_fields.status else None
             
             # Create new trial
+            import hashlib
+            raw_data = trial_fields.raw_jsonb or {}
+            sha256_hash = hashlib.sha256(json.dumps(raw_data, sort_keys=True).encode()).hexdigest()
+            
             new_trial = Trial(
                 nct_id=trial_fields.nct_id,
                 brief_title=trial_fields.brief_title,
@@ -755,19 +521,41 @@ class CtgovPipeline:
                 sponsor_text=trial_fields.sponsor_info.lead_sponsor_name if trial_fields.sponsor_info else None,
                 phase=phase_value,
                 status=status_value,
-                last_seen_at=datetime.utcnow()
+                est_primary_completion_date=trial_fields.primary_completion_date,
+                last_seen_at=datetime.now(UTC),
+                current_sha256=sha256_hash,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC)
             )
             session.add(new_trial)
             session.flush()  # Get trial_id
+
+                        # Attempt to resolve sponsor to a company and wire to SEC data
+            try:
+                sponsor_name = trial_fields.sponsor_info.lead_sponsor_name if trial_fields.sponsor_info else None
+                if sponsor_name:
+                    from ncfd.mapping.resolve_service import resolve_sponsor  # lazy import
+                    import yaml
+                    from pathlib import Path as _Path
+
+                    cfg_path = _Path("config/resolver.yaml")
+                    cfg = {}
+                    if cfg_path.exists():
+                        with open(cfg_path, "r") as _f:
+                            cfg = yaml.safe_load(_f) or {}
+
+                    r = resolve_sponsor(session, sponsor_name, cfg)
+                    if r and r.get("company_id") and float(r.get("p", 0)) >= float(cfg.get("thresholds", {}).get("tau_accept", 0.9)):
+                        new_trial.sponsor_company_id = int(r["company_id"])  # type: ignore
+            except Exception as _e:
+                # Non-fatal; keep ingestion robust
+                self.logger.warning(f"Sponsor resolution failed for {trial_fields.nct_id}: {_e}")
             
             # Create initial version
-            import hashlib
-            raw_data = trial_fields.raw_jsonb or {}
-            sha256_hash = hashlib.sha256(json.dumps(raw_data, sort_keys=True).encode()).hexdigest()
             
             initial_version = TrialVersion(
                 trial_id=new_trial.trial_id,
-                captured_at=datetime.utcnow(),
+                captured_at=datetime.now(UTC),
                 raw_jsonb=raw_data,
                 sha256=sha256_hash,
                 primary_endpoint_text=trial_fields.primary_endpoint_text,
@@ -777,6 +565,10 @@ class CtgovPipeline:
             )
             session.add(initial_version)
             
+            # Handle asset resolution for new trials
+            if self.config.asset_resolution_enabled:
+                self._handle_asset_resolution(session, new_trial, trial_fields, result)
+            
             result.trials_new += 1
             
             self.logger.info(f"Created new trial {trial_fields.nct_id}")
@@ -784,6 +576,51 @@ class CtgovPipeline:
         except Exception as e:
             self.logger.error(f"Error handling trial creation for {trial_fields.nct_id}: {e}")
             raise
+    
+    def _handle_asset_resolution(self, session, trial: Trial, trial_fields: ComprehensiveTrialFields, result: IngestionResult):
+        """Handle asset resolution for a trial."""
+        try:
+            # Extract drug names from trial data
+            drug_names = self.asset_resolver.extract_drug_names(trial_fields.raw_jsonb or {})
+            
+            if not drug_names:
+                return
+            
+            # Resolve to existing assets
+            asset_matches = self.asset_resolver.resolve_assets(
+                session, drug_names, trial.sponsor_company_id
+            )
+            
+            # Create new assets if enabled and needed
+            if self.config.create_new_assets:
+                for drug_name in drug_names:
+                    if drug_name.confidence >= self.config.min_asset_confidence:
+                        new_asset_id = self.asset_resolver.create_asset_if_needed(session, drug_name)
+                        if new_asset_id:
+                            # Add to matches if not already matched
+                            if not any(match.asset_id == new_asset_id for match in asset_matches):
+                                asset_matches.append(AssetMatch(
+                                    asset_id=new_asset_id,
+                                    confidence=drug_name.confidence * 0.9,  # Slight penalty for new asset
+                                    match_type='new_asset',
+                                    matched_alias=drug_name.normalized,
+                                    heuristics={'method': 'new_asset_creation'}
+                                ))
+                            result.assets_created += 1
+            
+            # Link trial to assets
+            if asset_matches:
+                self.asset_resolver.link_trial_to_assets(
+                    session, trial.trial_id, trial.nct_id, asset_matches
+                )
+                result.assets_resolved += len(set(match.asset_id for match in asset_matches))
+                result.trial_asset_links += len(asset_matches)
+                
+                self.logger.info(f"Resolved {len(asset_matches)} assets for trial {trial.nct_id}")
+            
+        except Exception as e:
+            self.logger.warning(f"Asset resolution failed for trial {trial.nct_id}: {e}")
+            # Non-fatal; don't fail the entire trial processing
     
     def _detect_simple_changes(self, old_data: Dict[str, Any], new_data: Dict[str, Any]) -> Dict[str, Any]:
         """

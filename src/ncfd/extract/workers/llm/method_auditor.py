@@ -347,95 +347,83 @@ class MethodAuditor(BaseWorker):
         # Combine all span text for analysis
         combined_text = ' '.join([span.quote for span in spans])
         
-        # Extract estimand components
-        method_info['estimand'] = self._extract_estimand(combined_text, design_json)
+        # Extract core design information
+        method_info.update(self._extract_core_design(combined_text, design_json))
         
-        # Extract alpha structure
-        method_info['alpha_structure'] = self._extract_alpha_structure(combined_text)
+        # Extract analysis information
+        method_info.update(self._extract_analysis_info(combined_text, design_json))
         
-        # Extract interim analysis plan
-        method_info['interim'] = self._extract_interim_plan(combined_text, spans)
+        # Extract protocol information
+        method_info.update(self._extract_protocol_info(combined_text, pocket_context))
         
-        # Extract Gehan two-stage design and set design archetype
-        gehan_result = self._extract_gehan_two_stage(combined_text)
-        if gehan_result is not None:
-            method_info['gehan_two_stage'] = gehan_result
-            
-            # Set design archetype based on Gehan detection
-            if method_info['gehan_two_stage']:
-                method_info['design_archetype'] = 'single_arm_phase2_gehan'
-                # Enforce Gehan design rules: must have 1 interim look
-                if method_info['interim'].get('looks') != 1:
-                    method_info['interim']['looks'] = 1
-            else:
-                method_info['design_archetype'] = 'not_reported'
-        # If gehan_result is None, don't set gehan_two_stage (leave as None)
+        # Validate and add warnings
+        method_info['warnings'] = self._validate_methodology(method_info, design_json)
         
-        # Extract survival method (KM vs inferred_KM)
-        method_info['survival_method'] = self._extract_survival_method(combined_text)
-        
-        # Extract analysis sets
-        method_info['analysis_set'] = self._extract_analysis_sets(combined_text, design_json)
-        
-        # Extract missingness policies
-        method_info['missingness'] = self._extract_missingness_policies(combined_text)
-        
-        # Extract endpoint ascertainment (includes assessment_interval)
-        method_info['endpoint_ascertainment'] = self._extract_endpoint_ascertainment(combined_text)
-        
-        # Extract protocol features
-        method_info['protocol_features'] = self._extract_protocol_features(combined_text)
-        
-        # Extract assay thresholds
-        method_info['assay_thresholds'] = self._extract_assay_thresholds(combined_text)
-        
-        # Extract dose-exposure rationale
-        method_info['dose_exposure_rationale'] = self._extract_dose_rationale(combined_text, pocket_context)
-        
-        # Extract site geography
-        method_info['site_geography'] = self._extract_site_geography(combined_text)
-        
-        # Extract design risks
-        method_info['design_risks'] = self._extract_design_risks(combined_text, pocket_context)
-        
-        # Extract study phase
-        method_info['study_phase'] = self._extract_study_phase(combined_text)
-        
-        # Extract blinding level
-        method_info['blinding_level'] = self._extract_blinding_level(combined_text)
-        
-        # Extract primary and secondary endpoints
-        method_info['primary_endpoint'] = self._extract_primary_endpoint(combined_text)
-        method_info['secondary_endpoints'] = self._extract_secondary_endpoints(combined_text)
-        
-        # Extract statistics methods
-        method_info['stats'] = self._extract_statistics_methods(combined_text)
-        
-        # Extract analysis denominators
-        method_info['analysis_denominators'] = self._extract_analysis_denominators(combined_text)
-        
-        # Extract intervention details
-        method_info['intervention'] = self._extract_intervention_details(combined_text, pocket_context)
-        
-        # Validate primary endpoint consistency with trial context
+        return method_info
+    
+    def _extract_core_design(self, text: str, design_json: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract core design information."""
+        return {
+            'estimand': self._extract_estimand(text, design_json),
+            'alpha_structure': self._extract_alpha_structure(text),
+            'interim': self._extract_interim_plan(text, []),  # spans passed separately
+            'gehan_two_stage': self._extract_gehan_two_stage(text),
+            'design_archetype': self._determine_design_archetype(text),
+            'survival_method': self._extract_survival_method(text),
+            'study_phase': self._extract_study_phase(text),
+            'blinding_level': self._extract_blinding_level(text),
+            'primary_endpoint': self._extract_primary_endpoint(text),
+            'secondary_endpoints': self._extract_secondary_endpoints(text)
+        }
+    
+    def _extract_analysis_info(self, text: str, design_json: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract analysis-related information."""
+        return {
+            'analysis_set': self._extract_analysis_sets(text, design_json),
+            'missingness': self._extract_missingness_policies(text),
+            'endpoint_ascertainment': self._extract_endpoint_ascertainment(text),
+            'stats': self._extract_statistics_methods(text),
+            'analysis_denominators': self._extract_analysis_denominators(text)
+        }
+    
+    def _extract_protocol_info(self, text: str, pocket_context: PocketContextCard) -> Dict[str, Any]:
+        """Extract protocol-related information."""
+        return {
+            'protocol_features': self._extract_protocol_features(text),
+            'assay_thresholds': self._extract_assay_thresholds(text),
+            'dose_exposure_rationale': self._extract_dose_rationale(text, pocket_context),
+            'site_geography': self._extract_site_geography(text),
+            'design_risks': self._extract_design_risks(text, pocket_context),
+            'intervention': self._extract_intervention_details(text, pocket_context)
+        }
+    
+    def _determine_design_archetype(self, text: str) -> str:
+        """Determine design archetype based on extracted information."""
+        gehan_result = self._extract_gehan_two_stage(text)
+        if gehan_result:
+            return 'single_arm_phase2_gehan'
+        return 'not_reported'
+    
+    def _validate_methodology(self, method_info: Dict[str, Any], design_json: Dict[str, Any]) -> List[str]:
+        """Validate methodology and return warnings."""
         warnings = []
-        if 'primary_endpoint' in design_json and method_info['primary_endpoint'] != 'not_reported':
+        
+        # Validate primary endpoint consistency
+        if 'primary_endpoint' in design_json and method_info.get('primary_endpoint') != 'not_reported':
             trial_endpoint = design_json.get('primary_endpoint')
             if trial_endpoint and trial_endpoint != method_info['primary_endpoint']:
                 warning_msg = f"Primary endpoint mismatch: paper='{method_info['primary_endpoint']}' vs trial_context='{trial_endpoint}'. Paper spans override trial context."
                 warnings.append(warning_msg)
-                print(f"WARNING: {warning_msg}")
+                self.logger.warning(warning_msg)
         
         # Validate Gehan design must-fill rule
         if method_info.get('gehan_two_stage'):
-            if method_info['interim'].get('looks') != 1:
-                error_msg = f"CRITICAL: Gehan design detected but interim_looks != 1. Got: {method_info['interim'].get('looks')}"
+            if method_info.get('interim', {}).get('looks') != 1:
+                error_msg = f"CRITICAL: Gehan design detected but interim_looks != 1. Got: {method_info.get('interim', {}).get('looks')}"
                 warnings.append(error_msg)
-                print(f"ERROR: {error_msg}")
+                self.logger.error(error_msg)
         
-        method_info['warnings'] = warnings
-        
-        return method_info
+        return warnings
 
     def _extract_estimand(self, text: str, design_json: Dict[str, Any]) -> Dict[str, Any]:
         """Extract estimand information from text."""
@@ -609,7 +597,7 @@ class MethodAuditor(BaseWorker):
         
         for pattern in gehan_patterns:
             if re.search(pattern, text, re.IGNORECASE):
-                print(f"DEBUG: Gehan pattern matched: '{pattern}' in text: '{text[:100]}...'")
+                self.logger.debug(f"Gehan pattern matched: '{pattern}' in text: '{text[:100]}...'")
                 return True
         
         # Return None if not found (not False as default)
@@ -1012,54 +1000,9 @@ class MethodAuditor(BaseWorker):
         return 'not_reported'
     
     def _normalize_phase_text(self, text: str) -> str:
-        """
-        Normalize phase text by converting Roman numerals to Arabic numerals.
-        This helps ensure consistent phase extraction.
-        """
-        # Roman numeral to Arabic mapping
-        roman_to_arabic = {
-            'I': '1', 'II': '2', 'III': '3', 'IV': '4', 'V': '5',
-            'VI': '6', 'VII': '7', 'VIII': '8', 'IX': '9', 'X': '10'
-        }
-        
-        # Pattern to match "phase" followed by Roman numerals (including mixed patterns)
-        # Handle patterns like "phase I/II", "phase I and II", etc.
-        phase_roman_pattern = r'phase\s*([IiVvXx]+(?:\s*[/\s+and\s+]+\s*[IiVvXx]+)*)'
-        
-        def replace_roman(match):
-            roman_text = match.group(1).upper()
-            
-            # Handle mixed patterns like "I/II" or "I and II"
-            if '/' in roman_text:
-                parts = roman_text.split('/')
-                normalized_parts = []
-                for part in parts:
-                    part = part.strip()
-                    if part in roman_to_arabic:
-                        normalized_parts.append(roman_to_arabic[part])
-                    else:
-                        normalized_parts.append(part)
-                return f"phase {'/'.join(normalized_parts)}"
-            elif 'AND' in roman_text:
-                parts = roman_text.split('AND')
-                normalized_parts = []
-                for part in parts:
-                    part = part.strip()
-                    if part in roman_to_arabic:
-                        normalized_parts.append(roman_to_arabic[part])
-                    else:
-                        normalized_parts.append(part)
-                return f"phase {' and '.join(normalized_parts)}"
-            else:
-                # Single Roman numeral
-                if roman_text in roman_to_arabic:
-                    return f"phase {roman_to_arabic[roman_text]}"
-                return match.group(0)  # Return original if not found
-        
-        # Replace Roman numerals with Arabic numerals
-        normalized_text = re.sub(phase_roman_pattern, replace_roman, text, flags=re.IGNORECASE)
-        
-        return normalized_text
+        """Normalize phase text using shared TextNormalizer."""
+        from ...utils.text_normalization import TextNormalizer
+        return TextNormalizer.normalize_phase_text(text)
 
     def _extract_blinding_level(self, text: str) -> str:
         """Extract blinding level from text."""

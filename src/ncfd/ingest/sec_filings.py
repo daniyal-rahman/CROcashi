@@ -16,7 +16,7 @@ import json
 import logging
 import re
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, UTC, datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple, Generator
 from urllib.parse import urljoin, urlparse
@@ -235,7 +235,7 @@ class SecFilingsClient:
                 content=content,
                 content_hash=content_hash,
                 sections=sections,
-                extracted_at=datetime.utcnow()
+                extracted_at=datetime.now(UTC)
             )
             
             # Cache the document

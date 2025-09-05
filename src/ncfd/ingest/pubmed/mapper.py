@@ -7,7 +7,7 @@ Maps PubMed E-utilities API responses to database staging tables with data valid
 import json
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Dict, List, Optional, Any, Tuple
 from urllib.parse import urlparse
 
@@ -60,7 +60,7 @@ class PubMedMapper:
                 },
                 'pmids': id_list,
                 'total_results': count,
-                'mapped_at': datetime.utcnow().isoformat()
+                'mapped_at': datetime.now(UTC).isoformat()
             }
             
             logger.info(f"Mapped ESearch result: {count} PMIDs found")
@@ -143,7 +143,7 @@ class PubMedMapper:
                 'source_url': f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
                 'url_hash': self._calculate_url_hash(f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"),
                 'published_at': parsed_date,
-                'discovered_at': datetime.utcnow(),
+                'discovered_at': datetime.now(UTC),
                 'title': title,
                 'doi': doi,
                 'pmid': pmid,
@@ -436,7 +436,7 @@ class PubMedMapper:
                         existing_doc['text']['char_count_fulltext'] = len(fulltext_content)
                         # Set TTL to 90 days as per spec
                         existing_doc['text']['fulltext_ttl_date'] = (
-                            datetime.utcnow() + timedelta(days=90)
+                            datetime.now(UTC) + timedelta(days=90)
                         ).isoformat()
                     
                     # Update content type to fulltext

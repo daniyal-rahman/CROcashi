@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """
-Example script demonstrating evidence-constrained synthesis.
+Example of using the synthesis system to generate signals from extracted data.
 """
 
+import json
 import sys
 from pathlib import Path
-from unittest.mock import Mock
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from ncfd.synthesis.evidence_constrained_synthesis import EvidenceConstrainedSynthesizer
+from ncfd.synthesis.evidence_constrained_synthesis import EvidenceConstrainedSynthesis
+from ncfd.config import get_config
 from ncfd.db.models import Trial, Study
 from ncfd.signals.gates import GateResult
 from ncfd.signals.scoring import ScoreResult
@@ -129,7 +127,7 @@ def main():
     print()
     
     # Initialize synthesizer
-    synthesizer = EvidenceConstrainedSynthesizer()
+    synthesizer = EvidenceConstrainedSynthesis()
     
     try:
         # Generate synthesis

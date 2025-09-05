@@ -362,6 +362,43 @@ def decide_with_llm_research(
         )
         return _mock_llm_decision_research(nct_id, session)
     
+    # Step 1.5: Check for academic/government sponsors
+    from ncfd.mapping.normalize import has_academic_keywords
+    if has_academic_keywords(trial_metadata.sponsor):
+        # Log the academic sponsor decision
+        _log_llm_attempt(
+            run_id=run_id,
+            nct_id=nct_id,
+            sponsor_text=trial_metadata.sponsor,
+            success=True,
+            decision=LlmDecision(
+                mode="review", 
+                company_id=None, 
+                confidence=0.3,
+                rationale="Academic/government sponsor - needs human review",
+                flags=["academic_sponsor"],
+                research_evidence={"trial_metadata": trial_metadata.__dict__},
+                company_name=trial_metadata.sponsor,
+                match_type="uncertain"
+            ),
+            raw_data={"decision": "review", "reason": "academic_sponsor"},
+            session=session,
+            model=model
+        )
+        return (
+            LlmDecision(
+                mode="review", 
+                company_id=None, 
+                confidence=0.3,
+                rationale="Academic/government sponsor - needs human review",
+                flags=["academic_sponsor"],
+                research_evidence={"trial_metadata": trial_metadata.__dict__},
+                company_name=trial_metadata.sponsor,
+                match_type="uncertain"
+            ),
+            {"decision": "review", "reason": "academic_sponsor"}
+        )
+    
     # Step 2: Build enhanced prompts
     system = _enhanced_system_prompt()
     user = _enhanced_user_prompt(nct_id, trial_metadata)

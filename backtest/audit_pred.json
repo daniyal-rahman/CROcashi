@@ -1,0 +1,30 @@
+{
+  "false_positives_at_thr": [],
+  "false_negatives_at_thr": [
+    {
+      "doc_id": "NCT04388254",
+      "p_fail": 0.54,
+      "severity": 0.95,
+      "grade": "FF"
+    },
+    {
+      "doc_id": "MOCK_HIGH_RISK_001",
+      "p_fail": 0.6787709497206704,
+      "severity": 0.75,
+      "grade": "LF"
+    },
+    {
+      "doc_id": "NCT04388254",
+      "p_fail": 0.8086522462562397,
+      "severity": 0.95,
+      "grade": "FF"
+    },
+    {
+      "doc_id": "NCT04388254",
+      "p_fail": 0.54,
+      "severity": 0.95,
+      "grade": "FF"
+    }
+  ],
+  "audit_threshold": 0.9
+}

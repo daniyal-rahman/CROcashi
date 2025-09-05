@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 """
-End-to-End Test for PMC2978916
-
-This test implements the comprehensive acceptance checklist for the span-first, dual-path system
-testing the specific paper PMC2978916 with all required validations.
+End-to-end test for PMC2978916 paper processing.
 """
 
 import pytest
@@ -15,9 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from dataclasses import asdict
 
-# Add src to path
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+# Import ncfd modules
 
 from ncfd.extract.models import (
     EvidenceSpan, MethodCard, ResultsFactsheet, Claim
@@ -26,6 +21,8 @@ from ncfd.extract.orchestrate.late_fusion_orchestrator import LateFusionOrchestr
 from ncfd.extract.workers.base_span_ingest import BaseSpanIngestWorker
 from ncfd.extract.workers.span_triage import SpanTriageWorker
 from ncfd.extract.workers.fuzzy_aligner import FuzzyAligner
+from ncfd.extract.workers.interfaces import ExtractionWorker
+from ncfd.config import get_config
 
 
 class PMC2978916E2ETest:

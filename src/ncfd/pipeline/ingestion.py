@@ -7,7 +7,7 @@ data extraction, validation, and transformation into structured study cards.
 
 import json
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Dict, List, Any, Optional, Union, Tuple
 from pathlib import Path
 import hashlib
@@ -15,33 +15,50 @@ from dataclasses import dataclass, asdict
 
 from ..db.models import Trial, TrialVersion, Study
 from ..db.session import get_session
-# Mock function for demo purposes - replace with real extraction in production
+# Real extraction function using the study card pipeline
 def extract_study_card_from_document(document_path):
-    """Mock function to extract study card from document."""
-    # For demo purposes, return a synthetic study card
-    # In production, this would use the actual extraction logic
-    return {
-        "study_id": f"demo_study_{hash(document_path) % 10000}",
-        "is_pivotal": True,
-        "primary_type": "efficacy",
-        "primary_endpoint_text": "Overall Survival",
-        "sample_size": 500,
-        "analysis_plan_text": "Standard survival analysis with alpha=0.05",
-        "arms": [
-            {"name": "Treatment", "sample_size": 250, "dropout_rate": 0.1},
-            {"name": "Control", "sample_size": 250, "dropout_rate": 0.1}
-        ],
-        "alpha": 0.05,
-        "interims": 2,
-        "assumptions": "Standard survival assumptions",
-        "primary_result": {
-            "p_value": 0.03,
-            "estimate": 0.75,
-            "ci_lower": 0.65,
-            "ci_upper": 0.85
-        }
-    }
-from ..signals import evaluate_all_signals
+    """Extract study card from document using the real extraction pipeline."""
+    try:
+        from ncfd.pipeline.study_card_pipeline import StudyCardPipeline
+        from ncfd.extract.models import DocumentCard
+        
+        # Initialize the extraction pipeline
+        pipeline = StudyCardPipeline()
+        
+        # Create document card from file
+        doc_card = DocumentCard.from_file(document_path)
+        
+        # Execute extraction pipeline
+        result = pipeline.execute(doc_card)
+        
+        if result.success:
+            # Convert to study card format
+            study_card = {
+                "study_id": result.decision_record.study_id,
+                "is_pivotal": result.method_card.is_pivotal if result.method_card else False,
+                "primary_type": result.method_card.primary_type if result.method_card else "unknown",
+                "primary_endpoint_text": result.method_card.primary_endpoint if result.method_card else None,
+                "sample_size": result.method_card.total_n if result.method_card else None,
+                "analysis_plan_text": result.method_card.analysis_plan if result.method_card else None,
+                "arms": result.method_card.arms if result.method_card else [],
+                "alpha": result.method_card.alpha if result.method_card else None,
+                "interims": result.method_card.planned_interims if result.method_card else 0,
+                "assumptions": result.method_card.assumptions if result.method_card else None,
+                "primary_result": result.results_factsheet.primary_results[0] if result.results_factsheet and result.results_factsheet.primary_results else None
+            }
+            return study_card
+        else:
+            raise ValueError(f"Extraction pipeline failed: {result.errors}")
+            
+    except ImportError:
+        # Fallback if extraction pipeline not available
+        raise NotImplementedError(
+            "Study card extraction pipeline not available. "
+            "Please ensure the extraction module is properly installed."
+        )
+    except Exception as e:
+        raise ValueError(f"Failed to extract study card from {document_path}: {e}")
+from ..signals import evaluate_all_gates
 from ..scoring import ScoringEngine
 
 
@@ -108,7 +125,7 @@ class DocumentIngestionPipeline:
         Returns:
             IngestionResult with success status and extracted data
         """
-        start_time = datetime.now()
+        start_time = datetime.now(timezone.utc)
         
         try:
             # Validate document path
@@ -158,7 +175,7 @@ class DocumentIngestionPipeline:
             if self.backup_ingested_data:
                 self._backup_ingested_data(study_card, extracted_metadata, doc_metadata)
             
-            processing_time = (datetime.now() - start_time).total_seconds()
+            processing_time = (datetime.now(timezone.utc) - start_time).total_seconds()
             
             self.logger.info(f"Successfully ingested document: {document_path} -> Trial {trial_id}")
             
@@ -177,7 +194,7 @@ class DocumentIngestionPipeline:
             )
             
         except Exception as e:
-            processing_time = (datetime.now() - start_time).total_seconds()
+            processing_time = (datetime.now(timezone.utc) - start_time).total_seconds()
             self.logger.error(f"Document ingestion failed: {document_path}, Error: {e}")
             
             return IngestionResult(
@@ -289,10 +306,10 @@ class DocumentIngestionPipeline:
         """Extract metadata from the document."""
         path = Path(document_path)
         
-        # Calculate file checksum
+        # Calculate file checksum using SHA-256 for security
         with open(path, 'rb') as f:
             content = f.read()
-            checksum = hashlib.md5(content).hexdigest()
+            checksum = hashlib.sha256(content).hexdigest()
         
         # Determine document type
         if path.suffix.lower() in ['.pdf', '.PDF']:
@@ -308,7 +325,7 @@ class DocumentIngestionPipeline:
             document_id=checksum,
             source_path=str(path),
             document_type=doc_type,
-            ingested_at=datetime.now(),
+            ingested_at=datetime.now(timezone.utc),
             file_size=len(content),
             checksum=checksum,
             original_filename=path.name
@@ -326,7 +343,7 @@ class DocumentIngestionPipeline:
             "sponsor": study_card.get("sponsor", "unknown"),
             "drug_name": study_card.get("drug_name", "unknown"),
             "primary_endpoint_type": study_card.get("primary_type", "unknown"),
-            "extracted_at": datetime.now().isoformat(),
+            "extracted_at": datetime.now(timezone.utc).isoformat(),
             "source": "document_ingestion"
         }
         
@@ -369,7 +386,7 @@ class DocumentIngestionPipeline:
                     drug_name=metadata["drug_name"],
                     primary_endpoint_type=metadata["primary_endpoint_type"],
                     sponsor_experience=metadata.get("sponsor_experience", "unknown"),
-                    created_at=datetime.now(),
+                    created_at=datetime.now(timezone.utc),
                     metadata=metadata
                 )
                 session.add(trial)
@@ -382,13 +399,13 @@ class DocumentIngestionPipeline:
                 trial.drug_name = metadata["drug_name"]
                 trial.primary_endpoint_type = metadata["primary_endpoint_type"]
                 trial.sponsor_experience = metadata.get("sponsor_experience", "unknown")
-                trial.updated_at = datetime.now()
+                trial.updated_at = datetime.now(timezone.utc)
                 trial.metadata.update(metadata)
             
             # Create trial version
             trial_version = TrialVersion(
                 trial_id=trial.trial_id,
-                captured_at=datetime.now(),
+                captured_at=datetime.now(timezone.utc),
                 raw_jsonb=study_card,
                 primary_endpoint_text=study_card.get("primary_endpoint_text", ""),
                 sample_size=metadata.get("sample_size"),
@@ -440,7 +457,7 @@ class DocumentIngestionPipeline:
             "study_card": study_card,
             "metadata": metadata,
             "document_metadata": asdict(doc_metadata),
-            "backup_timestamp": datetime.now().isoformat()
+            "backup_timestamp": datetime.now(timezone.utc).isoformat()
         }
         
         # Create backup directory if it doesn't exist
@@ -448,7 +465,7 @@ class DocumentIngestionPipeline:
         backup_dir.mkdir(parents=True, exist_ok=True)
         
         # Save backup file
-        backup_file = backup_dir / f"backup_{doc_metadata.checksum}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        backup_file = backup_dir / f"backup_{doc_metadata.checksum}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json"
         
         with open(backup_file, 'w') as f:
             json.dump(backup_data, f, indent=2, default=str)

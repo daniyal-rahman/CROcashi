@@ -542,7 +542,26 @@ def run_resolution(
             console.print_json(json.dumps(blob, ensure_ascii=False))
         return
 
-    # (2) Probabilistic
+    # (2) Check for academic/government sponsors
+    from ncfd.mapping.normalize import has_academic_keywords
+    if has_academic_keywords(sponsor_text):
+        console.rule("[yellow]Academic/Government Sponsor - Skipping[/yellow]")
+        console.print(f"[dim]Sponsor '{sponsor_text}' contains academic keywords - skipping resolution[/dim]")
+        if json_out:
+            blob = {
+                "mode": "academic_skip",
+                "company_id": None,
+                "p": 0.0,
+                "top2_margin": 0.0,
+                "leader_features": {},
+                "leader_meta": {"reason": "academic_sponsor"},
+                "run_id": run_id,
+                "nct_id": nct_id,
+            }
+            console.print_json(json.dumps(blob, ensure_ascii=False))
+        return
+
+    # (3) Probabilistic
     if os.getenv("RESOLVER_DISABLE_PROB", "0").lower() in ("1", "true", "yes"):
         console.rule("[yellow]Probabilistic (logistic) path disabled[/yellow]")
 
@@ -550,7 +569,7 @@ def run_resolution(
     cands = candidate_retrieval(session, qnorm, k=k)
     if not cands:
         console.print("[yellow]No candidates found.[/yellow]")
-        if persist and nct_id and options.decider != "llm" and _llm_enabled(decider):
+        if options.decider == "llm" or _llm_enabled(decider):
             # Allow LLM to take a shot even if no cands
             pass
         else:
@@ -777,7 +796,7 @@ def resolve_one(
     decider: str = typer.Option("auto", "--decider", help="auto|human|llm"),
 ):
     cfg = _load_yaml(cfg_path)
-    run_id = run_id or datetime.utcnow().strftime("resolver-%Y%m%dT%H%M%SZ")
+    run_id = run_id or datetime.now(datetime.UTC).strftime("resolver-%Y%m%dT%H%M%SZ")
     with get_session() as s:
         opts = FlowOptions(
             cfg=cfg,
@@ -811,7 +830,7 @@ def resolve_nct(
     run_id: Optional[str] = typer.Option(None, "--run-id", help="Resolver run ID"),
 ):
     cfg = _load_yaml(cfg_path)
-    run_id = run_id or datetime.utcnow().strftime("resolver-%Y%m%dT%H%M%SZ")
+    run_id = run_id or datetime.now(datetime.UTC).strftime("resolver-%Y%m%dT%H%M%SZ")
     with get_session() as s:
         row = s.execute(
             text("SELECT trial_id, sponsor_text FROM trials WHERE nct_id = :nct"),
@@ -865,7 +884,7 @@ def resolve_batch(
     force_review_on_reject: bool = typer.Option(False, "--force-review-on-reject", help="Also enqueue rejects"),
 ):
     cfg = _load_yaml(cfg_path)
-    run_id = run_id or datetime.utcnow().strftime("resolver-%Y%m%dT%H%M%SZ")
+    run_id = run_id or datetime.now(datetime.UTC).strftime("resolver-%Y%m%dT%H%M%SZ")
     with get_session() as s:
         rows = s.execute(
             text(
@@ -1021,7 +1040,7 @@ def review_accept(
             raise typer.Exit(1)
 
         nct_id, sponsor_text = row
-        run_id = datetime.utcnow().strftime("review-%Y%m%dT%H%M%SZ")
+        run_id = datetime.now(datetime.UTC).strftime("review-%Y%m%dT%H%M%SZ")
 
         dec = {
             "mode": "accept",

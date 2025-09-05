@@ -162,10 +162,6 @@ class Asset(Base):
     modality: Mapped[Optional[str]] = mapped_column(Text)
     target: Mapped[Optional[str]] = mapped_column(Text)
     moa: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
-    )
 
     ownership: Mapped[List["AssetOwnership"]] = relationship(back_populates="asset", cascade="all, delete-orphan")
     studies: Mapped[List["Study"]] = relationship(back_populates="asset")
@@ -313,7 +309,6 @@ class Study(Base):
     extracted_jsonb: Mapped[Dict[str, object]] = mapped_column(JSONB, nullable=False)
     coverage_level: Mapped[str] = mapped_column(CoverageLevelEnum, nullable=False)
     notes_md: Mapped[Optional[str]] = mapped_column(Text)
-    doc_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

@@ -1,0 +1,197 @@
+# LLM Models Configuration
+# ========================
+# 
+# This file defines LLM providers, models, and their capabilities.
+# Used by the modular LLM system for provider selection and configuration.
+
+# Provider Configurations
+providers:
+  openai:
+    api_key_env: OPENAI_API_KEY
+    base_url_env: OPENAI_BASE_URL  # Optional override
+    organization_env: OPENAI_ORG_ID  # Optional organization ID
+    default_model: gpt-5-mini
+    rate_limit_requests_per_minute: 60
+    timeout_seconds: 30
+    max_retries: 3
+    retry_delay_seconds: 1.0
+    
+    models:
+      gpt-4o:
+        capabilities: [json_output, function_calling, structured_output]
+        max_tokens: 4000
+        temperature: 0.1
+        cost_per_input_token: 0.0000025   # $2.50 per 1M tokens
+        cost_per_output_token: 0.00001    # $10.00 per 1M tokens
+        supports_system_message: true
+        supports_function_calling: true
+        supports_json_output: true
+        supports_streaming: true
+        
+      gpt-4:
+        capabilities: [json_output, function_calling, structured_output]
+        max_tokens: 4000
+        temperature: 0.1
+        cost_per_input_token: 0.00003     # $30.00 per 1M tokens
+        cost_per_output_token: 0.00006    # $60.00 per 1M tokens
+        supports_system_message: true
+        supports_function_calling: true
+        supports_json_output: true
+        supports_streaming: true
+        
+      gpt-3.5-turbo:
+        capabilities: [json_output, function_calling]
+        max_tokens: 4000
+        temperature: 0.1
+        cost_per_input_token: 0.0000005   # $0.50 per 1M tokens
+        cost_per_output_token: 0.0000015  # $1.50 per 1M tokens
+        supports_system_message: true
+        supports_function_calling: true
+        supports_json_output: true
+        supports_streaming: true
+        
+      gpt-5-mini:
+        capabilities: [json_output, web_search, structured_output]
+        max_tokens: 2000
+        temperature: 0.1
+        cost_per_input_token: 0.000001    # Estimated
+        cost_per_output_token: 0.000002   # Estimated
+        supports_system_message: true
+        supports_function_calling: false
+        supports_json_output: true
+        supports_streaming: true
+
+  # Anthropic Configuration (placeholder for future implementation)
+  anthropic:
+    api_key_env: ANTHROPIC_API_KEY
+    default_model: claude-3-5-sonnet-20241022
+    rate_limit_requests_per_minute: 60
+    timeout_seconds: 30
+    max_retries: 3
+    retry_delay_seconds: 1.0
+    
+    models:
+      claude-3-5-sonnet-20241022:
+        capabilities: [json_output, function_calling, thinking]
+        max_tokens: 4000
+        temperature: 0.1
+        cost_per_input_token: 0.000003    # $3.00 per 1M tokens
+        cost_per_output_token: 0.000015   # $15.00 per 1M tokens
+        supports_system_message: true
+        supports_function_calling: true
+        supports_json_output: true
+        supports_streaming: true
+        
+      claude-3-opus-20240229:
+        capabilities: [json_output, function_calling, thinking]
+        max_tokens: 4000
+        temperature: 0.1
+        cost_per_input_token: 0.000015    # $15.00 per 1M tokens
+        cost_per_output_token: 0.000075   # $75.00 per 1M tokens
+        supports_system_message: true
+        supports_function_calling: true
+        supports_json_output: true
+        supports_streaming: true
+
+  # Gemini Configuration (placeholder for future implementation)
+  gemini:
+    api_key_env: GEMINI_API_KEY
+    default_model: gemini-1.5-pro
+    rate_limit_requests_per_minute: 60
+    timeout_seconds: 30
+    max_retries: 3
+    retry_delay_seconds: 1.0
+    
+    models:
+      gemini-1.5-pro:
+        capabilities: [json_output, safety_filtering]
+        max_tokens: 4000
+        temperature: 0.1
+        cost_per_input_token: 0.00000125  # $1.25 per 1M tokens
+        cost_per_output_token: 0.000005   # $5.00 per 1M tokens
+        supports_system_message: true
+        supports_function_calling: true
+        supports_json_output: true
+        supports_streaming: true
+        
+      gemini-2.0-flash:
+        capabilities: [json_output, safety_filtering, code_execution]
+        max_tokens: 4000
+        temperature: 0.1
+        cost_per_input_token: 0.0000005   # Estimated
+        cost_per_output_token: 0.000002   # Estimated
+        supports_system_message: true
+        supports_function_calling: true
+        supports_json_output: true
+        supports_streaming: true
+
+# Default Configuration
+default_provider: openai
+enable_fallback: true
+fallback_order: [openai, anthropic, gemini]
+
+# Worker-Specific Overrides
+# Each worker can be configured to use a specific provider and model
+workers:
+  # Basic tasks - use GPT-5-mini for efficiency
+  llm_decider:
+    provider: openai
+    model: gpt-5-mini
+    
+  sec_extractor:
+    provider: openai  # Will switch to gemini when implemented
+    model: gpt-5-mini
+    
+  method_auditor:
+    provider: openai
+    model: gpt-5-mini
+    
+  results_distiller:
+    provider: openai
+    model: gpt-5-mini
+    
+  fda_lens:
+    provider: openai
+    model: gpt-5-mini
+    
+  memo_composer:
+    provider: openai
+    model: gpt-5-mini
+    
+  gate_proposer:
+    provider: openai
+    model: gpt-5-mini
+    
+  # Complex thinking tasks - use GPT-5 for enhanced reasoning
+  literature_review:
+    provider: openai  # Will switch to anthropic when implemented
+    model: gpt-5
+    
+  independent_analysis:
+    provider: openai  # Will switch to anthropic when implemented  
+    model: gpt-5
+    
+  llm_resolution:
+    provider: openai
+    model: gpt-5
+    
+  # Self-research mechanistic analysis - use GPT-5 for web search capabilities
+  mechanistic_dose_researcher:
+    provider: openai
+    model: gpt-5
+
+# Rate Limiting & Performance
+rate_limiting:
+  enabled: true
+  requests_per_minute: 60
+  
+retry_policy:
+  max_retries: 3
+  backoff_multiplier: 2
+  base_delay_seconds: 1.0
+
+# Cost Tracking
+cost_tracking:
+  enabled: true
+  alert_threshold_dollars: 20.0
+  daily_budget_dollars: 100.0

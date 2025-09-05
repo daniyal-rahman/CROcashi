@@ -264,16 +264,17 @@ class DeterministicResultsDistiller(BaseWorker):
         return None
     
     def _normalize_unit(self, unit_text: str) -> str:
-        """Normalize unit text to string."""
-        unit_text = unit_text.lower().strip()
-        
-        if unit_text in ['%', 'percent', 'percentage']:
+        """Normalize unit text using shared TextNormalizer."""
+        from ...utils.text_normalization import TextNormalizer
+        normalized = TextNormalizer.normalize_unit(unit_text)
+        # Map to the specific format expected by this worker
+        if normalized in ['%', 'percent', 'percentage']:
             return 'percent'
-        elif unit_text in ['weeks', 'week', 'w']:
+        elif normalized in ['weeks', 'week', 'w']:
             return 'weeks'
-        elif unit_text in ['months', 'month', 'mo']:
+        elif normalized in ['months', 'month', 'mo']:
             return 'months'
-        elif unit_text in ['years', 'year', 'yr']:
+        elif normalized in ['years', 'year', 'yr']:
             return 'years'
         else:
             return 'not_specified'

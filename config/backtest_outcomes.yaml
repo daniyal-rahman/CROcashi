@@ -1,0 +1,45 @@
+# Outcome severity and grading configuration
+# Maps trial results to continuous severity [0,1] and discrete grades
+
+# Endpoint family parameters
+endpoints:
+  continuous:
+    sigma_default: 0.5
+    mcid_lookup:
+      ADAS-Cog11: 1.5
+      ADAS-Cog14: 1.5
+      MMSE: 1.0
+      CDR-SB: 0.5
+      ADCS-ADL: 1.0
+      ADCS-CGIC: 1.0
+      "Overall Survival": 2.0
+      "Progression Free Survival": 1.5
+      
+  binary:
+    sigma_default: 0.3
+    mcid_abs_default: 0.05
+    
+  tte:
+    sigma_default: 0.2
+
+# Robustness penalties (add to severity)
+penalties:
+  subgroup_only: 0.10
+  non_itt_or_pp_only: 0.10
+  underpowered_or_no_primary: 0.05
+  endpoint_changed_post_reg: 0.10
+  non_significant: 0.15
+  missing_primary_result: 0.20
+
+# Weights for combining effect size and p-value
+weights:
+  effect: 0.7
+  pvalue: 0.3
+
+# Grade boundaries (severity -> grade)
+grades:
+  SS: [0.0, 0.2]    # Clear success
+  LS: [0.2, 0.4]    # Likely success  
+  A: [0.4, 0.6]     # Ambiguous
+  LF: [0.6, 0.8]    # Likely fail
+  FF: [0.8, 1.0]    # Clear fail

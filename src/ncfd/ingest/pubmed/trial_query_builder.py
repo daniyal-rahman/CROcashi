@@ -508,7 +508,7 @@ class TrialQueryBuilder:
                 'has_design': bool(trial_design),
                 'has_catalyst_window': bool(catalyst_date)
             },
-            'built_at': datetime.utcnow().isoformat()
+            'built_at': datetime.now(datetime.UTC).isoformat()
         }
     
     def _clean_asset_alias(self, alias: str) -> str:

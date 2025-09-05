@@ -1,0 +1,295 @@
+# USPTO Patent Data Ingestion Configuration
+# Configuration for US patent data ingestion, assignment processing, and ownership tracking
+
+uspto:
+  # API Configuration
+  api:
+    # USPTO Developer API endpoints
+    base_url: "https://developer.uspto.gov/ptab-api/v1"
+    bulk_data_url: "https://bulkdata.uspto.gov"
+    assignment_base: "https://assignment.uspto.gov"
+    
+    # Rate limiting (USPTO limits: 120 requests/minute for patent API)
+    rate_limit_rpm: 120
+    assignment_rate_limit_rpm: 60  # More conservative for assignment API
+    
+    # Request configuration
+    timeout_seconds: 60
+    retry_attempts: 3
+    retry_backoff_factor: 1.5
+    
+    # User agent for requests
+    user_agent: "CROcashi-Patent-Client/1.0 (Research Use)"
+
+  # Data Ingestion Settings
+  ingestion:
+    # Batch processing
+    batch_size: 100
+    max_patents_per_assignee: 5000
+    max_assignments_per_patent: 100
+    
+    # Date filtering
+    since_date: "2010-01-01"  # Only ingest patents from 2010 onwards
+    
+    # Jurisdiction filtering (US patents only)
+    jurisdictions: ["US"]
+    
+    # Patent type filtering
+    patent_types: ["utility"]  # Focus on utility patents for pharmaceuticals
+    
+    # Pharmaceutical focus
+    pharmaceutical_only: true
+    
+    # CPC classes for pharmaceutical patents
+    pharmaceutical_cpc_classes:
+      - "A61K"  # Preparations for medical, dental, or toilet purposes
+      - "A61P"  # Therapeutic activity of chemical compounds
+      - "C07D"  # Heterocyclic compounds
+      - "C07C"  # Acyclic or carbocyclic compounds
+      - "C07H"  # Sugars; derivatives thereof; nucleosides; nucleotides
+      - "C07J"  # Steroids
+      - "C12N"  # Microorganisms or enzymes; compositions thereof
+      - "G01N"  # Investigating or analyzing materials (for drug testing)
+
+  # Caching Configuration
+  caching:
+    cache_dir: "data/uspto_cache"
+    cache_ttl_days: 30
+    compress_cache: true
+    max_cache_size_mb: 1000
+    
+    # Cache subdirectories
+    patent_cache_dir: "data/uspto_cache/patents"
+    assignment_cache_dir: "data/uspto_cache/assignments"
+    search_cache_dir: "data/uspto_cache/searches"
+
+# Assignment Processing Configuration
+assignment_processing:
+  # Confidence thresholds for assignment resolution
+  confidence_thresholds:
+    high: 0.85
+    medium: 0.65
+    low: 0.40
+    minimum: 0.30
+  
+  # Company resolution settings
+  resolution:
+    use_deterministic: true
+    use_probabilistic: true
+    use_llm_fallback: false
+    resolve_universities: false  # Skip academic assignees by default
+    use_subsidiary_mapping: true
+    
+    # Minimum confidence for company resolution
+    min_resolution_confidence: 0.60
+  
+  # Financial consideration parsing
+  consideration:
+    # Parse monetary amounts from assignment text
+    parse_amounts: true
+    
+    # Currency symbols to recognize
+    currency_symbols: ["$", "USD", "dollars"]
+    
+    # Keywords for consideration types
+    consideration_keywords:
+      monetary: ["cash", "payment", "purchase price", "consideration"]
+      equity: ["shares", "stock", "equity", "ownership"]
+      licensing: ["license", "royalty", "milestone"]
+      merger: ["merger", "acquisition", "consolidation"]
+
+# Asset-Patent Linking Configuration
+asset_patent_linking:
+  # Confidence thresholds for different linking methods
+  confidence_thresholds:
+    inn_exact: 0.95
+    code_mention: 0.90
+    assignee_temporal: 0.70
+    text_similarity: 0.50
+    
+    # Minimum confidence to create link
+    minimum: 0.40
+  
+  # Temporal matching settings
+  temporal_matching:
+    max_distance_days: 730  # 2 years
+    
+    # Weights for temporal scoring
+    temporal_weights:
+      exact_match: 1.0
+      within_6_months: 0.9
+      within_1_year: 0.8
+      within_2_years: 0.6
+  
+  # Text similarity settings
+  text_similarity:
+    method: "fuzzy"  # "fuzzy", "semantic", "exact"
+    min_similarity_score: 0.7
+    
+    # Fields to search in patents
+    search_fields: ["title", "abstract", "claims"]
+    
+    # Maximum number of similarity matches per asset
+    max_similarity_matches: 20
+  
+  # Evidence span extraction
+  evidence_spans:
+    extract_spans: true
+    context_chars_before: 50
+    context_chars_after: 50
+    max_spans_per_match: 5
+
+# Ownership Timeline Configuration
+ownership_timeline:
+  # Evidence source weights (0.0 - 1.0)
+  evidence_weights:
+    patent_assignment: 0.90
+    sec_filing: 0.85
+    press_release: 0.75
+    clinical_trial: 0.60
+    manual: 1.0
+  
+  # Minimum confidence for including events
+  min_confidence: 0.40
+  
+  # Timeline reconciliation
+  reconciliation:
+    # Maximum gap between events for consolidation
+    max_consolidation_gap_days: 30
+    
+    # How to handle conflicts
+    conflict_resolution: "highest_confidence"  # "highest_confidence", "most_recent", "manual"
+    
+    # Minimum evidence count for high confidence periods
+    min_evidence_count: 2
+  
+  # Ownership types and their priorities
+  ownership_types:
+    assignee: 1.0      # Full ownership
+    licensee: 0.8      # Licensed rights
+    co_owner: 0.6      # Shared ownership
+    inventor: 0.4      # Inventor rights only
+    applicant: 0.5     # Application rights
+
+# Processing Pipeline Configuration
+pipeline:
+  # Daily ingestion settings
+  daily_ingestion:
+    enabled: true
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    
+    # What to process daily
+    process_new_patents: true
+    process_new_assignments: true
+    update_asset_links: true
+    rebuild_timelines: true
+  
+  # Batch processing settings
+  batch_processing:
+    chunk_size: 100
+    parallel_workers: 4
+    
+    # Error handling
+    max_retries: 3
+    retry_delay_seconds: 30
+    
+    # Progress tracking
+    log_progress_every: 50
+    save_checkpoint_every: 500
+  
+  # Data validation
+  validation:
+    validate_patent_numbers: true
+    validate_assignee_names: true
+    validate_dates: true
+    
+    # Skip invalid records or fail processing
+    strict_validation: false
+
+# Monitoring and Logging
+monitoring:
+  # Metrics to track
+  metrics:
+    patents_processed: true
+    assignments_processed: true
+    linking_success_rate: true
+    resolution_success_rate: true
+    timeline_completeness: true
+  
+  # Alerting thresholds
+  alerts:
+    # Alert if ingestion fails
+    ingestion_failure: true
+    
+    # Alert if success rates drop below thresholds
+    min_linking_success_rate: 0.60
+    min_resolution_success_rate: 0.70
+    
+    # Alert if processing takes too long
+    max_processing_time_hours: 6
+  
+  # Logging configuration
+  logging:
+    level: "INFO"
+    log_file: "logs/uspto_ingestion.log"
+    
+    # Structured logging
+    structured: true
+    include_performance_metrics: true
+
+# Integration Settings
+integration:
+  # Existing CROcashi components to integrate with
+  components:
+    # Use existing company resolution
+    company_resolution: true
+    
+    # Use existing asset management
+    asset_management: true
+    
+    # Use existing SEC filing integration
+    sec_integration: true
+    
+    # Use existing LLM services
+    llm_services: false  # Disable by default for patent processing
+  
+  # Database settings
+  database:
+    # Use existing database connection
+    use_existing_connection: true
+    
+    # Batch insert settings
+    batch_insert_size: 1000
+    use_bulk_operations: true
+    
+    # Index creation
+    create_indexes: true
+    analyze_tables: true
+
+# Development and Testing
+development:
+  # Test mode settings
+  test_mode:
+    enabled: false
+    max_test_patents: 100
+    use_test_data: false
+  
+  # Debug settings
+  debug:
+    verbose_logging: false
+    save_intermediate_results: false
+    skip_caching: false
+    
+    # API debugging
+    log_api_requests: false
+    log_api_responses: false
+  
+  # Sample data for development
+  sample_data:
+    use_sample_assignees: false
+    sample_assignees:
+      - "Pfizer Inc"
+      - "Johnson & Johnson"
+      - "Merck & Co Inc"
+      - "Bristol-Myers Squibb Company"
+      - "AbbVie Inc"

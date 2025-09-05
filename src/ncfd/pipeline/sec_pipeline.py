@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, UTC, datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Set
 import json
@@ -76,7 +76,7 @@ class SecPipeline:
         Returns:
             Ingestion result summary
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(UTC)
         logger.info("Starting daily SEC filing scan")
         
         # Determine scan parameters
@@ -107,7 +107,7 @@ class SecPipeline:
                     unchanged_filings += company_result.unchanged_filings
                 
                 # Update last check time
-                self.company_last_check[company_cik] = datetime.utcnow().isoformat()
+                self.company_last_check[company_cik] = datetime.now(UTC).isoformat()
                 
                 # Rate limiting between companies
                 time.sleep(1)  # Be extra polite
@@ -119,7 +119,7 @@ class SecPipeline:
                 failed_filings += 1
         
         # Calculate processing time
-        processing_time = (datetime.utcnow() - start_time).total_seconds()
+        processing_time = (datetime.now(UTC) - start_time).total_seconds()
         
         # Create overall result
         result = SecIngestionResult(
@@ -424,7 +424,7 @@ class SecPipeline:
             return last_scan_date - timedelta(days=2)
         
         # Default to 7 days ago
-        return datetime.utcnow().date() - timedelta(days=7)
+        return datetime.now(UTC).date() - timedelta(days=7)
     
     def _load_pipeline_state(self) -> Dict[str, Any]:
         """Load pipeline state from file."""
@@ -441,13 +441,13 @@ class SecPipeline:
         """Update pipeline state with latest results."""
         try:
             # Update last scan date
-            self.pipeline_state['last_scan_date'] = datetime.utcnow().isoformat()
+            self.pipeline_state['last_scan_date'] = datetime.now(UTC).isoformat()
             
             # Update company last check times
             self.pipeline_state['company_last_check'] = self.company_last_check
             
             # Update daily stats
-            today = datetime.utcnow().date().isoformat()
+            today = datetime.now(UTC).date().isoformat()
             if today not in self.daily_stats:
                 self.daily_stats[today] = {
                     'filings_processed': 0,

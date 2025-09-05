@@ -8,7 +8,7 @@ import re
 from sqlalchemy import text, bindparam
 from sqlalchemy.orm import Session
 
-from ncfd.mapping.normalize import norm_name, norm_name_loose
+from ncfd.mapping.normalize import norm_name, norm_name_loose, has_academic_keywords
 
 # ---------------------------------------------------------------------------
 # Regexes and normalizers
@@ -111,6 +111,10 @@ def resolve_company(
     Returns Resolution(company_id, method, evidence) or None.
     """
     if not sponsor_text or not sponsor_text.strip():
+        return None
+
+    # Skip academic/government sponsors
+    if has_academic_keywords(sponsor_text):
         return None
 
     allowed_alias_types = set(allowed_alias_types or DEFAULT_ALIAS_TYPES)

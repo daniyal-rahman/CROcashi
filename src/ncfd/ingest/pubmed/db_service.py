@@ -79,7 +79,7 @@ class PubMedDBService:
                         existing.S_tier = score_record['S_tier']
                         existing.R_components_jsonb = score_record.get('R_components_jsonb')
                         existing.S_components_jsonb = score_record.get('S_components_jsonb')
-                        existing.decided_at = datetime.utcnow()
+                        existing.decided_at = datetime.now(datetime.UTC)
                         self.logger.debug(f"Updated R/S score for trial {trial_id}, doc {doc_id}")
                     else:
                         # Create new record
@@ -92,7 +92,7 @@ class PubMedDBService:
                             S_tier=score_record['S_tier'],
                             R_components_jsonb=score_record.get('R_components_jsonb'),
                             S_components_jsonb=score_record.get('S_components_jsonb'),
-                            decided_at=datetime.utcnow()
+                            decided_at=datetime.now(datetime.UTC)
                         )
                         session.add(rs_score)
                         self.logger.debug(f"Created R/S score for trial {trial_id}, doc {doc_id}")

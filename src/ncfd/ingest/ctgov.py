@@ -6,7 +6,7 @@ Server-side filter: date (LastUpdatePostDate). All other filters are client-side
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, UTC, datetime
 from typing import Generator, Iterable, List, Optional, Tuple, Dict, Any
 import hashlib
 import json
@@ -187,8 +187,90 @@ class CtgovClient:
     # -----------------------------
     # Field extraction
     # -----------------------------
+    def extract_comprehensive_fields(self, study: dict) -> ComprehensiveTrialFields:
+        """Extract comprehensive trial information."""
+        ps = study.get("protocolSection", {}) or {}
+        identification = ps.get("identificationModule", {}) or {}
+        
+        # Basic identification
+        nct_id = identification.get("nctId")
+        brief_title = identification.get("briefTitle")
+        official_title = identification.get("officialTitle")
+        acronym = identification.get("acronym")
+        
+        # Sponsor information
+        sponsor_info = self._extract_sponsor_info(ps)
+        
+        # Study type and phase
+        study_type = self._determine_study_type(ps)
+        phase = self._extract_phase(ps)
+        
+        # Trial design
+        trial_design = self._extract_trial_design(ps)
+        
+        # Interventions
+        interventions = self._extract_interventions(ps)
+        
+        # Conditions
+        conditions = self._extract_conditions(ps)
+        
+        # Outcomes
+        primary_outcomes = self._extract_outcomes(ps, "primaryOutcomes")
+        secondary_outcomes = self._extract_outcomes(ps, "secondaryOutcomes")
+        other_outcomes = self._extract_outcomes(ps, "otherOutcomes")
+        outcomes = primary_outcomes + secondary_outcomes + other_outcomes
+        
+        # Enrollment
+        enrollment_info = self._extract_enrollment_info(ps)
+        
+        # Eligibility
+        eligibility_criteria = self._extract_eligibility_criteria(ps)
+        
+        # Statistical analysis
+        statistical_analysis = self._extract_statistical_analysis(ps)
+        
+        # Status and dates
+        status, dates = self._extract_status_and_dates(ps)
+        
+        # Locations
+        locations = self._extract_locations(ps)
+        
+        # Additional metadata
+        keywords = self._extract_keywords(ps)
+        mesh_terms = self._extract_mesh_terms(ps)
+        study_documents = self._extract_study_documents(ps)
+        
+        return ComprehensiveTrialFields(
+            nct_id=nct_id,
+            brief_title=brief_title,
+            official_title=official_title,
+            acronym=acronym,
+            sponsor_info=sponsor_info,
+            study_type=study_type,
+            phase=phase,
+            trial_design=trial_design,
+            interventions=interventions,
+            conditions=conditions,
+            outcomes=outcomes,
+            enrollment_info=enrollment_info,
+            eligibility_criteria=eligibility_criteria,
+            statistical_analysis=statistical_analysis,
+            status=status,
+            first_posted_date=dates.get("first_posted"),
+            last_update_posted_date=dates.get("last_update"),
+            study_start_date=dates.get("study_start"),
+            primary_completion_date=dates.get("primary_completion"),
+            study_completion_date=dates.get("study_completion"),
+            locations=locations,
+            keywords=keywords,
+            mesh_terms=mesh_terms,
+            study_documents=study_documents,
+            raw_jsonb=study,
+            extracted_at=datetime.now(UTC)
+        )
+
     def extract_fields(self, study: dict) -> NormalizedFields:
-        """Extract basic fields (maintains backward compatibility)."""
+        """Extract basic fields (maintains backward compatibility for CLI test)."""
         ps = study.get("protocolSection", {}) or {}
         identification = ps.get("identificationModule", {}) or {}
         nct_id = identification.get("nctId")
@@ -249,89 +331,6 @@ class CtgovClient:
             est_primary_completion_date=est_primary_completion,
         )
 
-    def extract_comprehensive_fields(self, study: dict) -> ComprehensiveTrialFields:
-        """Extract comprehensive trial information."""
-        ps = study.get("protocolSection", {}) or {}
-        identification = ps.get("identificationModule", {}) or {}
-        
-        # Basic identification
-        nct_id = identification.get("nctId")
-        brief_title = identification.get("briefTitle")
-        official_title = identification.get("officialTitle")
-        acronym = identification.get("acronym")
-        
-        # Sponsor information
-        sponsor_info = self._extract_sponsor_info(ps)
-        
-        # Study type and phase
-        study_type = self._determine_study_type(ps)
-        phase = self._extract_phase(ps)
-        
-        # Trial design
-        trial_design = self._extract_trial_design(ps)
-        
-        # Interventions
-        interventions = self._extract_interventions(ps)
-        
-        # Conditions
-        conditions = self._extract_conditions(ps)
-        
-        # Outcomes
-        primary_outcomes = self._extract_outcomes(ps, "primaryOutcomes")
-        secondary_outcomes = self._extract_outcomes(ps, "secondaryOutcomes")
-        other_outcomes = self._extract_outcomes(ps, "otherOutcomes")
-        
-        # Enrollment
-        enrollment_info = self._extract_enrollment_info(ps)
-        
-        # Eligibility
-        eligibility_criteria = self._extract_eligibility_criteria(ps)
-        
-        # Statistical analysis
-        statistical_analysis = self._extract_statistical_analysis(ps)
-        
-        # Status and dates
-        status, dates = self._extract_status_and_dates(ps)
-        
-        # Locations
-        locations = self._extract_locations(ps)
-        
-        # Additional metadata
-        keywords = self._extract_keywords(ps)
-        mesh_terms = self._extract_mesh_terms(ps)
-        study_documents = self._extract_study_documents(ps)
-        
-        return ComprehensiveTrialFields(
-            nct_id=nct_id,
-            brief_title=brief_title,
-            official_title=official_title,
-            acronym=acronym,
-            sponsor_info=sponsor_info,
-            study_type=study_type,
-            phase=phase,
-            trial_design=trial_design,
-            interventions=interventions,
-            conditions=conditions,
-            primary_outcomes=primary_outcomes,
-            secondary_outcomes=secondary_outcomes,
-            other_outcomes=other_outcomes,
-            enrollment_info=enrollment_info,
-            eligibility_criteria=eligibility_criteria,
-            statistical_analysis=statistical_analysis,
-            status=status,
-            first_posted_date=dates.get("first_posted"),
-            last_update_posted_date=dates.get("last_update"),
-            study_start_date=dates.get("study_start"),
-            primary_completion_date=dates.get("primary_completion"),
-            study_completion_date=dates.get("study_completion"),
-            locations=locations,
-            keywords=keywords,
-            mesh_terms=mesh_terms,
-            study_documents=study_documents,
-            raw_jsonb=study,
-            extracted_at=datetime.utcnow()
-        )
-
     def _extract_sponsor_info(self, ps: Dict[str, Any]) -> SponsorInfo:
         """Extract detailed sponsor information."""
         sponsor_module = ps.get("sponsorCollaboratorsModule", {}) or {}
@@ -389,10 +388,11 @@ class CtgovClient:
         if not phases:
             return None
         
-        # phase_str = phases[0].upper()
-        for p in phases.upper():
-            if p in {"PHASE2", "PHASE3", "PHASE2_PHASE3"}:
-                phase_str = p
+        phase_str = None
+        for p in phases:
+            p_norm = str(p).upper().replace(" ", "_")
+            if p_norm in {"PHASE2", "PHASE3", "PHASE2_PHASE3", "PHASE1_PHASE2", "PHASE3_PHASE4", "PHASE4"}:
+                phase_str = p_norm
                 break
         # Map phase strings to enum values
         phase_mapping = {
@@ -492,9 +492,18 @@ class CtgovClient:
         conditions_module = ps.get("conditionsModule", {}) or {}
         
         for item in conditions_module.get("conditions", []) or []:
-            name = item.get("name", "")
-            mesh_terms = item.get("meshTerms", []) or []
-            synonyms = item.get("synonyms", []) or []
+            if isinstance(item, dict):
+                name = item.get("name", "")
+                mesh_terms = item.get("meshTerms", []) or []
+                synonyms = item.get("synonyms", []) or []
+            elif isinstance(item, str):
+                name = item
+                mesh_terms = []
+                synonyms = []
+            else:
+                name = str(item)
+                mesh_terms = []
+                synonyms = []
             
             conditions.append(Condition(
                 name=name,
@@ -649,8 +658,10 @@ class CtgovClient:
         mesh_terms = []
         
         for condition in conditions_module.get("conditions", []) or []:
-            terms = condition.get("meshTerms", []) or []
-            mesh_terms.extend(terms)
+            if isinstance(condition, dict):
+                terms = condition.get("meshTerms", []) or []
+                mesh_terms.extend(terms)
+            # Skip string conditions as they don't have mesh terms
         
         return list(set(mesh_terms))  # Remove duplicates
 

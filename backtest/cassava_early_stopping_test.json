@@ -1,0 +1,16 @@
+{
+  "test_info": {
+    "date": "2025-09-04T01:27:01.156960",
+    "test_type": "early_stopping_cassava",
+    "description": "Test early stopping on failed drug Cassava"
+  },
+  "results": {
+    "trial_id": "CASSAVA_TEST_001",
+    "final_decision": "promote",
+    "final_reason": "high_shortability_score",
+    "p_short": 0.11249999999999999,
+    "n_docs_seen": 1,
+    "best_S_Rge2": 0.75,
+    "expected_utility": 0.1
+  }
+}

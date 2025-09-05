@@ -11,6 +11,7 @@ import yaml
 from typing import Dict, Optional, List
 from datetime import datetime
 from .types import ScoreResult, GateResult, SignalResult, GateConfig
+from .gates import evaluate_stop_rules
 
 
 def logit(p: float) -> float:
@@ -216,43 +217,7 @@ def score_trial(
     return result
 
 
-def evaluate_stop_rules(
-    study_cards: List[Dict],
-    trial_versions: List[Dict],
-    config: GateConfig
-) -> Optional[str]:
-    """
-    Evaluate stop rules that override scoring.
-    
-    Args:
-        study_cards: List of study card dictionaries
-        trial_versions: List of trial version dictionaries
-        config: Gate configuration with stop rule settings
-        
-    Returns:
-        Stop rule name if triggered, None otherwise
-    """
-    stop_rules = config.stop_rules
-    
-    # Check endpoint switch after LPR
-    if stop_rules.get("endpoint_switched_after_LPR", False):
-        # TODO: Implement endpoint switch detection from trial_versions
-        # Look for endpoint changes after last patient randomized
-        pass
-    
-    # Check PP-only success with high missing ITT
-    if stop_rules.get("pp_only_success_with_missing_itt_gt20", False):
-        # TODO: Implement ITT/PP missingness analysis from study_cards
-        # Check if ITT missingness > 20%, PP positive, ITT neutral/neg
-        pass
-    
-    # Check unblinded subjective primary where blinding feasible
-    if stop_rules.get("unblinded_subjective_primary_feasible_blinding", False):
-        # TODO: Implement blinding feasibility analysis
-        # Check if subjective endpoint, blinding feasible, but unblinded
-        pass
-    
-    return None
+# Removed duplicate evaluate_stop_rules - use the one from gates.py instead
 
 
 def get_default_prior_pi() -> float:

@@ -506,7 +506,7 @@ class SpanIndexer(BaseWorker):
         
         # Create manifest for safe serialization
         manifest = {
-            'created_at': datetime.utcnow().isoformat(),
+            'created_at': datetime.now(datetime.UTC).isoformat(),
             'config': self.config.__dict__,
             'span_mapping': self.span_mapping,
             'feature_names': self.feature_names

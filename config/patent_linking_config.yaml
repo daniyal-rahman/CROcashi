@@ -1,0 +1,407 @@
+# Patent-Asset Linking Configuration
+# Detailed configuration for linking patents to assets and building ownership timelines
+
+# Asset Identification Patterns
+asset_identification:
+  # INN (International Nonproprietary Name) patterns
+  inn_patterns:
+    # Exact word boundary matching
+    exact_match: true
+    case_sensitive: false
+    
+    # Minimum INN length to consider
+    min_length: 3
+    
+    # Common INN suffixes for pharmaceuticals
+    pharmaceutical_suffixes:
+      - "mab"      # Monoclonal antibodies
+      - "tinib"    # Tyrosine kinase inhibitors
+      - "ciclib"   # CDK inhibitors
+      - "nib"      # Kinase inhibitors
+      - "parib"    # PARP inhibitors
+      - "inib"     # General inhibitors
+      - "zomib"    # Proteasome inhibitors
+      - "mide"     # Various drug classes
+      - "afil"     # PDE inhibitors
+      - "pril"     # ACE inhibitors
+      - "sartan"   # ARBs
+      - "statin"   # HMG-CoA reductase inhibitors
+      - "prazole"  # Proton pump inhibitors
+      - "oxacin"   # Quinolones
+      - "mycin"    # Antibiotics
+      - "vir"      # Antivirals
+      - "rel"      # Various
+      - "umab"     # Humanized monoclonal antibodies
+      - "zumab"    # Humanized monoclonal antibodies
+      - "ximab"    # Chimeric monoclonal antibodies
+      - "omab"     # Mouse monoclonal antibodies
+
+  # Internal code patterns
+  internal_code_patterns:
+    # Common pharmaceutical code formats
+    patterns:
+      - "[A-Z]{2,4}-?\\d{2,5}[A-Z]?"  # ABC-123, XYZ123A
+      - "[A-Z]{3,}\\d{3,}"            # COMPOUND123
+      - "\\d{3,}-[A-Z]{2,}"           # 123-ABC
+    
+    # Context words that increase confidence
+    context_words:
+      - "compound"
+      - "drug"
+      - "agent"
+      - "molecule"
+      - "candidate"
+      - "investigational"
+      - "experimental"
+    
+    # Minimum code length
+    min_length: 3
+    max_length: 15
+
+  # Generic and brand name patterns
+  name_patterns:
+    # Common pharmaceutical name patterns
+    generic_indicators:
+      - "generic"
+      - "also known as"
+      - "aka"
+      - "formerly"
+      - "previously known as"
+    
+    brand_indicators:
+      - "branded as"
+      - "marketed as"
+      - "sold as"
+      - "trade name"
+      - "brand name"
+
+# Patent Text Analysis
+patent_text_analysis:
+  # Fields to search in patents
+  search_fields:
+    title:
+      weight: 1.0
+      required: true
+    abstract:
+      weight: 0.9
+      required: true
+    claims:
+      weight: 0.8
+      required: false  # Claims may not be available in all data
+    description:
+      weight: 0.7
+      required: false
+    summary:
+      weight: 0.6
+      required: false
+
+  # Text preprocessing
+  preprocessing:
+    # Remove common patent boilerplate
+    remove_boilerplate: true
+    boilerplate_phrases:
+      - "The present invention relates to"
+      - "Background of the invention"
+      - "Summary of the invention"
+      - "Brief description of the drawings"
+      - "Detailed description"
+    
+    # Normalize chemical names
+    normalize_chemical_names: true
+    
+    # Extract chemical formulas
+    extract_formulas: true
+    formula_patterns:
+      - "C\\d+H\\d+[A-Z]?\\d*"  # Basic chemical formulas
+      - "[A-Z][a-z]?\\d*"       # Element symbols with counts
+
+  # Confidence scoring for text matches
+  text_matching:
+    # Exact match confidence
+    exact_match_confidence: 0.95
+    
+    # Fuzzy match confidence (adjusted by similarity score)
+    fuzzy_match_base_confidence: 0.60
+    
+    # Context boost (when asset name appears with relevant context)
+    context_boost: 0.10
+    
+    # Multiple occurrence boost
+    multiple_occurrence_boost: 0.05
+    max_occurrence_boost: 0.20
+
+# Company-Patent Matching
+company_matching:
+  # Assignee name normalization
+  assignee_normalization:
+    # Remove common corporate suffixes
+    remove_suffixes:
+      - "Inc"
+      - "Incorporated"
+      - "Corp"
+      - "Corporation"
+      - "Company"
+      - "Co"
+      - "Ltd"
+      - "Limited"
+      - "LLC"
+      - "LP"
+      - "SA"
+      - "AG"
+      - "GmbH"
+      - "N.V."
+      - "PLC"
+    
+    # Remove common patent-specific suffixes
+    remove_patent_suffixes:
+      - "as assignee"
+      - "assignee"
+      - "as successor in interest"
+      - "successor in interest"
+    
+    # Standardize punctuation
+    standardize_punctuation: true
+    
+    # Convert to lowercase for matching
+    lowercase_matching: true
+
+  # Subsidiary and parent company mapping
+  subsidiary_mapping:
+    enabled: true
+    
+    # Patterns that indicate subsidiary relationships
+    subsidiary_indicators:
+      - "subsidiary of"
+      - "division of"
+      - "affiliate of"
+      - "unit of"
+      - "owned by"
+    
+    # Common holding company indicators
+    holding_company_indicators:
+      - "Holdings"
+      - "Group"
+      - "International"
+      - "Worldwide"
+      - "Global"
+    
+    # Confidence for subsidiary mappings
+    subsidiary_confidence: 0.75
+
+# Temporal Alignment Scoring
+temporal_alignment:
+  # Scoring function for temporal distance
+  scoring_function: "exponential_decay"  # "linear", "exponential_decay", "step"
+  
+  # Parameters for exponential decay
+  exponential_decay:
+    half_life_days: 365  # Distance where confidence drops to 50%
+    min_confidence: 0.1   # Minimum confidence for very old patents
+  
+  # Linear scoring parameters
+  linear_scoring:
+    max_distance_days: 730  # 2 years
+    min_confidence: 0.1
+  
+  # Step function parameters
+  step_function:
+    excellent_days: 90    # Within 3 months: 1.0 confidence
+    good_days: 365        # Within 1 year: 0.8 confidence
+    acceptable_days: 730  # Within 2 years: 0.6 confidence
+    poor_confidence: 0.3  # Beyond 2 years
+  
+  # Special cases
+  special_cases:
+    # Patents filed before asset development should have lower confidence
+    pre_development_penalty: 0.5
+    
+    # Patents filed during active development get bonus
+    active_development_bonus: 1.2
+    
+    # Maximum temporal confidence (cap for bonuses)
+    max_confidence: 1.0
+
+# Evidence Quality Assessment
+evidence_quality:
+  # Source reliability weights
+  source_weights:
+    patent_office: 1.0
+    sec_filing: 0.9
+    press_release: 0.7
+    scientific_publication: 0.8
+    clinical_trial_registry: 0.6
+    company_website: 0.5
+    news_article: 0.4
+    blog_post: 0.2
+  
+  # Document quality indicators
+  quality_indicators:
+    # Positive indicators (increase confidence)
+    positive:
+      - "FDA approval"
+      - "clinical trial"
+      - "peer reviewed"
+      - "official announcement"
+      - "regulatory filing"
+      - "patent application"
+      - "scientific journal"
+    
+    # Negative indicators (decrease confidence)
+    negative:
+      - "rumor"
+      - "speculation"
+      - "unconfirmed"
+      - "alleged"
+      - "possible"
+      - "might"
+      - "could"
+  
+  # Evidence span requirements
+  evidence_spans:
+    # Minimum context around matches
+    min_context_chars: 50
+    max_context_chars: 200
+    
+    # Maximum number of evidence spans per link
+    max_spans_per_link: 10
+    
+    # Required for high confidence links
+    require_evidence_spans: true
+
+# Disambiguation Rules
+disambiguation:
+  # When multiple assets match the same patent
+  multiple_asset_matches:
+    strategy: "highest_confidence"  # "highest_confidence", "all_above_threshold", "manual_review"
+    
+    # Minimum confidence difference to prefer one over another
+    min_confidence_difference: 0.10
+    
+    # Threshold for automatic acceptance
+    auto_accept_threshold: 0.90
+    
+    # Threshold for manual review
+    manual_review_threshold: 0.70
+  
+  # When asset names are ambiguous
+  ambiguous_names:
+    # Common ambiguous terms to flag
+    ambiguous_terms:
+      - "compound"
+      - "drug"
+      - "agent"
+      - "molecule"
+      - "preparation"
+      - "composition"
+    
+    # Require additional context for ambiguous terms
+    require_additional_context: true
+    
+    # Confidence penalty for ambiguous matches
+    ambiguity_penalty: 0.20
+
+# Performance Optimization
+performance:
+  # Batch processing settings
+  batch_processing:
+    asset_batch_size: 50
+    patent_batch_size: 100
+    
+    # Parallel processing
+    max_workers: 4
+    use_multiprocessing: false  # Use threading instead
+  
+  # Caching strategies
+  caching:
+    # Cache patent text processing results
+    cache_text_analysis: true
+    
+    # Cache company resolution results
+    cache_company_resolution: true
+    
+    # Cache similarity calculations
+    cache_similarity_scores: true
+    
+    # Cache TTL in hours
+    cache_ttl_hours: 24
+  
+  # Memory management
+  memory_management:
+    # Maximum patents to hold in memory
+    max_patents_in_memory: 1000
+    
+    # Clear cache periodically
+    clear_cache_frequency: 1000  # Every N operations
+    
+    # Use lazy loading for large datasets
+    use_lazy_loading: true
+
+# Quality Control
+quality_control:
+  # Validation rules
+  validation:
+    # Minimum confidence for auto-acceptance
+    min_auto_accept_confidence: 0.85
+    
+    # Require manual review below this threshold
+    manual_review_threshold: 0.65
+    
+    # Reject below this threshold
+    auto_reject_threshold: 0.30
+  
+  # Audit and review
+  audit:
+    # Sample percentage for manual review
+    manual_review_sample_percent: 5.0
+    
+    # Flag unusual patterns
+    flag_unusual_patterns: true
+    
+    # Generate linking reports
+    generate_reports: true
+    
+    # Report frequency
+    report_frequency: "weekly"  # "daily", "weekly", "monthly"
+  
+  # Metrics tracking
+  metrics:
+    track_precision: true
+    track_recall: true
+    track_processing_time: true
+    track_confidence_distribution: true
+
+# Output Configuration
+output:
+  # Database storage
+  database:
+    # Table to store asset-patent links
+    links_table: "asset_patent_links"
+    
+    # Store intermediate results
+    store_intermediate_results: false
+    
+    # Batch insert size
+    batch_insert_size: 1000
+  
+  # File exports
+  file_exports:
+    # Export links to CSV
+    export_csv: false
+    csv_path: "exports/asset_patent_links.csv"
+    
+    # Export detailed reports
+    export_reports: true
+    reports_path: "reports/patent_linking/"
+    
+    # Export confidence distributions
+    export_statistics: true
+    statistics_path: "reports/linking_statistics.json"
+  
+  # API endpoints (if applicable)
+  api:
+    # Provide REST API for link queries
+    enable_api: false
+    api_port: 8080
+    
+    # Authentication required
+    require_auth: true

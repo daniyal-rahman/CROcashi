@@ -61,5 +61,5 @@ class BaseModel(ABC):
             try:
                 data['created_at'] = datetime.fromisoformat(data['created_at'])
             except ValueError:
-                data['created_at'] = datetime.utcnow()
+                data['created_at'] = datetime.now(datetime.UTC)
         return cls(**data)

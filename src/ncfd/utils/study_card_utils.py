@@ -30,14 +30,14 @@ def generate_span_id(doc_id: str, section: str, start_char: int, end_char: int, 
 
 def generate_claim_id(prefix: str = "claim") -> str:
     """Generate a unique claim ID."""
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(datetime.UTC).strftime("%Y%m%d_%H%M%S")
     random_suffix = hashlib.md5(f"{timestamp}".encode()).hexdigest()[:8]
     return f"{prefix}_{timestamp}_{random_suffix}"
 
 
 def generate_gate_id(family: str = "g1") -> str:
     """Generate a unique gate ID."""
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(datetime.UTC).strftime("%Y%m%d_%H%M%S")
     random_suffix = hashlib.md5(f"{timestamp}".encode()).hexdigest()[:8]
     return f"gate_{family}_{timestamp}_{random_suffix}"
 

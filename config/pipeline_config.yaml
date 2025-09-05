@@ -26,6 +26,18 @@ orchestration:
   alert_on_slow_execution: true
   slow_execution_threshold_minutes: 60
 
+# LLM Configuration
+llm:
+  config_file: config/llm_models.yaml
+  enable_fallback: true
+  fallback_order: [openai, anthropic, gemini]
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 60
+  retry_policy:
+    max_retries: 3
+    backoff_multiplier: 2
+
 # LLM Path Configuration (LLM-first, provenance-second architecture)
 llm_path:
   mode: "raw_first"         # vs "span_limited"

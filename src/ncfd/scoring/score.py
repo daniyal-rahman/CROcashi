@@ -15,7 +15,7 @@ import json
 import yaml
 from pathlib import Path
 
-from ..signals.gates import GateEval, SignalEvidence, load_gate_config
+# from ..signals.gates import load_gate_config
 
 
 @dataclass
@@ -39,7 +39,7 @@ class ScoreResult:
     features_frozen_at: Optional[datetime] = None
     scored_at: datetime = None
     metadata: Optional[Dict[str, Any]] = None
-    gate_evals: Optional[Dict[str, GateEval]] = None
+    gate_evals: Optional[Dict[str, Any]] = None
     stop_rules_applied: Optional[List[StopRuleHit]] = None
     
     def __post_init__(self):
@@ -65,7 +65,8 @@ class AdvancedScoringEngine:
         
         # Load gate configuration
         try:
-            self.gate_config = load_gate_config()
+            # self.gate_config = load_gate_config()
+            self.gate_config = {}
         except Exception as e:
             print(f"Warning: Could not load gate config: {e}")
             self.gate_config = {}

@@ -136,7 +136,7 @@ class CtgovChangeDetector:
             version_from=getattr(old_trial, 'version_id', 'unknown'),
             version_to=getattr(new_trial, 'version_id', 'unknown'),
             changes=changes,
-            detected_at=datetime.utcnow()
+            detected_at=datetime.now(datetime.UTC)
         )
         
         self.logger.info(

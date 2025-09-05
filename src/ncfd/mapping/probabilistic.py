@@ -197,6 +197,10 @@ def resolve_probabilistic(
     context: Optional[Dict[str, Any]] = None,
     k: int = 50,
 ) -> ProbDecision:
+    # Skip academic/government sponsors
+    if has_academic_keywords(sponsor_text):
+        return ProbDecision("reject", None, 0.0, 0.0, {}, {})
+    
     cands = candidate_retrieval(session, norm_name(sponsor_text), k=k)
     weights = cfg["model"]["weights"]
     intercept = cfg["model"]["intercept"]

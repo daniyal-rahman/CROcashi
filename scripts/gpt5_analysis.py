@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
 """
-CLI script for GPT-5 thinking analysis.
+Run GPT-5 analysis on trials.
 """
 
-import argparse
 import json
-import os
 import sys
+import asyncio
 from pathlib import Path
-from typing import Optional
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from ncfd.synthesis.gpt5_thinking_hook import trigger_gpt5_analysis_sync
+from ncfd.synthesis.gpt5_thinking_hook import GPT5ThinkingHook
+from ncfd.config import get_config
 
 
 def main():

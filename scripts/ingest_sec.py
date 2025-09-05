@@ -1,33 +1,18 @@
 #!/usr/bin/env python3
 """
-SEC Data Ingestion Script for CROcashi
-
-This script provides a simple CLI interface for ingesting SEC data:
-- Company tickers and securities
-- SEC filings pipeline execution
-- Pipeline status checking
-- Backfill operations
-
-Usage:
-    python scripts/ingest_sec.py tickers [--json PATH] [--start DATE]
-    python scripts/ingest_sec.py filings
-    python scripts/ingest_sec.py status
-    python scripts/ingest_sec.py backfill --start DATE --end DATE
+Ingest SEC filings data.
 """
 
-import argparse
+import json
 import sys
-from datetime import date
 from pathlib import Path
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
+from ncfd.ingest.sec import SECIngester
 from ncfd.config import get_config
-from ncfd.ingest.sec import ingest_sec_company_tickers_from_file
 from ncfd.pipeline.sec_pipeline import SecPipeline
 from ncfd.db.session import get_engine
 from sqlalchemy.orm import sessionmaker
+from datetime import date
 
 
 def ingest_tickers(json_path: str, start_date: str):
@@ -45,7 +30,7 @@ def ingest_tickers(json_path: str, start_date: str):
         start = date.fromisoformat(start_date)
         
         # Ingest data
-        stats = ingest_sec_company_tickers_from_file(session, json_path, default_start=start)
+        stats = SECIngester.ingest_company_tickers_from_file(session, json_path, default_start=start)
         
         # Commit changes
         session.commit()

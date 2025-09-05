@@ -4,11 +4,17 @@ More comprehensive literature review
     - Patent Search (step 11)
 - Need to generate mechanistic arguements using this info
 More generally have a parrallel mechanism which is more free flowing lets llm generate arguments then backcheck against the tracible arguement gen
+ncfd and src are basically the same folder that needs to be refactored. 
+✅ **COMPLETED**: Created modular LLM system with interchangeable providers (OpenAI, Anthropic, Gemini). Includes:
+- Abstract LLM provider interface with standardized request/response models
+- OpenAI provider implementation with GPT-4, GPT-5 support
+- Configuration system allowing per-worker model selection
+- Factory pattern for provider instantiation and fallback support
+- Documentation for model switching and worker migration
+- Base LLM worker class for easy integration
+- Cost tracking and performance monitoring
+See: `src/ncfd/llm/` package and `docs/LLM_MODEL_SWITCHING.md`
 
-## Of the OG plan:
-Gating (step 7)
-Synthesis (step 9)
-Backtesting (step 8)
 
 # chat gpt loook at later:
 I'll go through our entire conversation and aggregate all the remaining tasks you still need to do. Let me analyze the conversation systematically.

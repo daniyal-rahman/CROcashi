@@ -56,7 +56,7 @@ class ValidationRule:
     
     def __post_init__(self):
         """Set last_updated to current time."""
-        self.last_updated = datetime.utcnow()
+        self.last_updated = datetime.now(datetime.UTC)
 
 
 @dataclass
@@ -411,7 +411,7 @@ class DataQualityFramework:
     
     def _execute_validation_rule(self, rule: ValidationRule, data: Any) -> Optional[ValidationResult]:
         """Execute a specific validation rule."""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(datetime.UTC)
         
         try:
             if rule.rule_id == "trial_required_fields":
@@ -445,7 +445,7 @@ class DataQualityFramework:
                 return None
                 
         finally:
-            execution_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+            execution_time = (datetime.now(datetime.UTC) - start_time).total_seconds() * 1000
             
             # Update execution time if result exists
             # This would be done in the specific validation methods
@@ -756,7 +756,7 @@ class DataQualityFramework:
     
     def calculate_quality_metrics(self, validation_results: List[ValidationResult]) -> QualityMetrics:
         """Calculate quality metrics from validation results."""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(datetime.UTC)
         
         metrics = QualityMetrics(
             dataset_name="validation_results",
@@ -786,7 +786,7 @@ class DataQualityFramework:
                 metrics.low_issues += 1
         
         # Calculate duration
-        metrics.validation_duration_seconds = (datetime.utcnow() - start_time).total_seconds()
+        metrics.validation_duration_seconds = (datetime.now(datetime.UTC) - start_time).total_seconds()
         
         # Store in history
         self.quality_history.append(metrics)
@@ -795,7 +795,7 @@ class DataQualityFramework:
     
     def get_quality_trends(self, days: int = 30) -> Dict[str, Any]:
         """Get quality trends over the specified period."""
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(datetime.UTC) - timedelta(days=days)
         recent_metrics = [m for m in self.quality_history if m.calculated_at >= cutoff_date]
         
         if not recent_metrics:
@@ -826,7 +826,7 @@ class DataQualityFramework:
         
         # Generate report
         report_data = {
-            "report_generated_at": datetime.utcnow().isoformat(),
+            "report_generated_at": datetime.now(datetime.UTC).isoformat(),
             "latest_metrics": vars(latest_metrics),
             "trends": trends,
             "validation_rules": {

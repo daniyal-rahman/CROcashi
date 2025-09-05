@@ -413,24 +413,9 @@ class ProvenanceBacktracer(BaseWorker):
         return min(1.0, final_score)
 
     def _normalize_text(self, text: str) -> str:
-        """Normalize text for matching (lowercase, remove punctuation, etc.)."""
-        if not text:
-            return ""
-        
-        # Convert to lowercase
-        normalized = text.lower()
-        
-        # Remove punctuation except for numbers
-        normalized = re.sub(r'[^\w\s\d\.\-%]', ' ', normalized)
-        
-        # Normalize whitespace
-        normalized = re.sub(r'\s+', ' ', normalized).strip()
-        
-        # Fix common OCR errors
-        for wrong_char, correct_char in self.ocr_noise_map.items():
-            normalized = normalized.replace(wrong_char, correct_char)
-        
-        return normalized
+        """Normalize text for matching using shared TextNormalizer."""
+        from ..utils.text_normalization import TextNormalizer
+        return TextNormalizer.normalize_text(text, aggressive=True)
 
     def _calculate_bm25_score(self, query: str, text: str) -> float:
         """Calculate BM25-like score for query-text matching."""
@@ -498,29 +483,9 @@ class ProvenanceBacktracer(BaseWorker):
         return matches / len(field_numbers) if field_numbers else 0.0
 
     def _extract_numbers_from_text(self, text: str) -> List[float]:
-        """Extract all numeric values from text."""
-        numbers = []
-        
-        # Match percentages
-        for match in re.finditer(r'(\d+\.?\d*)\s*%', text):
-            numbers.append(float(match.group(1)))
-        
-        # Match fractions
-        for match in re.finditer(r'(\d+)/(\d+)', text):
-            try:
-                numbers.append(float(match.group(1)))
-                numbers.append(float(match.group(2)))
-            except ValueError:
-                pass
-        
-        # Match decimals and integers
-        for match in re.finditer(r'(\d+\.?\d*)', text):
-            try:
-                numbers.append(float(match.group(1)))
-            except ValueError:
-                pass
-        
-        return numbers
+        """Extract all numeric values from text using shared TextNormalizer."""
+        from ..utils.text_normalization import TextNormalizer
+        return TextNormalizer.extract_numbers_from_text(text)
 
     def _extract_numbers_from_value(self, value: Any) -> List[float]:
         """Extract numeric values from field value."""

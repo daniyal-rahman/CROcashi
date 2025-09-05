@@ -1,0 +1,78 @@
+# Backtest Configuration
+# Stage-wise evaluation of precision-first pipeline
+
+# Input/output paths
+fixtures_dir: test_outputs
+outputs_dir: backtest
+oracle_dir: data/oracle_cards/
+
+# Gold standard cohorts (optional)
+gold_fail_file: data/gold/fails.json
+gold_success_file: data/gold/success.json
+
+# File patterns for discovery
+signals_glob: "*signals*.json"
+trial_glob: "*trial*.json"
+
+# Evaluation thresholds
+thresholds: [0.7, 0.8, 0.9]
+k_values: [1, 3, 5, 10]
+rec_threshold: 0.90
+
+# Stage configurations
+stages:
+  ctgov:
+    enabled: true
+    # CTGov discovery and Public US filter
+    public_us_filter: true
+    
+  lit:
+    enabled: true
+    # Literature review with early stopping
+    required_fields: 
+      - primary_endpoint
+      - n_total
+      - itt_status
+      - effect_primary_or_p_value
+    enable_gpt5_delta: true
+    max_novel_sources: 10
+    gpt5_model: gpt-4o
+    
+  cards:
+    enabled: true
+    # Extraction/cards quality evaluation
+    compare_to_oracle: true
+    critical_fields:
+      - primary_endpoint
+      - n_total
+      - itt_status
+      - effect_primary
+      - p_value
+      
+  pred:
+    enabled: true
+    # Gates + Scoring evaluation
+    use_stop_rules: true
+    score_field: p_fail
+    gate_fields:
+      - fired
+      - supporting_signals
+      - rationale
+      
+  e2e:
+    enabled: true
+    # Final recommendation set
+    use_stop_rules: true
+    include_gpt5_disagreement: false
+
+# Evaluation modes
+modes:
+  - scraped
+  - oracle
+  - both
+
+# Logging
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: backtest/backtest.log

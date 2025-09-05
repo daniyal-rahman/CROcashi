@@ -83,6 +83,7 @@ class LateFusionOrchestrator:
                 from ..workers.llm.method_auditor import MethodAuditor
                 from ..workers.llm.claimizer import Claimizer
                 from ..workers.llm.counter_evidence_miner import CounterEvidenceMiner
+                from ..workers.llm.mechanistic_dose_researcher import MechanisticDoseResearcher
                 
                 # LLM-first architecture workers
                 self.llm_workers = {
@@ -102,7 +103,8 @@ class LateFusionOrchestrator:
                     'method_auditor': MethodAuditor(),
                     'denominator_resolver': create_denominator_resolver("llm"),
                     'claimizer': Claimizer(),
-                    'counter_evidence_miner': CounterEvidenceMiner()
+                    'counter_evidence_miner': CounterEvidenceMiner(),
+                    'mechanistic_dose_researcher': MechanisticDoseResearcher()
                 }
                 self.logger.info("LLM path workers initialized (LLM-first architecture)")
             except ImportError as e:
@@ -386,6 +388,27 @@ class LateFusionOrchestrator:
                     llm_results['contradicting_claims'] = counter_result.output.get('contradicting_claims')
                 else:
                     llm_results['errors'].append(f"Counter Evidence Miner failed: {counter_result.error_message}")
+            
+            # Step 3g: Mechanistic Dose Researcher
+            if 'mechanistic_dose_researcher' in self.llm_workers:
+                self.logger.info("Step 3g: Running Mechanistic Dose Researcher")
+                mechanistic_result = self.llm_workers['mechanistic_dose_researcher'].process({
+                    'trial_context': trial_context,
+                    'evidence_spans': evidence_spans,
+                    'pocket_context': pocket_context,
+                    'design_json': design_json or {}
+                })
+                
+                if mechanistic_result.success:
+                    llm_results['mechanistic_dose_card'] = mechanistic_result.output.get('mechanistic_dose_card')
+                    llm_results['mechanistic_metadata'] = {
+                        'processed_spans': mechanistic_result.output.get('processed_spans', 0),
+                        'total_citations': mechanistic_result.output.get('total_citations', 0),
+                        'confidence': mechanistic_result.metadata.get('confidence', 'Unknown'),
+                        'red_flags_count': mechanistic_result.metadata.get('red_flags_count', 0)
+                    }
+                else:
+                    llm_results['errors'].append(f"Mechanistic Dose Researcher failed: {mechanistic_result.error_message}")
             
             # Check if we have the minimum required outputs
             if llm_results.get('results_draft') or llm_results.get('method_card'):

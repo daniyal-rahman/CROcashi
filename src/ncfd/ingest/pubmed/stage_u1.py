@@ -10,7 +10,7 @@ Select/Drop docs based on R/S tier rules; advance candidates.
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 
@@ -106,7 +106,7 @@ class StageU1Processor:
         Returns:
             StageU1Result with execution details
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(UTC)
         
         try:
             logger.info(f"Starting Stage U1 for trial {trial_id} with {len(u0_documents)} documents")
@@ -122,7 +122,7 @@ class StageU1Processor:
                     documents_scored=0,
                     documents_selected=0,
                     documents_dropped=0,
-                    execution_time=(datetime.utcnow() - start_time).total_seconds()
+                    execution_time=(datetime.now(UTC) - start_time).total_seconds()
                 )
             
             # 1. Fetch abstracts for documents using XML method for reliability
@@ -139,7 +139,7 @@ class StageU1Processor:
                     documents_scored=0,
                     documents_selected=0,
                     documents_dropped=0,
-                    execution_time=(datetime.utcnow() - start_time).total_seconds()
+                    execution_time=(datetime.now(UTC) - start_time).total_seconds()
                 )
             
             logger.info(f"Fetched abstracts for {len(abstracts_fetched)} documents")
@@ -265,7 +265,7 @@ class StageU1Processor:
                 except Exception as e:
                     logger.error(f"Failed to persist data to database: {e}")
             
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (datetime.now(UTC) - start_time).total_seconds()
             
             logger.info(f"Stage U1 completed for {trial_id}: "
                        f"{len(documents_scored)} scored, {len(selected_docs)} selected, "
@@ -291,7 +291,7 @@ class StageU1Processor:
             )
             
         except Exception as e:
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (datetime.now(UTC) - start_time).total_seconds()
             error_msg = f"Stage U1 failed for trial {trial_id}: {str(e)}"
             logger.error(error_msg, exc_info=True)
             
@@ -546,8 +546,8 @@ class StageU1Processor:
                 'S_tier': score.S_tier,
                 'R_components_jsonb': score.R_components,
                 'S_components_jsonb': score.S_components,
-                'decided_at': datetime.utcnow().isoformat(),
-                'created_at': datetime.utcnow().isoformat()
+                'decided_at': datetime.now(UTC).isoformat(),
+                'created_at': datetime.now(UTC).isoformat()
             }
         except Exception as e:
             logger.warning(f"Failed to prepare R/S score record: {e}")
@@ -659,7 +659,7 @@ class StageU1Processor:
                 doc['stage_metadata'] = {
                     'stage': stage,
                     'stage_description': 'Abstract processing completed',
-                    'stage_completed_at': datetime.utcnow().isoformat(),
+                    'stage_completed_at': datetime.now(UTC).isoformat(),
                     'selection_status': doc.get('selection_status', 'unknown'),
                     'selection_reason': doc.get('selection_reason', 'unknown')
                 }

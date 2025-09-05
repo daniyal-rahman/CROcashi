@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
 """
-Example script demonstrating GPT-5 thinking hook with two-agent system.
+Example of using the GPT-5 thinking hook for advanced analysis.
 """
 
+import json
 import sys
-import os
 import asyncio
 from pathlib import Path
-from unittest.mock import Mock
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from ncfd.synthesis.gpt5_thinking_hook import GPT5ThinkingHook, trigger_gpt5_analysis_sync
+from ncfd.synthesis.gpt5_thinking_hook import GPT5ThinkingHook
+from ncfd.config import get_config
 
 
 def create_real_trial_data():
