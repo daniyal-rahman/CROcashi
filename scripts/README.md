@@ -1,6 +1,6 @@
 # Scripts Directory
 
-This directory contains operational scripts for the CROcashi system. Test and debug scripts have been moved to `tests/scripts/`.
+This directory contains **core operational scripts** for the CROcashi system. All test, debug, and development scripts have been moved to `tests/scripts/`.
 
 ## Core Operational Scripts
 
@@ -26,6 +26,11 @@ This directory contains operational scripts for the CROcashi system. Test and de
   python scripts/backtest.py --stage all --config config/backtest.yaml
   ```
 
+- **`run_backtest_universe.py`** - Run universe-level backtesting
+  ```bash
+  python scripts/run_backtest_universe.py --config config/universe_config.yaml
+  ```
+
 ### Data Ingestion
 - **`ingest_ctgov_since_august.py`** - Ingest CT.gov trials since August
   ```bash
@@ -42,10 +47,20 @@ This directory contains operational scripts for the CROcashi system. Test and de
   python scripts/ingest_aliases_from_text.py --file aliases.txt
   ```
 
+- **`harvest_docs.py`** - Harvest documents from various sources
+  ```bash
+  python scripts/harvest_docs.py --source pubmed
+  ```
+
 ### Data Management
 - **`load_company_aliases.py`** - Load company aliases into database
   ```bash
   python scripts/load_company_aliases.py
+  ```
+
+- **`load_resolver_ignore_sponsor.py`** - Load resolver ignore sponsor patterns into database
+  ```bash
+  python scripts/load_resolver_ignore_sponsor.py
   ```
 
 - **`seed_company_trials.py`** - Seed database with company and trial data
@@ -58,12 +73,23 @@ This directory contains operational scripts for the CROcashi system. Test and de
   python scripts/wire_asset_to_trials.py
   ```
 
+### Universe Management
+- **`universe_build.py`** - Build historical universe
+  ```bash
+  python scripts/universe_build.py --config config/universe_config.yaml
+  ```
+
+- **`universe_pipeline.py`** - Run universe pipeline
+  ```bash
+  python scripts/universe_pipeline.py --stage all
+  ```
+
+### Utility Scripts
 - **`manual_asset_resolution.py`** - Manual asset resolution tool
   ```bash
   python scripts/manual_asset_resolution.py
   ```
 
-### Verification & Validation
 - **`verify_resolved_sponsors.py`** - Verify sponsor resolution results
   ```bash
   python scripts/verify_resolved_sponsors.py
@@ -82,15 +108,23 @@ These scripts are used in production workflows:
 - `synthesize.py`
 - `gpt5_analysis.py`
 - `backtest.py`
+- `run_backtest_universe.py`
 - `ingest_ctgov_since_august.py`
 - `ingest_sec.py`
+- `harvest_docs.py`
 
 ### Data Setup Scripts
 These scripts are used for initial data setup and maintenance:
 - `load_company_aliases.py`
+- `load_resolver_ignore_sponsor.py`
 - `seed_company_trials.py`
 - `wire_asset_to_trials.py`
 - `ingest_aliases_from_text.py`
+
+### Universe Management Scripts
+These scripts handle historical universe operations:
+- `universe_build.py`
+- `universe_pipeline.py`
 
 ### Utility Scripts
 These scripts provide utility functions:
@@ -102,14 +136,30 @@ These scripts provide utility functions:
 These scripts are for system administration:
 - `nuke_and_reset.sh`
 
-## Test Scripts
+## Moved Scripts
 
-Test and debug scripts have been moved to `tests/scripts/` and include:
+The following types of scripts have been moved to `tests/scripts/`:
+
+### Test Scripts
+- `test_early_stopping_cassava.py` - Early stopping test
+- All E2E test scripts (`e2e_*.py`)
 - Specific backtest scripts (e.g., `backtest_pubmed_cassava.py`)
 - Debug scripts (e.g., `debug_cassava_trial.py`)
 - Test scripts (e.g., `test_top_k_guard.py`)
 - PMC2978916 test scripts
 - Analysis scripts for specific trials
+
+### Development Scripts
+- `setup_dev.py` - Development environment setup
+- `build_labels.py` - Label building for testing
+- `make_snapshots.py` - Snapshot creation for testing
+- `make_splits.py` - Data splitting for testing
+- `public_status.py` - Public status detection for testing
+
+### Code Quality Scripts
+- `check_datetime_usage.py` - Pre-commit hook for datetime usage
+- `check_debug_prints.py` - Pre-commit hook for debug prints
+- `check_md5_usage.py` - Pre-commit hook for MD5 usage
 
 ## Usage Guidelines
 

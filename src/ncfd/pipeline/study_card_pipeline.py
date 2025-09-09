@@ -1,28 +1,31 @@
 # src/ncfd/pipeline/study_card_pipeline.py
 """
-Study Card Pipeline
+Study Card Pipeline - LLM-First Architecture
 
-Main pipeline for study card processing and evaluation.
+Main pipeline for study card processing using LLM-first approach:
+documents + raw text → LLM quotes → backtraced spans → workers
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from typing import Dict, List, Optional, Any
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 
 from ..extract.workers import (
-    Retriever, MethodAuditor, ResultsDistiller, GateProposer,
+    MethodAuditor, ResultsDistiller, GateProposer,
     GateValidator, GateAssessor, FdaLens, MemoComposer,
     DeterministicMethodAuditor, DeterministicResultsDistiller
 )
+from ..extract.workers.retriever_factory import build_retriever
+from ..extract.workers.llm.llm_results_drafter import LLMResultsDrafter
+from ..extract.workers.provenance_backtracer import ProvenanceBacktracer
 from ..extract.models import (
     DocumentCard, EvidenceSpan, Claim, MethodCard, ResultsFactsheet,
     PocketContextCard, GateCandidate, GateSpec, GateAssessment, DecisionRecord
 )
 from ..extract.validators import GlobalValidator
-from ..extract.orchestrate import LateFusionOrchestrator
 from ..extract.validators.section_constraints import enforce_section_constraints
 from ..extract.normalization import get_metric_registry
 
@@ -60,7 +63,7 @@ class StudyCardPipelineResult:
 
 
 class StudyCardPipeline:
-    """Main pipeline for study card processing and evaluation."""
+    """Main pipeline for study card processing with LLM-first architecture."""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
@@ -70,18 +73,24 @@ class StudyCardPipeline:
             config: Configuration dictionary with validation settings
         """
         self.config = config or {}
-        self.retriever = Retriever()
+        self.retriever = build_retriever(self.config)
+        
+        # Core LLM-first workers
+        self.llm_drafter = LLMResultsDrafter()
+        self.provenance_backtracer = ProvenanceBacktracer()
         
         # LLM Path Workers
         self.llm_method_auditor = MethodAuditor()
         self.llm_results_distiller = ResultsDistiller()
         
-        # Deterministic Path Workers
-        self.deterministic_method_auditor = DeterministicMethodAuditor()
-        self.deterministic_results_distiller = DeterministicResultsDistiller()
-        
-        # Late Fusion Orchestrator
-        self.late_fusion_orchestrator = LateFusionOrchestrator()
+        # Deterministic Path Workers (hooks available but disabled by default)
+        deterministic_enabled = self.config.get('deterministic', {}).get('enabled', False)
+        if deterministic_enabled:
+            self.deterministic_method_auditor = DeterministicMethodAuditor()
+            self.deterministic_results_distiller = DeterministicResultsDistiller()
+        else:
+            self.deterministic_method_auditor = None
+            self.deterministic_results_distiller = None
         
         # Other workers
         self.gate_proposer = GateProposer()
@@ -160,9 +169,74 @@ class StudyCardPipeline:
         
         return True
     
+    def _validate_study_card_quality(self, result: StudyCardPipelineResult) -> Tuple[bool, List[str]]:
+        """
+        Validate study card quality to prevent degenerate cards.
+        
+        Args:
+            result: Study card pipeline result to validate
+            
+        Returns:
+            Tuple of (is_valid, errors)
+        """
+        errors = []
+        
+        # Quality gate thresholds
+        quality_config = self.config.get('quality_gate', {})
+        min_documents = quality_config.get('min_documents_analyzed', 1)
+        min_quotes = quality_config.get('min_quotes', 3)
+        min_evidence_spans = quality_config.get('min_evidence_spans', 3)
+        min_confidence = quality_config.get('min_confidence', 0.55)
+        require_method = quality_config.get('require_method', True)
+        require_results = quality_config.get('require_results', True)
+        require_gates = quality_config.get('require_gates', True)
+        min_llm_artifacts = quality_config.get('min_llm_artifacts', 1)
+        
+        # Check document analysis
+        if len(result.document_cards) < min_documents:
+            errors.append(f"Insufficient documents analyzed: {len(result.document_cards)} < {min_documents}")
+        
+        # Check quotes (estimate from LLM artifacts)
+        quote_count = len(result.llm_artifacts.get('quotes', []))
+        if quote_count < min_quotes:
+            errors.append(f"Insufficient quotes extracted: {quote_count} < {min_quotes}")
+        
+        # Check evidence spans
+        if len(result.evidence_spans) < min_evidence_spans:
+            errors.append(f"Insufficient evidence spans: {len(result.evidence_spans)} < {min_evidence_spans}")
+        
+        # Check method card
+        if require_method and not result.method_card:
+            errors.append("Method section missing - no method card generated")
+        
+        # Check results factsheet
+        if require_results and not result.results_factsheet:
+            errors.append("Results section missing - no results factsheet generated")
+        
+        # Check gates
+        if require_gates and len(result.gate_assessments) == 0:
+            errors.append("Gates section missing - no gate assessments generated")
+        
+        # Check LLM artifacts count
+        total_llm_artifacts = len(result.llm_artifacts)
+        if total_llm_artifacts < min_llm_artifacts:
+            errors.append(f"Insufficient LLM artifacts: {total_llm_artifacts} < {min_llm_artifacts}")
+        
+        # Check confidence score (calculate from available data)
+        if result.claims:
+            confidence_scores = [claim.confidence for claim in result.claims if hasattr(claim, 'confidence') and claim.confidence is not None]
+            if confidence_scores:
+                avg_confidence = sum(confidence_scores) / len(confidence_scores)
+                if avg_confidence < min_confidence:
+                    errors.append(f"Low confidence score: {avg_confidence:.3f} < {min_confidence}")
+            else:
+                errors.append("No confidence scores available for validation")
+        
+        return len(errors) == 0, errors
+    
     def execute(self, trial_id: str, trial_context: Dict[str, Any]) -> StudyCardPipelineResult:
-        """Execute the complete study card pipeline."""
-        start_time = datetime.now(datetime.UTC)
+        """Execute the complete study card pipeline with LLM-first architecture."""
+        start_time = datetime.now(timezone.utc)
         result = StudyCardPipelineResult(
             trial_id=trial_id,
             success=False,
@@ -171,264 +245,151 @@ class StudyCardPipeline:
         )
         
         try:
-            logger.info(f"Starting study card pipeline for trial {trial_id}")
+            logger.info(f"Starting LLM-first study card pipeline for trial {trial_id}")
             
-            # Stage 1: Document retrieval and triage
-            logger.info("Stage 1: Document retrieval and triage")
+            # Stage 1: Document retrieval (docs + raw text only)
+            logger.info("Stage 1: Document retrieval (LLM-first mode)")
             retrieval_result = self._execute_retrieval(trial_context)
             if not retrieval_result.success:
-                result.errors.append(f"Retrieval failed: {retrieval_result.error_message}")
+                result.errors.append(f"Document retrieval failed: {retrieval_result.error_message}")
                 return result
             
             result.document_cards = retrieval_result.output.get("document_cards", [])
-            result.evidence_spans = retrieval_result.output.get("evidence_spans", [])
+            raw_doc_texts = retrieval_result.output.get("raw_doc_texts", {})
             
-            # Stage 2: Dual-path Method Auditing
-            logger.info("Stage 2: Dual-path Method Auditing")
+            logger.info(f"Retrieved {len(result.document_cards)} documents with {len(raw_doc_texts)} raw texts")
             
-            # LLM Path
-            llm_method_result = self._execute_llm_method_auditing(trial_context, result.evidence_spans)
-            if not llm_method_result.success:
-                result.errors.append(f"LLM Method auditing failed: {llm_method_result.error_message}")
-                return result
+            # Stage 2: LLM quote generation
+            logger.info("Stage 2: LLM quote drafting")
+            llm_quotes = []
+            for doc_card in result.document_cards:
+                doc_text = raw_doc_texts.get(doc_card.doc_id, "")
+                if doc_text:
+                    quote_result = self._execute_llm_quote_generation(doc_card, doc_text, trial_context)
+                    if quote_result.success:
+                        # Handle both old "quotes" format and new "results_draft" format
+                        if "quotes" in quote_result.output:
+                            llm_quotes.extend(quote_result.output.get("quotes", []))
+                        elif "results_draft" in quote_result.output:
+                            # Extract verbatim quotes from results_draft
+                            results_draft = quote_result.output["results_draft"]
+                            for res in results_draft.results:
+                                if res.get("verbatim_quote"):
+                                    llm_quotes.append({
+                                        "doc_id": doc_card.doc_id,
+                                        "text": res["verbatim_quote"],
+                                        "metric": res.get("metric", ""),
+                                        "value": res.get("value"),
+                                        "confidence": res.get("confidence_llm", 0.8)
+                                    })
+                    else:
+                        result.warnings.append(f"LLM quote generation failed for {doc_card.doc_id}: {quote_result.error_message}")
             
-            # Deterministic Path
-            deterministic_method_result = self._execute_deterministic_method_auditing(trial_context, result.evidence_spans)
-            if not deterministic_method_result.success:
-                result.errors.append(f"Deterministic Method auditing failed: {deterministic_method_result.error_message}")
-                return result
+            logger.info(f"Generated {len(llm_quotes)} LLM quotes")
             
-            # Stage 3: Dual-path Results Distillation
-            logger.info("Stage 3: Dual-path Results Distillation")
+            # Store LLM quotes in result for quality gate validation
+            result.llm_artifacts['quotes'] = llm_quotes
             
-            # LLM Path
-            llm_results_result = self._execute_llm_results_distillation(result.evidence_spans)
-            if not llm_results_result.success:
-                result.errors.append(f"LLM Results distillation failed: {llm_results_result.error_message}")
-                return result
+            # Stage 3: Provenance backtracing (quotes → spans)
+            logger.info("Stage 3: Provenance backtracing")
+            all_evidence_spans = []
+            for doc_card in result.document_cards:
+                doc_text = raw_doc_texts.get(doc_card.doc_id, "")
+                if doc_text:
+                    # Filter quotes for this document
+                    doc_quotes = [q for q in llm_quotes if q.get("doc_id") == doc_card.doc_id]
+                    quote_texts = [q.get("text", q) if isinstance(q, dict) else str(q) for q in doc_quotes]
+                    
+                    # Backtrace to spans
+                    spans = self.provenance_backtracer.backtrace_quotes_to_spans(
+                        quotes=quote_texts,
+                        raw_doc_text=doc_text,
+                        doc_id=doc_card.doc_id
+                    )
+                    all_evidence_spans.extend(spans)
             
-            # Deterministic Path
-            deterministic_results_result = self._execute_deterministic_results_distillation(result.evidence_spans)
-            if not deterministic_results_result.success:
-                result.errors.append(f"Deterministic Results distillation failed: {deterministic_results_result.error_message}")
-                return result
+            result.evidence_spans = all_evidence_spans
+            logger.info(f"Backtraced {len(result.evidence_spans)} evidence spans")
             
-            # Stage 4: Late Fusion
-            logger.info("Stage 4: Late Fusion")
-            fusion_result = self._execute_late_fusion(
-                llm_method_result.output,
-                llm_results_result.output,
-                deterministic_method_result.output,
-                deterministic_results_result.output,
-                result.evidence_spans
-            )
-            if not fusion_result.success:
-                result.errors.append(f"Late fusion failed: {fusion_result.error_message}")
-                return result
-            
-            # Use fused artifacts for downstream processing
-            result.method_card = fusion_result.output['method_card']
-            result.results_factsheet = fusion_result.output['results_factsheet']
-            result.ambiguity_ledger = fusion_result.output.get('ambiguity_ledger', {})
-            result.llm_artifacts = {
-                'method_card': llm_method_result.output,
-                'results_factsheet': llm_results_result.output
-            }
-            result.deterministic_artifacts = {
-                'method_card': deterministic_method_result.output,
-                'results_factsheet': deterministic_results_result.output
-            }
-            
-            # Validate fused artifacts
-            if result.method_card:
-                is_valid, errors = GlobalValidator.validate_artifact(result.method_card, "MethodCard")
-                if not self._handle_validation_errors(result, "MethodCard", errors):
-                    return result
+            # Stage 4: Method and Results processing (if spans available)
+            if result.evidence_spans:
+                logger.info("Stage 4: Method and Results processing")
                 
-                # Validate MethodCard section constraints
-                section_ok, section_errors = enforce_section_constraints(
-                    method_card=result.method_card,
-                    results_factsheet=None,
-                    evidence_spans=result.evidence_spans
-                )
-                if not section_ok:
-                    result.errors.extend([f"MethodCard section constraint: {e}" for e in section_errors])
-                    return result
-            
-            if result.results_factsheet:
-                is_valid, errors = GlobalValidator.validate_artifact(result.results_factsheet, "ResultsFactsheet")
-                if not self._handle_validation_errors(result, "ResultsFactsheet", errors):
-                    return result
+                # LLM Method Auditing
+                llm_method_result = self._execute_llm_method_auditing(trial_context, result.evidence_spans)
+                if not llm_method_result.success:
+                    result.warnings.append(f"LLM Method auditing failed: {llm_method_result.error_message}")
+                    llm_method_result = None
                 
-                # Validate ResultsFactsheet section constraints
-                section_ok, section_errors = enforce_section_constraints(
-                    method_card=result.method_card,
-                    results_factsheet=result.results_factsheet,
-                    evidence_spans=result.evidence_spans
-                )
-                if not section_ok:
-                    result.errors.extend([f"ResultsFactsheet section constraint: {e}" for e in section_errors])
+                # LLM Results Distillation
+                llm_results_result = self._execute_llm_results_distillation(result.evidence_spans)
+                if not llm_results_result.success:
+                    result.warnings.append(f"LLM Results distillation failed: {llm_results_result.error_message}")
+                    llm_results_result = None
+                
+                # Use LLM results directly (no fusion needed in LLM-first mode)
+                if llm_method_result and llm_method_result.output:
+                    result.method_card = llm_method_result.output.get('method_card')
+                
+                if llm_results_result and llm_results_result.output:
+                    result.results_factsheet = llm_results_result.output.get('results_factsheet')
+                
+                logger.info("LLM-first processing completed")
+            else:
+                logger.warning("No evidence spans available - skipping method and results processing")
+            
+            # Stage: Quality Gate Validation
+            logger.info("Final Stage: Quality gate validation")
+            is_valid, quality_errors = self._validate_study_card_quality(result)
+            
+            if not is_valid:
+                logger.error(f"Study card failed quality gate validation: {quality_errors}")
+                result.errors.extend([f"Quality gate: {error}" for error in quality_errors])
+                
+                # Check if we should fail hard or just warn
+                quality_config = self.config.get('quality_gate', {})
+                fail_on_quality_gate = quality_config.get('fail_on_validation', True)
+                
+                if fail_on_quality_gate:
+                    result.success = False
+                    result.end_time = datetime.now(timezone.utc)
+                    result.processing_time_seconds = (result.end_time - result.start_time).total_seconds()
+                    logger.error(f"Pipeline failed due to quality gate violations for trial {trial_id}")
                     return result
+                else:
+                    logger.warning(f"Quality gate violations detected but configured to continue for trial {trial_id}")
+                    result.warnings.extend([f"Quality gate warning: {error}" for error in quality_errors])
+            else:
+                logger.info("Study card passed quality gate validation")
             
-            # Stage 3.5: ResultsFactsheet normalization (guaranteed)
-            logger.info("Stage 3.5: ResultsFactsheet normalization")
-            normalization_result = self._execute_results_normalization(result.results_factsheet)
-            if not normalization_result.success:
-                result.errors.append(f"Results normalization failed: {normalization_result.error_message}")
-                return result
-            
-            # Update results_factsheet with normalized data
-            result.results_factsheet = normalization_result.output
-            
-            # Stage 5: Claim generation
-            logger.info("Stage 5: Claim generation")
-            claims_result = self._execute_claim_generation(result.evidence_spans)
-            if not claims_result.success:
-                result.errors.append(f"Claim generation failed: {claims_result.error_message}")
-                return result
-            
-            result.claims = claims_result.output
-            
-            # Validate Claims provenance
-            if result.claims:
-                for claim in result.claims:
-                    is_valid, errors = GlobalValidator.validate_artifact(claim, "Claim")
-                    if not self._handle_validation_errors(result, "Claim", errors):
-                        return result
-            
-            # Stage 6: Gate proposal
-            logger.info("Stage 6: Gate proposal")
-            gates_result = self._execute_gate_proposal(
-                result.method_card, result.results_factsheet, result.claims, trial_context
-            )
-            if not gates_result.success:
-                result.errors.append(f"Gate proposal failed: {gates_result.error_message}")
-                return result
-            
-            result.gate_candidates = gates_result.output
-            
-            # Stage 7: Gate validation
-            logger.info("Stage 7: Gate validation")
-            validation_result = self._execute_gate_validation(result.gate_candidates, result.claims)
-            if not validation_result.success:
-                result.errors.append(f"Gate validation failed: {validation_result.error_message}")
-                return result
-            
-            result.gate_specs = validation_result.output["validated_gates"]
-            
-            # Stage 7: Gate assessment
-            logger.info("Stage 7: Gate assessment")
-            assessment_result = self._execute_gate_assessment(result.gate_specs, result.claims)
-            if not assessment_result.success:
-                result.errors.append(f"Gate assessment failed: {assessment_result.error_message}")
-                return result
-            
-            result.gate_assessments = assessment_result.output
-            
-            # Stage 8: Decision record creation
-            logger.info("Stage 8: Decision record creation")
-            decision_result = self._create_decision_record(
-                trial_id, result.gate_assessments, result.claims
-            )
-            result.decision_record = decision_result
-            
-            # Stage 9: FDA lens analysis (optional)
-            logger.info("Stage 9: FDA lens analysis")
-            fda_result = self._execute_fda_lens(
-                result.method_card, result.gate_assessments, result.decision_record
-            )
-            if fda_result.success:
-                # Add FDA insights to decision record
-                fda_gates = fda_result.output
-                for gate in fda_gates:
-                    result.decision_record.add_note(f"FDA recommendation: {gate.proposition}")
-            
-            # Stage 10: Memo composition (optional)
-            logger.info("Stage 10: Memo composition")
-            memo_result = self._execute_memo_composition(
-                result.gate_assessments, result.decision_record, trial_context
-            )
-            if memo_result.success:
-                memo = memo_result.output
-                result.decision_record.add_link("memo", memo)
-            
-            # Mark pipeline as successful
+            # Complete the pipeline
             result.success = True
-            result.end_time = datetime.now(datetime.UTC)
-            
-            # Recalculate processing time after setting end_time
+            result.end_time = datetime.now(timezone.utc)
             result.processing_time_seconds = (result.end_time - result.start_time).total_seconds()
-            
-            # Final comprehensive validation
-            if not self._validate_all_artifacts(result):
-                result.success = False
-                logger.error(f"Study card pipeline failed validation for trial {trial_id}")
-                return result
             
             logger.info(f"Study card pipeline completed successfully for trial {trial_id}")
+            logger.info(f"Generated {len(result.document_cards)} document cards, {len(result.evidence_spans)} evidence spans")
+            if result.method_card:
+                logger.info("Method card generated successfully")
+            if result.results_factsheet:
+                logger.info("Results factsheet generated successfully")
+            
+            return result
             
         except Exception as e:
-            result.end_time = datetime.now(datetime.UTC)
-            result.errors.append(f"Pipeline execution failed: {str(e)}")
-            
-            # Recalculate processing time after setting end_time
-            result.processing_time_seconds = (result.end_time - result.start_time).total_seconds()
-            
             logger.error(f"Study card pipeline failed for trial {trial_id}: {str(e)}")
-        
-        return result
+            result.errors.append(f"Pipeline execution failed: {str(e)}")
+            result.end_time = datetime.now(timezone.utc)
+            result.processing_time_seconds = (result.end_time - result.start_time).total_seconds()
+            return result
     
-    def _validate_all_artifacts(self, result: StudyCardPipelineResult) -> bool:
-        """
-        Validate all artifacts comprehensively.
-        
-        Args:
-            result: Pipeline result object
-            
-        Returns:
-            True if all validations pass, False if any hard failures
-        """
-        # Validate MethodCard
-        if result.method_card:
-            is_valid, errors = GlobalValidator.validate_artifact(result.method_card, "MethodCard")
-            if not self._handle_validation_errors(result, "MethodCard", errors):
-                return False
-        
-        # Validate ResultsFactsheet
-        if result.results_factsheet:
-            is_valid, errors = GlobalValidator.validate_artifact(result.results_factsheet, "ResultsFactsheet")
-            if not self._handle_validation_errors(result, "ResultsFactsheet", errors):
-                return False
-        
-        # Validate Claims
-        if result.claims:
-            for i, claim in enumerate(result.claims):
-                is_valid, errors = GlobalValidator.validate_artifact(claim, f"Claim[{i}]")
-                if not self._handle_validation_errors(result, f"Claim[{i}]", errors):
-                    return False
-        
-        # Run comprehensive validation if all individual validations pass
-        if result.method_card and result.results_factsheet and result.claims:
-            try:
-                violations = GlobalValidator.validate_comprehensive_system(
-                    result.results_factsheet, result.claims, result.method_card, result.evidence_spans
-                )
-                if violations:
-                    # Check if any violations are critical (start with "CRITICAL:")
-                    critical_violations = [v for v in violations if v.startswith("CRITICAL:")]
-                    if critical_violations and self.strict_validation:
-                        result.errors.extend([f"Comprehensive validation: {v}" for v in critical_violations])
-                        return False
-                    else:
-                        result.warnings.extend([f"Comprehensive validation: {v}" for v in violations])
-            except Exception as e:
-                if self.strict_validation:
-                    result.errors.append(f"Comprehensive validation failed: {str(e)}")
-                    return False
-                else:
-                    result.warnings.append(f"Comprehensive validation failed: {str(e)}")
-        
-        return True
+    def _execute_llm_quote_generation(self, doc_card: DocumentCard, doc_text: str, trial_context: Dict[str, Any]):
+        """Execute LLM quote generation for a document."""
+        return self.llm_drafter.process({
+            "raw_doc_text": doc_text,
+            "doc_id": doc_card.doc_id,
+            "trial_context": trial_context
+        })
     
     def _execute_retrieval(self, trial_context: Dict[str, Any]) -> Any:
         """Execute document retrieval stage."""
@@ -436,214 +397,7 @@ class StudyCardPipeline:
             "trial_context": trial_context,
             "date_window": trial_context.get("date_window", "2020-2024")
         }
-        return self.retriever.execute(inputs)
-    
-    def _execute_method_auditing(self, trial_context: Dict[str, Any], 
-                                evidence_spans: List[EvidenceSpan]) -> Any:
-        """Execute method auditing stage."""
-        # Filter spans for methods/protocol/SAP
-        method_spans = [span for span in evidence_spans if span.section.lower() in ["methods", "protocol", "sap"]]
-        
-        inputs = {
-            "design_json": trial_context.get("design", {}),
-            "method_spans": method_spans,
-            "pocket_context": trial_context.get("pocket_context")
-        }
-        return self.method_auditor.execute(inputs)
-    
-    def _execute_results_distillation(self, evidence_spans: List[EvidenceSpan]) -> Any:
-        """Execute results distillation stage."""
-        # Filter spans for results/abstract/tables
-        results_spans = [span for span in evidence_spans if span.section.lower() in ["results", "abstract", "table"]]
-        
-        inputs = {
-            "results_spans": results_spans
-        }
-        return self.results_distiller.execute(inputs)
-    
-    def _execute_results_normalization(self, results_factsheet: ResultsFactsheet) -> Any:
-        """Execute results normalization stage."""
-        from ncfd.extract.normalization import get_metric_registry
-        
-        if not results_factsheet or not results_factsheet.rows:
-            # No results to normalize
-            return type('obj', (object,), {
-                'success': True,
-                'output': results_factsheet,
-                'error_message': None
-            })()
-        
-        metric_registry = get_metric_registry()
-        normalized_rows = []
-        normalization_errors = []
-        
-        # Normalize each row
-        for i, row in enumerate(results_factsheet.rows):
-            try:
-                # Convert row to dict for normalization
-                row_dict = {
-                    "metric": row.metric,
-                    "value": row.value,
-                    "unit": row.unit,
-                    "n": row.n,
-                    "span_ids": row.span_ids,
-                    "confidence": getattr(row, 'confidence', 0.8),
-                    "method": getattr(row, 'method', None),
-                    "range_min": getattr(row, 'range_min', None),
-                    "range_max": getattr(row, 'range_max', None),
-                    "breakdown": getattr(row, 'breakdown', None),
-                    "pending_denominator": getattr(row, 'pending_denominator', None)
-                }
-                
-                # Normalize the row
-                success, errors = metric_registry.normalize_metric_row(row_dict)
-                
-                if not success:
-                    # Treat normalization failures as hard errors
-                    error_msg = f"Row {i+1} normalization failed: {'; '.join(errors)}"
-                    normalization_errors.append(error_msg)
-                    logger.error(error_msg)
-                    continue
-                
-                # Update the row with normalized values
-                if "value_normalized" in row_dict:
-                    row.value_normalized = row_dict["value_normalized"]
-                    row.unit_normalized = row_dict["unit_normalized"]
-                    row.normalization_factor = row_dict.get("normalization_factor")
-                
-                normalized_rows.append(row)
-                
-            except Exception as e:
-                error_msg = f"Row {i+1} normalization error: {str(e)}"
-                normalization_errors.append(error_msg)
-                logger.error(error_msg)
-                continue
-        
-        # Check if we have any normalization errors
-        if normalization_errors:
-            return type('obj', (object,), {
-                'success': False,
-                'output': None,
-                'error_message': f"Normalization failed for {len(normalization_errors)} rows: {'; '.join(normalization_errors)}"
-            })()
-        
-        # Update the factsheet with normalized rows
-        results_factsheet.rows = normalized_rows
-        
-        return type('obj', (object,), {
-            'success': True,
-            'output': results_factsheet,
-            'error_message': None
-        })()
-    
-    def _execute_claim_generation(self, evidence_spans: List[EvidenceSpan]) -> Any:
-        """Execute claim generation stage."""
-        # This would be implemented by a ClaimGenerator worker
-        # For now, return empty claims
-        return type('obj', (object,), {
-            'success': True,
-            'output': [],
-            'error_message': None
-        })()
-    
-    def _execute_gate_proposal(self, method_card: MethodCard, 
-                              results_factsheet: ResultsFactsheet,
-                              claims: List[Claim], 
-                              trial_context: Dict[str, Any]) -> Any:
-        """Execute gate proposal stage."""
-        inputs = {
-            "method_card": method_card,
-            "results_factsheet": results_factsheet,
-            "claims": claims,
-            "pocket_context": trial_context.get("pocket_context")
-        }
-        return self.gate_proposer.execute(inputs)
-    
-    def _execute_gate_validation(self, gate_candidates: List[GateCandidate], 
-                                claims: List[Claim]) -> Any:
-        """Execute gate validation stage."""
-        inputs = {
-            "gate_candidates": gate_candidates,
-            "claims": claims
-        }
-        return self.gate_validator.execute(inputs)
-    
-    def _execute_gate_assessment(self, gate_specs: List[GateSpec], 
-                                claims: List[Claim]) -> Any:
-        """Execute gate assessment stage."""
-        inputs = {
-            "gate_specs": gate_specs,
-            "claims": claims
-        }
-        return self.gate_assessor.execute(inputs)
-    
-    def _create_decision_record(self, trial_id: str, 
-                               gate_assessments: List[GateAssessment],
-                               claims: List[Claim]) -> DecisionRecord:
-        """Create the final decision record."""
-        decision_record = DecisionRecord(trial_id=trial_id)
-        
-        # Add gate assessments
-        for assessment in gate_assessments:
-            decision_record.add_gate_assessment(
-                gate_id=assessment.gate_id,
-                status=assessment.status,
-                p_gate=assessment.p_gate,
-                rationale="; ".join(assessment.rationale)
-            )
-        
-        # Calculate overall success probability
-        overall_success = decision_record.calculate_overall_success()
-        if overall_success is not None:
-            decision_record.set_posterior_success(overall_success)
-        
-        # Determine decision
-        if all(assessment.is_pass for assessment in gate_assessments):
-            decision_record.set_decision("APPROVE", "All gates passed")
-        elif any(assessment.is_fail for assessment in gate_assessments):
-            decision_record.set_decision("REJECT", "One or more gates failed")
-        else:
-            decision_record.set_decision("UNCERTAIN", "Insufficient information to determine")
-        
-        return decision_record
-    
-    def _execute_fda_lens(self, method_card: MethodCard,
-                          gate_assessments: List[GateAssessment],
-                          decision_record: DecisionRecord) -> Any:
-        """Execute FDA lens analysis stage."""
-        inputs = {
-            "method_card": method_card,
-            "gate_assessments": gate_assessments,
-            "coverage_gaps": decision_record.coverage_gaps
-        }
-        return self.fda_lens.execute(inputs)
-    
-    def _execute_memo_composition(self, gate_assessments: List[GateAssessment],
-                                 decision_record: DecisionRecord,
-                                 trial_context: Dict[str, Any]) -> Any:
-        """Execute memo composition stage."""
-        inputs = {
-            "gate_assessments": gate_assessments,
-            "decision_record": decision_record,
-            "pocket_context": trial_context.get("pocket_context")
-        }
-        return self.memo_composer.execute(inputs)
-    
-    def get_pipeline_stats(self) -> Dict[str, Any]:
-        """Get pipeline statistics."""
-        return {
-            "retriever": self.retriever.get_stats(),
-            "llm_method_auditor": self.llm_method_auditor.get_stats(),
-            "deterministic_method_auditor": self.deterministic_method_auditor.get_stats(),
-            "llm_results_distiller": self.llm_results_distiller.get_stats(),
-            "deterministic_results_distiller": self.deterministic_results_distiller.get_stats(),
-            "late_fusion_orchestrator": self.late_fusion_orchestrator.get_pipeline_status(),
-            "gate_proposer": self.gate_proposer.get_stats(),
-            "gate_validator": self.gate_validator.get_stats(),
-            "gate_assessor": self.gate_assessor.get_stats(),
-            "fda_lens": self.fda_lens.get_stats(),
-            "memo_composer": self.memo_composer.get_stats()
-        }
+        return self.retriever.process(inputs)
     
     def _execute_llm_method_auditing(self, trial_context: Dict[str, Any], 
                                     evidence_spans: List[EvidenceSpan]) -> Any:
@@ -653,17 +407,7 @@ class StudyCardPipeline:
             "design_json": trial_context.get("design_json", {}),
             "pocket_context": trial_context.get("pocket_context")
         }
-        return self.llm_method_auditor.execute(inputs)
-    
-    def _execute_deterministic_method_auditing(self, trial_context: Dict[str, Any], 
-                                             evidence_spans: List[EvidenceSpan]) -> Any:
-        """Execute deterministic method auditing stage."""
-        inputs = {
-            "evidence_spans": evidence_spans,
-            "design_json": trial_context.get("design_json", {}),
-            "pocket_context": trial_context.get("pocket_context")
-        }
-        return self.deterministic_method_auditor.execute(inputs)
+        return self.llm_method_auditor.process(inputs)
     
     def _execute_llm_results_distillation(self, evidence_spans: List[EvidenceSpan]) -> Any:
         """Execute LLM results distillation stage."""
@@ -671,27 +415,4 @@ class StudyCardPipeline:
             "evidence_spans": evidence_spans,
             "trial_context": {}
         }
-        return self.llm_results_distiller.execute(inputs)
-    
-    def _execute_deterministic_results_distillation(self, evidence_spans: List[EvidenceSpan]) -> Any:
-        """Execute deterministic results distillation stage."""
-        inputs = {
-            "evidence_spans": evidence_spans,
-            "trial_context": {}
-        }
-        return self.deterministic_results_distiller.execute(inputs)
-    
-    def _execute_late_fusion(self, llm_method_card: Optional[MethodCard],
-                           llm_results_factsheet: Optional[ResultsFactsheet],
-                           deterministic_method_card: Optional[MethodCard],
-                           deterministic_results_factsheet: Optional[ResultsFactsheet],
-                           evidence_spans: List[EvidenceSpan]) -> Any:
-        """Execute late fusion stage."""
-        inputs = {
-            "llm_method_card": llm_method_card,
-            "llm_results_factsheet": llm_results_factsheet,
-            "deterministic_method_card": deterministic_method_card,
-            "deterministic_results_factsheet": deterministic_results_factsheet,
-            "evidence_spans": evidence_spans
-        }
-        return self.late_fusion_orchestrator.fuse(inputs)
+        return self.llm_results_distiller.process(inputs)

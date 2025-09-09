@@ -5,7 +5,7 @@ import json
 import re
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 
@@ -796,7 +796,7 @@ def resolve_one(
     decider: str = typer.Option("auto", "--decider", help="auto|human|llm"),
 ):
     cfg = _load_yaml(cfg_path)
-    run_id = run_id or datetime.now(datetime.UTC).strftime("resolver-%Y%m%dT%H%M%SZ")
+    run_id = run_id or datetime.now(timezone.utc).strftime("resolver-%Y%m%dT%H%M%SZ")
     with get_session() as s:
         opts = FlowOptions(
             cfg=cfg,
@@ -830,7 +830,7 @@ def resolve_nct(
     run_id: Optional[str] = typer.Option(None, "--run-id", help="Resolver run ID"),
 ):
     cfg = _load_yaml(cfg_path)
-    run_id = run_id or datetime.now(datetime.UTC).strftime("resolver-%Y%m%dT%H%M%SZ")
+    run_id = run_id or datetime.now(timezone.utc).strftime("resolver-%Y%m%dT%H%M%SZ")
     with get_session() as s:
         row = s.execute(
             text("SELECT trial_id, sponsor_text FROM trials WHERE nct_id = :nct"),
@@ -884,7 +884,7 @@ def resolve_batch(
     force_review_on_reject: bool = typer.Option(False, "--force-review-on-reject", help="Also enqueue rejects"),
 ):
     cfg = _load_yaml(cfg_path)
-    run_id = run_id or datetime.now(datetime.UTC).strftime("resolver-%Y%m%dT%H%M%SZ")
+    run_id = run_id or datetime.now(timezone.utc).strftime("resolver-%Y%m%dT%H%M%SZ")
     with get_session() as s:
         rows = s.execute(
             text(
@@ -1040,7 +1040,7 @@ def review_accept(
             raise typer.Exit(1)
 
         nct_id, sponsor_text = row
-        run_id = datetime.now(datetime.UTC).strftime("review-%Y%m%dT%H%M%SZ")
+        run_id = datetime.now(timezone.utc).strftime("review-%Y%m%dT%H%M%SZ")
 
         dec = {
             "mode": "accept",

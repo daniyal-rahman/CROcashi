@@ -1,0 +1,32 @@
+{
+  "execution_summary": {
+    "execution_id": "e2e_20250907_211809",
+    "start_time": "2025-09-07T21:18:09.384450",
+    "end_time": "2025-09-07T21:18:09.385744",
+    "execution_time_seconds": 0.001289,
+    "success": false
+  },
+  "stopping_conditions": {
+    "max_trials": 1,
+    "time_budget_seconds": 900,
+    "at_least_study_cards": 1
+  },
+  "results": {
+    "trials_processed": 0,
+    "study_cards_completed": 0,
+    "study_card_ids": []
+  },
+  "pipeline_results": {},
+  "evaluation_summary": {
+    "completed": false
+  },
+  "errors": [
+    "E2E execution failed: Required environment variable PSQL_DSN not set"
+  ],
+  "warnings": [],
+  "config_summary": {
+    "max_trials": 1,
+    "time_budget_seconds": 900,
+    "at_least_study_cards": 1
+  }
+}

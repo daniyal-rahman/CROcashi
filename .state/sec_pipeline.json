@@ -1,6 +1,8 @@
 {
-  "last_scan_date": "2025-08-28T23:16:09.370563",
-  "company_last_check": {},
+  "last_scan_date": "2025-09-08T04:26:11.681764+00:00",
+  "company_last_check": {
+    "1682852": "2025-09-05T07:06:25.473791+00:00"
+  },
   "daily_stats": {
     "2025-08-26": {
       "filings_processed": 0,
@@ -9,6 +11,30 @@
       "errors": 0
     },
     "2025-08-28": {
+      "filings_processed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "errors": 0
+    },
+    "2025-09-05": {
+      "filings_processed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "errors": 0
+    },
+    "2025-09-06": {
+      "filings_processed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "errors": 0
+    },
+    "2025-09-07": {
+      "filings_processed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "errors": 0
+    },
+    "2025-09-08": {
       "filings_processed": 0,
       "new_filings": 0,
       "updated_filings": 0,

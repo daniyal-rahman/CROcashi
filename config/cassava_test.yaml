@@ -1,0 +1,181 @@
+# Cassava Study Card Test Configuration
+# Optimized for testing Cassava Sciences Phase 2 trial (NCT04388254)
+
+# Database configuration
+db:
+  dsn: ${PSQL_DSN}
+
+# LLM configuration for study card generation
+llm:
+  provider: openai
+  model_map:
+    llm_decider: gpt-4o-mini
+    results_distiller: gpt-4o-mini
+    method_auditor: gpt-4o-mini
+    study_card_evaluator: gpt-4o-mini
+    gate_proposer: gpt-4o-mini
+    gate_validator: gpt-4o-mini
+    gate_assessor: gpt-4o-mini
+    fda_lens: gpt-4o-mini
+    memo_composer: gpt-4o-mini
+  api_keys:
+    openai: ${OPENAI_API_KEY}
+  rate_limits:
+    openai:
+      requests_per_minute: 60
+      tokens_per_minute: 50000
+
+# CT.gov pipeline configuration - focused on Cassava trials
+ctgov:
+  incremental: false  # Force full scan for comprehensive test
+  window_days: 30
+  batch_size: 50
+  retry_attempts: 3
+  retry_delay_seconds: 60
+  filters:
+    sponsor_keywords: ["Cassava Sciences", "Cassava", "simufilam", "PTI-125"]
+    indication_keywords: ["Alzheimer", "dementia", "cognitive"]
+    phase_filters: ["PHASE2", "PHASE3"]
+
+# SEC pipeline configuration - focused on Cassava Sciences
+sec:
+  enable: true
+  incremental: false
+  batch_size: 25
+  retry_attempts: 3
+  company_filters:
+    company_names: ["Cassava Sciences", "Cassava Sciences Inc"]
+    tickers: ["SAVA"]
+
+# PubMed pipeline configuration - focused on Cassava/simufilam literature
+pubmed:
+  client_config:
+    rate_limit_requests_per_minute: 60
+    batch_size: 20
+    timeout_seconds: 30
+    max_retries: 3
+  retrieval:
+    backend: bm25  # Use BM25 to avoid Java dependencies
+    max_docs_per_trial: 100  # Increased for comprehensive literature review
+    min_relevance_score: 0.1
+  asset_names: [
+    "simufilam", "PTI-125", "filamin A inhibitor", 
+    "Cassava Sciences", "cassava", "FLNA inhibitor"
+  ]
+  indications: [
+    "Alzheimer's disease", "Alzheimer disease", "AD", 
+    "dementia", "cognitive decline", "mild cognitive impairment"
+  ]
+  query_config:
+    max_terms: 100
+    enable_boolean_operators: true
+    date_range: ("2020/01/01", "2024/12/31")  # Focus on recent literature
+
+# Literature queue configuration for Cassava trial prioritization
+literature_queue:
+  ranker: default
+  filters:
+    require_public_company: true
+    min_phase: 1
+    max_age_days: 1095  # 3 years - include older Cassava trials
+    company_filters:
+      company_names: ["Cassava Sciences", "Cassava"]
+  scoring:
+    company_weight: 0.4  # Higher weight for company relevance
+    literature_weight: 0.3
+    phase_weight: 0.2
+    recency_weight: 0.1
+
+# Study card pipeline configuration - optimized for Cassava analysis
+study_cards:
+  max_docs_per_trial: 100
+  store_json_snapshots: true
+  llm_timeout_seconds: 180  # Increased timeout for complex analysis
+  retrieval_timeout_seconds: 90
+  
+  # Retriever configuration - Pure LLM mode with enhanced settings
+  retriever:
+    auto_span_generation: true
+    late_fusion: false
+    max_span_length: 500  # Increased for more comprehensive spans
+    min_confidence: 0.6  # Slightly lower threshold for more inclusive results
+  
+  # Validation configuration
+  validation:
+    strict_validation: false  # More permissive for test
+    fail_fast_on_validation: false
+    validation_error_action: 'warn'
+    max_validation_errors: 20
+  
+  # Stage configuration
+  stages:
+    retrieval:
+      enable: true
+      timeout_seconds: 90
+    llm_method_auditing:
+      enable: true
+      timeout_seconds: 180
+    deterministic_method_auditing:
+      enable: false  # Pure LLM mode
+      timeout_seconds: 30
+    llm_results_distillation:
+      enable: true
+      timeout_seconds: 180
+    deterministic_results_distillation:
+      enable: false  # Pure LLM mode
+      timeout_seconds: 30
+    gate_proposal:
+      enable: true
+      timeout_seconds: 120
+    gate_validation:
+      enable: true
+      timeout_seconds: 120
+    gate_assessment:
+      enable: true
+      timeout_seconds: 120
+    fda_lens:
+      enable: true
+      timeout_seconds: 120
+    memo_composition:
+      enable: true
+      timeout_seconds: 120
+
+# Automated evaluation configuration
+automated_evaluation:
+  use_llm_resolution: true
+  llm_timeout_seconds: 120
+  confidence_threshold: 0.6  # Lower threshold for test
+  high_risk_threshold: 0.4
+  evaluation_criteria:
+    methodology_quality: true
+    results_reliability: true
+    safety_assessment: true
+    statistical_rigor: true
+    clinical_relevance: true
+    regulatory_readiness: true
+
+# Orchestrator configuration
+execution_order: ['ctgov', 'sec', 'pubmed']
+parallel_execution: false
+dependency_checking: true
+max_retries: 3
+retry_delay_seconds: 300
+
+# State management
+state_file: .state/cassava_test_orchestrator.json
+
+# Logging configuration
+logging:
+  level: INFO
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  file: logs/cassava_test.log
+
+# Test-specific configuration
+test_config:
+  focus_trial: "NCT04388254"  # Cassava Phase 2 trial
+  expected_mechanism: "simufilam (filamin A inhibitor)"
+  expected_indication: "Alzheimer's Disease"
+  expected_phase: "phase_2"
+  expected_design: "randomized withdrawal after open-label extension"
+  expected_sample_size: 155
+  expected_endpoint: "ADAS-Cog11"

@@ -56,7 +56,7 @@ class PubMedClient:
             tool: Tool name for NCBI (required)
         """
         self.api_key = api_key
-        self.rate_limit_per_sec = rate_limit_per_sec
+        self.rate_limit_per_sec = max(1, rate_limit_per_sec)  # Ensure at least 1 req/sec
         self.batch_size = batch_size
         self.max_retries = max_retries
         self.timeout = ClientTimeout(total=timeout_seconds)
@@ -66,7 +66,7 @@ class PubMedClient:
         self.tool = tool
         
         # Rate limiting
-        self.min_delay = 1.0 / rate_limit_per_sec
+        self.min_delay = 1.0 / self.rate_limit_per_sec
         self.last_request_time = 0.0
         self._rate_limit_lock = asyncio.Lock()
         

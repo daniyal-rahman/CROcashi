@@ -1,0 +1,19 @@
+{
+  "execution_id": "e2e_20250906_173829",
+  "evaluated_at": "2025-09-06T17:38:32.668002",
+  "study_cards_count": 1,
+  "average_confidence": 0.271,
+  "high_risk_studies_count": 1,
+  "llm_resolution_used": false,
+  "study_results": [
+    {
+      "study_id": 10,
+      "base_quality_score": 0.033600000000000005,
+      "base_confidence": 0.271,
+      "final_ranking_position": 1
+    }
+  ],
+  "high_risk_studies": [
+    10
+  ]
+}

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import date, UTC, datetime, timedelta
+from datetime import date, timezone, datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Set
 import json

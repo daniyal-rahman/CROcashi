@@ -84,6 +84,33 @@ python scripts/validate_phase6_pipeline.py
 
 ## 🧪 **Testing & Validation**
 
+### **End-to-End System Testing**
+
+The system includes comprehensive E2E testing that validates the complete pipeline:
+
+```bash
+# Quick E2E test (2-3 minutes)
+make e2e-quick
+
+# Standard E2E test (5-10 minutes) 
+make e2e-system
+
+# Full E2E with synthesis (10-15 minutes)
+make e2e-full
+
+# Run E2E unit tests
+make test-e2e
+```
+
+**E2E Test Coverage:**
+- CT.gov trial ingestion and processing
+- SEC filing monitoring and analysis
+- PubMed literature search and extraction
+- Study card synthesis and risk scoring
+- Complete database integration
+
+See [docs/E2E_TESTING.md](docs/E2E_TESTING.md) for detailed E2E testing documentation.
+
 ### **Run Complete Test Suite**
 ```bash
 # Run all tests

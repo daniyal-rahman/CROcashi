@@ -29,7 +29,7 @@ ncfd/
   src/ncfd/score/
     rs_spec.md              # full definition of R and S components, thresholds, ties
     rs_config.yaml          # tunables: thresholds, weights, phrases, effect-size caps
-  src/ncfd/orchestrate/
+  src/ncfd/pipeline/
     lit_queue.md            # global trial queue policy & periodic reprioritization
     early_stopping.md       # stop rules (θ_high/θ_low/plateau), sample rates, TTLs
   migrations/               # alembic revisions for new/edited tables (later)

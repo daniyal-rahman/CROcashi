@@ -170,13 +170,16 @@ class DeterministicResultsDistiller(BaseWorker):
                                            trial_context: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Extract results from a single span using deterministic patterns."""
         results = []
-        text = span.text.lower()
+        text = span.quote.lower()
         
         # Extract response rates
         for metric_type, patterns in self.response_patterns.items():
             for pattern in patterns:
                 match = re.search(pattern, text, re.IGNORECASE)
                 if match:
+                    # Check if we have enough groups before accessing them
+                    if len(match.groups()) < 1:
+                        continue
                     value = float(match.group(1))
                     results.append({
                         'metric': metric_type.upper(),
@@ -201,6 +204,9 @@ class DeterministicResultsDistiller(BaseWorker):
             for pattern in patterns:
                 match = re.search(pattern, text, re.IGNORECASE)
                 if match:
+                    # Check if we have enough groups before accessing them
+                    if len(match.groups()) < 2:
+                        continue
                     value = float(match.group(1))
                     unit_text = match.group(2)
                     unit = self._normalize_unit(unit_text)

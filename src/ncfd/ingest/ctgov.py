@@ -6,7 +6,7 @@ Server-side filter: date (LastUpdatePostDate). All other filters are client-side
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, UTC, datetime
+from datetime import date, timezone, datetime
 from typing import Generator, Iterable, List, Optional, Tuple, Dict, Any
 import hashlib
 import json

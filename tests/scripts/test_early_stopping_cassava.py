@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 """
-Test early stopping for Cassava trial.
+Test early stopping mechanism on Cassava's simufilam - a failed drug.
+
+This test validates that the system does NOT early stop when processing literature
+for a drug with high shortability scores, as it should find mostly negative results.
 """
 
-import json
 import sys
+import json
 from pathlib import Path
+from datetime import datetime
+from typing import Dict, List, Any
 
-from ncfd.orchestrate.early_stopping import EarlyStopping
-from ncfd.config import get_config
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from ncfd.pipeline.early_stopping import should_stop_early, plateau_detected
 
 
 class EarlyStoppingTester:

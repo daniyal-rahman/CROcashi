@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from datetime import date, datetime, UTC
+from datetime import date, datetime, timezone
 from typing import Dict, List, Optional, Any, Literal
 from decimal import Decimal
 

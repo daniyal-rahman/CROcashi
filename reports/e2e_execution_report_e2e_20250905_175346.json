@@ -1,0 +1,102 @@
+{
+  "execution_summary": {
+    "execution_id": "e2e_20250905_175346",
+    "start_time": "2025-09-05T17:53:46.010681",
+    "end_time": "2025-09-05T17:53:47.084611",
+    "execution_time_seconds": 1.073927,
+    "success": false
+  },
+  "stopping_conditions": {
+    "max_trials": 1,
+    "time_budget_seconds": 300,
+    "at_least_study_cards": 1
+  },
+  "results": {
+    "trials_processed": 1,
+    "study_cards_completed": 0,
+    "study_card_ids": []
+  },
+  "pipeline_results": {
+    "ctgov": {
+      "pipeline_name": "ctgov",
+      "success": true,
+      "start_time": "2025-09-06T00:53:46.803300+00:00",
+      "end_time": "2025-09-06T00:53:47.001034+00:00",
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": [],
+      "processing_time_seconds": 0.197734
+    },
+    "sec": {
+      "pipeline_name": "sec",
+      "success": true,
+      "start_time": "2025-09-06T00:53:47.001069+00:00",
+      "end_time": "2025-09-06T00:53:47.001462+00:00",
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": [],
+      "processing_time_seconds": 0.000393
+    },
+    "pubmed": {
+      "pipeline_name": "pubmed",
+      "success": true,
+      "start_time": "2025-09-06T00:53:47.001510+00:00",
+      "end_time": "2025-09-06T00:53:47.001558+00:00",
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": [
+        "PubMed pipeline requires async context for full execution"
+      ],
+      "processing_time_seconds": 4.8e-05
+    },
+    "total_trials_processed": 0,
+    "total_filings_processed": 0,
+    "total_documents_processed": 0,
+    "all_pipelines_successful": true
+  },
+  "evaluation_summary": {
+    "completed": false
+  },
+  "errors": [
+    "Study card generation exception for NCT05352763: 'Trial' object has no attribute 'sponsor'"
+  ],
+  "warnings": [],
+  "config_summary": {
+    "max_trials": 1,
+    "time_budget_seconds": 300,
+    "at_least_study_cards": 1
+  }
+}

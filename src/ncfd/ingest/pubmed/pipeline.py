@@ -6,7 +6,7 @@ Implements the three-stage pipeline (U0, U1, OA) for processing clinical trial l
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 import re
@@ -14,6 +14,7 @@ import re
 from .client import PubMedClient, PubMedBatchProcessor
 from .query_builder import PubMedQueryBuilder
 from .mapper import PubMedMapper
+from .db_service import PubMedDBService
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +64,13 @@ class PubMedPipeline:
         
         # Initialize components
         client_config = self.config.get('client_config', {})
+        # Safely calculate rate limit per second
+        rate_per_minute = client_config.get('rate_limit_requests_per_minute', 60)  # Default to 60 per minute
+        rate_per_sec = max(1, rate_per_minute // 60)  # Ensure at least 1 per second
+        
         self.client = PubMedClient(
             api_key=client_config.get('api_key'),
-            rate_limit_per_sec=client_config.get('rate_limit_requests_per_minute', 8) // 60,  # Convert per minute to per second
+            rate_limit_per_sec=rate_per_sec,
             batch_size=client_config.get('batch_size', 100),
             max_retries=client_config.get('max_retries', 3),
             timeout_seconds=client_config.get('timeout_seconds', 30),
@@ -76,6 +81,7 @@ class PubMedPipeline:
         self.mapper = PubMedMapper(self.config.get('mapper_config', {}))
         self.query_builder = PubMedQueryBuilder(self.config.get('query_config', {}))
         self.batch_processor = PubMedBatchProcessor(self.client, self.config.get('max_concurrent_requests', 5))
+        self.db_service = PubMedDBService()
         
         # Pipeline configuration
         self.asset_names = self.config.get('asset_names', [])
@@ -252,8 +258,20 @@ class PubMedPipeline:
         
         logger.info(f"Starting PubMed pipeline for {len(asset_names)} assets, {len(indications)} indications")
         
-        # Stage U0: Metadata-only search and discovery
+        # Stage U1+: Unified discovery and abstract processing
+        if 'U1' in enable_stages:
+            u1_result = await self._execute_stage_u1_plus(
+                asset_names, indications, trial_phases, date_range, max_results
+            )
+            self.stage_results.append(u1_result)
+            
+            if not u1_result.success:
+                logger.error(f"Stage U1+ failed: {u1_result.error_message}")
+                return self.stage_results
+        
+        # Legacy U0 stage (deprecated - use U1+ instead)
         if 'U0' in enable_stages:
+            logger.warning("U0 stage is deprecated. Use U1+ stage instead for unified discovery and processing.")
             u0_result = await self._execute_stage_u0(
                 asset_names, indications, trial_phases, date_range, max_results
             )
@@ -263,15 +281,6 @@ class PubMedPipeline:
                 logger.error(f"Stage U0 failed: {u0_result.error_message}")
                 return self.stage_results
         
-        # Stage U1: Abstract evaluation and scoring
-        if 'U1' in enable_stages and self.stage_results[-1].success:
-            u1_result = await self._execute_stage_u1()
-            self.stage_results.append(u1_result)
-            
-            if not u1_result.success:
-                logger.error(f"Stage U1 failed: {u1_result.error_message}")
-                return self.stage_results
-        
         # Stage OA: Full text retrieval and analysis
         if 'OA' in enable_stages and self.stage_results[-1].success:
             oa_result = await self._execute_stage_oa()
@@ -279,6 +288,110 @@ class PubMedPipeline:
         
         logger.info("PubMed pipeline completed")
         return self.stage_results
+    
+    async def _execute_stage_u1_plus(
+        self,
+        asset_names: List[str],
+        indications: List[str],
+        trial_phases: Optional[List[str]] = None,
+        date_range: Optional[Tuple[str, str]] = None,
+        max_results: int = 1000
+    ) -> PipelineResult:
+        """
+        Execute Stage U1+: Unified discovery and abstract processing.
+        
+        This stage performs both document discovery (U0 functionality) and
+        abstract processing (U1 functionality) in a single unified stage.
+        """
+        start_time = datetime.now()
+        self.current_stage = 'U1+'
+        
+        try:
+            logger.info("Starting Stage U1+: Unified discovery and abstract processing")
+            
+            # Import the U1+ stage processor
+            from .stage_u1 import StageU1Processor, StageU1Result
+            from ...extract.abstract_features import AbstractFeatureExtractor
+            from ...score.simple_rs_scorer import SimpleRSScorer
+            
+            # Initialize U1+ processor with proper components
+            feature_extractor = AbstractFeatureExtractor()
+            rs_scorer = SimpleRSScorer()
+            
+            u1_processor = StageU1Processor(
+                client=self.client,
+                mapper=self.mapper,
+                feature_extractor=feature_extractor,
+                rs_scorer=rs_scorer,
+                query_builder=self.query_builder,
+                config=self.config
+            )
+            
+            # Execute U1+ stage in discovery+process mode
+            u1_result = await u1_processor.execute_stage_u1(
+                trial_id=1,  # Use a default integer trial ID for testing
+                trial_asset=asset_names[0] if asset_names else 'Unknown',
+                trial_indication=indications[0] if indications else 'Unknown',
+                trial_nct=None,
+                # Discovery mode parameters
+                asset_aliases=asset_names,
+                indication_terms=indications,
+                trial_phase=trial_phases[0] if trial_phases else None,
+                trial_design=None,
+                catalyst_date=None,
+                max_results=max_results
+            )
+            
+            if not u1_result.success:
+                raise Exception(f"Stage U1+ processor failed: {u1_result.error_message}")
+            
+            # Extract processed documents from U1+ result
+            processed_docs = u1_result.processed_documents or []
+            
+            execution_time = (datetime.now() - start_time).total_seconds()
+            
+            logger.info(f"Stage U1+ completed: {u1_result.documents_discovered} discovered, "
+                       f"{u1_result.documents_processed} processed, {u1_result.documents_selected} selected")
+            
+            return PipelineResult(
+                stage='U1+',
+                success=True,
+                documents_processed=u1_result.documents_processed,
+                documents_failed=u1_result.documents_dropped,
+                execution_time=execution_time,
+                metadata={
+                    'documents_discovered': u1_result.documents_discovered,
+                    'documents_mapped': u1_result.documents_mapped,
+                    'pmids_found': u1_result.pmids_found,
+                    'documents_processed': u1_result.documents_processed,
+                    'abstracts_fetched': u1_result.abstracts_fetched,
+                    'entities_extracted': u1_result.entities_extracted,
+                    'documents_scored': u1_result.documents_scored,
+                    'documents_selected': u1_result.documents_selected,
+                    'documents_dropped': u1_result.documents_dropped,
+                    'processed_documents': processed_docs,
+                    'query_metadata': u1_result.query_metadata,
+                    'documents_stored': u1_result.documents_stored,
+                    'abstracts_stored': u1_result.abstracts_stored,
+                    'rs_scores_stored': u1_result.rs_scores_stored,
+                    'candidates_stored': u1_result.candidates_stored,
+                    'trial_state_updated': u1_result.trial_state_updated
+                }
+            )
+            
+        except Exception as e:
+            execution_time = (datetime.now() - start_time).total_seconds()
+            error_msg = f"Stage U1+ failed: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            
+            return PipelineResult(
+                stage='U1+',
+                success=False,
+                documents_processed=0,
+                documents_failed=0,
+                execution_time=execution_time,
+                error_message=error_msg
+            )
     
     async def _execute_stage_u0(
         self,
@@ -327,6 +440,13 @@ class PubMedPipeline:
                 # Map PMIDs to documents
                 mapping_stats = await self._map_pmids_with_retry(pmids, max_retries=2)
                 valid_docs = mapping_stats.get('valid_documents', [])
+                
+                # Persist document metadata to database
+                if valid_docs:
+                    successful, failed = self.db_service.store_documents_metadata(valid_docs)
+                    logger.info(f"Persisted {successful} documents to database, {failed} failed")
+                    mapping_stats['documents_persisted'] = successful
+                    mapping_stats['persistence_failed'] = failed
                 
                 execution_time = (datetime.now() - start_time).total_seconds()
                 
@@ -459,12 +579,12 @@ class PubMedPipeline:
                     metadata={'documents_processed': 0}
                 )
             
-            # Import the proper U1 stage processor
+            # Import the proper U1+ stage processor
             from .stage_u1 import StageU1Processor, StageU1Result
             from ...extract.abstract_features import AbstractFeatureExtractor
             from ...score.simple_rs_scorer import SimpleRSScorer
             
-            # Initialize U1 processor with proper components
+            # Initialize U1+ processor with proper components
             feature_extractor = AbstractFeatureExtractor()
             rs_scorer = SimpleRSScorer()
             
@@ -473,23 +593,17 @@ class PubMedPipeline:
                 mapper=self.mapper,
                 feature_extractor=feature_extractor,
                 rs_scorer=rs_scorer,
-                config={
-                    'batch_size': self.config.get('batch_size', 10),
-                    'enable_entity_extraction': True,
-                    'enable_rs_scoring': True,
-                    'min_r_score': 0.35,
-                    'min_s_score': 0.20,
-                    'max_abstracts_initial': 50
-                }
+                query_builder=self.query_builder,  # Add query builder for discovery mode
+                config=self.config
             )
             
-            # Execute U1 stage with proper abstract fetching
+            # Execute U1+ stage (process-only mode since we have documents from U0)
             u1_result = await u1_processor.execute_stage_u1(
-                trial_id="test_trial",  # Use a default trial ID for testing
-                u0_documents=documents,
+                trial_id=1,  # Use a default integer trial ID for testing
                 trial_asset=documents[0].get('title', 'Unknown')[:50] if documents else 'Unknown',
                 trial_indication="Clinical Trial",
-                trial_nct=None
+                trial_nct=None,
+                u0_documents=documents  # Process-only mode
             )
             
             if not u1_result.success:
@@ -533,7 +647,7 @@ class PubMedPipeline:
                 execution_time=execution_time
             )
     
-    async def _execute_stage_oa(self) -> PipelineResult:
+    async def _execute_stage_oa(self, trial_id: Optional[int] = None) -> PipelineResult:
         """
         Execute Stage OA: Full text retrieval and analysis.
         
@@ -546,12 +660,20 @@ class PubMedPipeline:
         try:
             logger.info("Starting Stage OA: Full text retrieval")
             
-            # Get fulltext candidates from previous stage
-            u1_result = next((r for r in self.stage_results if r.stage == 'U1'), None)
-            if not u1_result or not u1_result.success:
-                raise Exception("Stage U1 must complete successfully before OA")
+            # Get fulltext candidates from previous stage or database
+            fulltext_candidate_pmids = []
             
-            fulltext_candidate_pmids = u1_result.metadata.get('fulltext_candidate_pmids', [])
+            # Try to get from recent stage results first
+            u1_result = next((r for r in self.stage_results if r.stage == 'U1'), None)
+            if u1_result and u1_result.success:
+                fulltext_candidate_pmids = u1_result.metadata.get('fulltext_candidate_pmids', [])
+                logger.info(f"Using {len(fulltext_candidate_pmids)} candidates from U1 stage results")
+            
+            # If no candidates from stage results, try database (for DB-driven OA execution)
+            if not fulltext_candidate_pmids and trial_id is not None:
+                fulltext_candidate_pmids = self.db_service.get_selected_candidate_pmids(trial_id, 'U1_abstract')
+                logger.info(f"Loaded {len(fulltext_candidate_pmids)} candidates from database for trial {trial_id}")
+            
             if not fulltext_candidate_pmids:
                 logger.warning("No fulltext candidates available for Stage OA")
                 return PipelineResult(
@@ -564,14 +686,14 @@ class PubMedPipeline:
             
             # 1. Convert PMIDs to PMCIDs
             pmcid_mapping = {}
-            if self.config.enable_pmcid_linking:
+            if self.config.get('enable_pmcid_linking', True):
                 pmcid_mapping = await self.client.elink_pmid_to_pmcid(fulltext_candidate_pmids)
                 logger.info(f"Linked {len([p for p in pmcid_mapping.values() if p])} PMIDs to PMCIDs")
             
             # 2. Check PMC open access status
             pmcids = [pmcid for pmcid in pmcid_mapping.values() if pmcid]
             oa_status = {}
-            if self.config.enable_oa_detection and pmcids:
+            if self.config.get('enable_oa_detection', True) and pmcids:
                 oa_status = await self.client.check_pmc_oa_status(pmcids)
                 logger.info(f"Checked OA status for {len(oa_status)} PMCIDs")
             
@@ -586,19 +708,32 @@ class PubMedPipeline:
                         # Fetch full text
                         fulltext_content = await self.client.get_pmc_full_text(pmcid)
                         if fulltext_content:
-                            # Update document with full text
+                            # Find document by PMID and store fulltext in database
                             doc = self._find_document_by_pmid(pmid)
                             if doc:
-                                doc['text']['fulltext_text'] = fulltext_content
-                                doc['text']['char_count_fulltext'] = len(fulltext_content)
-                                doc['text']['fulltext_ttl_date'] = (
-                                    datetime.now(datetime.UTC) + timedelta(days=self.config.fulltext_ttl_days)
-                                ).isoformat()
-                                doc['content_type'] = 'fulltext'
-                                fulltext_docs.append(doc)
+                                # Store full text in database
+                                doc_id = doc.get('doc_id')
+                                if doc_id:
+                                    ttl_date = datetime.now(timezone.utc) + timedelta(days=self.config.get('fulltext_ttl_days', 30))
+                                    success = self.db_service.store_fulltext(doc_id, fulltext_content, ttl_date)
+                                    if success:
+                                        # Update in-memory doc for return
+                                        doc.setdefault('text', {})['fulltext_text'] = fulltext_content
+                                        doc['text']['char_count_fulltext'] = len(fulltext_content)
+                                        doc['text']['fulltext_ttl_date'] = ttl_date.isoformat()
+                                        doc['content_type'] = 'fulltext'
+                                        fulltext_docs.append(doc)
+                                        logger.debug(f"Stored full text for doc {doc_id} (PMID {pmid})")
+                                    else:
+                                        logger.warning(f"Failed to store full text for doc {doc_id} (PMID {pmid})")
+                                        failed_docs += 1
+                                else:
+                                    logger.warning(f"No doc_id found for PMID {pmid}")
+                                    failed_docs += 1
                         
                         # Rate limiting
-                        await asyncio.sleep(1.0 / self.config.rate_limit_per_sec)
+                        rate_limit = max(1, self.config.get('rate_limit_per_sec', 1))  # Ensure at least 1
+                        await asyncio.sleep(1.0 / rate_limit)
                     
                 except Exception as e:
                     failed_docs += 1
@@ -837,12 +972,12 @@ class PubMedPipeline:
                     
                     logger.info(f"Processing trial {trial_id} with {len(asset_names)} assets, {len(indications)} indications")
                     
-                    # Execute pipeline for this trial
+                    # Execute pipeline for this trial using unified U1+ stage
                     results = await self.execute_pipeline(
                         asset_names=asset_names,
                         indications=indications,
                         max_results=max_results,
-                        enable_stages=['U0', 'U1']  # Skip OA for daily ingestion
+                        enable_stages=['U1']  # Use unified U1+ stage (includes discovery)
                     )
                     
                     # Aggregate results
@@ -963,3 +1098,27 @@ class PubMedPipeline:
             base_strategy['graceful_degradation'] = True
         
         return base_strategy
+    
+    async def run_oa_for_trial(self, trial_id: int) -> PipelineResult:
+        """
+        Run Stage OA for a specific trial using database-stored candidates.
+        
+        Args:
+            trial_id: Trial ID to process full text for
+            
+        Returns:
+            Pipeline result from OA stage
+        """
+        logger.info(f"Running OA stage for trial {trial_id}")
+        
+        # Clear any previous stage results to force DB-driven execution
+        previous_results = self.stage_results
+        self.stage_results = []
+        
+        try:
+            # Execute OA stage with trial_id
+            oa_result = await self._execute_stage_oa(trial_id=trial_id)
+            return oa_result
+        finally:
+            # Restore previous results
+            self.stage_results = previous_results

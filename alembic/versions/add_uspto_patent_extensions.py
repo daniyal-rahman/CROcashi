@@ -1,7 +1,7 @@
 """Add USPTO patent extensions
 
 Revision ID: add_uspto_patent_extensions
-Revises: baseline_study_card_schema
+Revises: 9d2e40215ede
 Create Date: 2024-01-15 10:00:00.000000
 
 """
@@ -13,12 +13,53 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = 'add_uspto_patent_extensions'
-down_revision: Union[str, None] = 'baseline_study_card_schema'
+down_revision: Union[str, None] = '9d2e40215ede'
 branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = '8f4433c1c1aa'
 
 
 def upgrade() -> None:
+    # Create patents table first
+    op.create_table('patents',
+        sa.Column('patent_id', sa.BigInteger(), nullable=False, autoincrement=True),
+        sa.Column('asset_id', sa.Integer(), nullable=True),
+        sa.Column('family_id', sa.Text(), nullable=True),
+        sa.Column('jurisdiction', sa.Text(), nullable=False),
+        sa.Column('number', sa.Text(), nullable=False),
+        sa.Column('earliest_priority_date', sa.Date(), nullable=True),
+        sa.Column('status', sa.Text(), nullable=True),
+        sa.Column('assignees', postgresql.ARRAY(sa.Text()), nullable=True),
+        sa.Column('inventors', postgresql.ARRAY(sa.Text()), nullable=True),
+        sa.Column('links_jsonb', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.ForeignKeyConstraint(['asset_id'], ['assets.asset_id'], ondelete='SET NULL', name='fk_patents_asset_id_assets'),
+        sa.PrimaryKeyConstraint('patent_id', name='pk_patents'),
+        sa.UniqueConstraint('jurisdiction', 'number', name='uq_patents_jurisdiction_number')
+    )
+    
+    # Create patent_assignments table
+    op.create_table('patent_assignments',
+        sa.Column('assignment_id', sa.BigInteger(), nullable=False, autoincrement=True),
+        sa.Column('patent_id', sa.BigInteger(), nullable=False),
+        sa.Column('assignor', sa.Text(), nullable=False),
+        sa.Column('assignee', sa.Text(), nullable=False),
+        sa.Column('exec_date', sa.Date(), nullable=True),
+        sa.Column('record_date', sa.Date(), nullable=True),
+        sa.Column('type', sa.Text(), nullable=False),
+        sa.Column('source_url', sa.Text(), nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.ForeignKeyConstraint(['patent_id'], ['patents.patent_id'], ondelete='CASCADE', name='fk_patent_assignments_patent_id_patents'),
+        sa.PrimaryKeyConstraint('assignment_id', name='pk_patent_assignments')
+    )
+    
+    # Create indexes for patents table
+    op.create_index('idx_patents_asset_id', 'patents', ['asset_id'])
+    op.create_index('idx_patents_earliest_priority_date', 'patents', ['earliest_priority_date'])
+    
+    # Create indexes for patent_assignments table
+    op.create_index('idx_patent_assignments_patent_id', 'patent_assignments', ['patent_id'])
+    op.create_index('idx_patent_assignments_exec_date', 'patent_assignments', ['exec_date'])
+    
     # Create patent families table
     op.create_table('patent_families',
         sa.Column('family_id', sa.String(), nullable=False),
@@ -124,6 +165,10 @@ def downgrade() -> None:
     op.drop_index('idx_asset_patent_links_asset_id')
     op.drop_index('idx_patent_family_members_priority_date')
     op.drop_index('idx_patent_families_earliest_priority')
+    op.drop_index('idx_patent_assignments_exec_date')
+    op.drop_index('idx_patent_assignments_patent_id')
+    op.drop_index('idx_patents_earliest_priority_date')
+    op.drop_index('idx_patents_asset_id')
     
     # Drop constraint
     op.drop_constraint('ck_patent_assignments_consideration_type', 'patent_assignments')
@@ -141,3 +186,5 @@ def downgrade() -> None:
     op.drop_table('asset_patent_links')
     op.drop_table('patent_family_members')
     op.drop_table('patent_families')
+    op.drop_table('patent_assignments')
+    op.drop_table('patents')

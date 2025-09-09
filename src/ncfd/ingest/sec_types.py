@@ -8,7 +8,7 @@ sections, and extracted information with proper validation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, UTC, datetime
+from datetime import date, timezone, datetime
 from typing import List, Optional, Dict, Any, Union
 from enum import Enum
 

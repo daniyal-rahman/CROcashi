@@ -62,8 +62,8 @@ class EvidenceSpan:
             self.span_ids = [self.span_id]
         
         # Validate quote length
-        if len(self.quote) > 400:
-            raise ValueError(f"Quote too long: {len(self.quote)} chars (max 400)")
+        if len(self.quote) > 1000:  # Increased from 400 to 1000 to allow longer quotes
+            raise ValueError(f"Quote too long: {len(self.quote)} chars (max 1000)")
         
         # Validate confidence range
         if not 0.0 <= self.confidence <= 1.0:

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import date, datetime, UTC
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Iterator
 from decimal import Decimal

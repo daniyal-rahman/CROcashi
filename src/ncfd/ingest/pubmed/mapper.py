@@ -7,7 +7,7 @@ Maps PubMed E-utilities API responses to database staging tables with data valid
 import json
 import logging
 import re
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, timezone, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from urllib.parse import urlparse
 
@@ -60,7 +60,7 @@ class PubMedMapper:
                 },
                 'pmids': id_list,
                 'total_results': count,
-                'mapped_at': datetime.now(UTC).isoformat()
+                'mapped_at': datetime.now(timezone.utc).isoformat()
             }
             
             logger.info(f"Mapped ESearch result: {count} PMIDs found")
@@ -133,8 +133,9 @@ class PubMedMapper:
             # Extract affiliations
             affiliations = self._extract_affiliations(doc_data)
             
-            # Extract DOI from articleids (correct location)
+            # Extract DOI and PMCID from articleids (correct location)
             doi = self._extract_doi_from_articleids(doc_data)
+            pmcid = self._extract_pmcid_from_articleids(doc_data)
             
             # Map to staging format
             mapped_doc = {
@@ -143,11 +144,11 @@ class PubMedMapper:
                 'source_url': f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
                 'url_hash': self._calculate_url_hash(f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"),
                 'published_at': parsed_date,
-                'discovered_at': datetime.now(UTC),
+                'discovered_at': datetime.now(timezone.utc),
                 'title': title,
                 'doi': doi,
                 'pmid': pmid,
-                'pmcid': None,  # Will be populated by ELink
+                'pmcid': pmcid,
                 'nct_id': None,  # Will be extracted from text
                 'sponsor_text': None,  # Will be extracted from text
                 'status': 'discovered',
@@ -174,7 +175,7 @@ class PubMedMapper:
                 'doc_id': None,  # Will be linked after document insertion
                 'doi': doi,
                 'pmid': pmid,
-                'pmcid': None,
+                'pmcid': pmcid,
                 'nct_id': None,
                 'journal': journal,
                 'volume': doc_data.get('volume', ''),
@@ -220,6 +221,20 @@ class PubMedMapper:
             return doc_data.get('elocationid', '')
         except Exception as e:
             logger.warning(f"Failed to extract DOI: {e}")
+            return ''
+    
+    def _extract_pmcid_from_articleids(self, doc_data: Dict[str, Any]) -> str:
+        """Extract PMCID from articleids field."""
+        try:
+            articleids = doc_data.get('articleids', [])
+            if isinstance(articleids, list):
+                for article_id in articleids:
+                    if isinstance(article_id, dict) and article_id.get('idtype') == 'pmc':
+                        return article_id.get('value', '')
+            
+            return ''
+        except Exception as e:
+            logger.warning(f"Failed to extract PMCID: {e}")
             return ''
     
     def _parse_pub_date(self, pub_date: str) -> Optional[datetime]:
@@ -436,7 +451,7 @@ class PubMedMapper:
                         existing_doc['text']['char_count_fulltext'] = len(fulltext_content)
                         # Set TTL to 90 days as per spec
                         existing_doc['text']['fulltext_ttl_date'] = (
-                            datetime.now(UTC) + timedelta(days=90)
+                            datetime.now(timezone.utc) + timedelta(days=90)
                         ).isoformat()
                     
                     # Update content type to fulltext

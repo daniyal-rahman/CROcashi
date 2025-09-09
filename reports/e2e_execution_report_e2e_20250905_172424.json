@@ -1,0 +1,32 @@
+{
+  "execution_summary": {
+    "execution_id": "e2e_20250905_172424",
+    "start_time": "2025-09-05T17:24:24.024827",
+    "end_time": "2025-09-05T17:24:24.709894",
+    "execution_time_seconds": 0.685061,
+    "success": false
+  },
+  "stopping_conditions": {
+    "max_trials": 5,
+    "time_budget_seconds": 900,
+    "at_least_study_cards": 1
+  },
+  "results": {
+    "trials_processed": 0,
+    "study_cards_completed": 0,
+    "study_card_ids": []
+  },
+  "pipeline_results": {},
+  "evaluation_summary": {
+    "completed": false
+  },
+  "errors": [
+    "E2E execution failed: Pipeline ingestion failed: Configuration validation failed:\n  - Missing required field: asset_names\n  - Missing required field: indications\n  - asset_names cannot be empty\n  - indications cannot be empty"
+  ],
+  "warnings": [],
+  "config_summary": {
+    "max_trials": 5,
+    "time_budget_seconds": 900,
+    "at_least_study_cards": 1
+  }
+}

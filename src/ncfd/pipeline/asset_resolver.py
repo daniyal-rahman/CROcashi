@@ -12,7 +12,7 @@ import re
 import logging
 from typing import List, Optional, Dict, Any, Tuple
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 from sqlalchemy import text

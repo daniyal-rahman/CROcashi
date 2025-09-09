@@ -3,7 +3,7 @@
 # This Makefile provides commands for development, database management, and deployment
 
 # --- Configuration ---
-PY ?= python3.11
+PY ?= python3.12
 VENV = .venv
 PIP = $(VENV)/bin/pip
 PYTHON = $(VENV)/bin/python
@@ -115,6 +115,10 @@ help: ## Show this help message
 	@echo "  ingest_sec_status  - Check SEC pipeline status"
 	@echo "  ingest_sec_all     - Run all SEC ingestion tasks"
 	@echo "  subs_load          - Load subsidiary data"
+	@echo ""
+	@echo "Historical Universe Backtest:"
+	@echo "  universe_backtest  - Run complete historical universe backtest"
+	@echo "  universe_example   - Run example backtest for Alzheimer's trials"
 	@echo ""
 	@echo "Utilities:"
 	@echo "  run_id             - Generate run ID for tracking"
@@ -328,7 +332,7 @@ ingest_sec_all: ## Run all SEC ingestion tasks (tickers, filings, status)
 
 # Resolver CLI commands
 run_id: ## Generate run ID for tracking
-	$(PYTHON) -c "from datetime import datetime, UTC; print(datetime.now(UTC).strftime('resolver-%Y%m%dT%H%M%SZ'))"
+	$(PYTHON) -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime('resolver-%Y%m%dT%H%M%SZ'))"
 
 resolve_one: ## Resolve single sponsor (use SPONSOR='company name')
 	$(PYTHON) -m ncfd.mapping.cli resolve-one "$(SPONSOR)" --cfg config/resolver.yaml --k 25
@@ -444,6 +448,101 @@ ifndef N
 	$(error Provide N=<number> for custom batch size)
 endif
 	$(MAKE) resolve_batch_auto N=$(N)
+
+# Historical Universe Backtest Commands
+INDICATION ?= Alzheimer
+START_DATE ?= 2018-01-01
+END_DATE ?= 2023-12-31
+
+universe_backtest: ## Run complete historical universe backtest (use INDICATION=disease START_DATE=YYYY-MM-DD END_DATE=YYYY-MM-DD)
+	$(PYTHON) scripts/universe_pipeline.py --indication "$(INDICATION)" --start-date "$(START_DATE)" --end-date "$(END_DATE)"
+
+universe_example: ## Run example backtest for Alzheimer's trials
+	$(PYTHON) examples/universe_backtest_example.py --mode full
+
+# E2E Testing
+.PHONY: e2e e2e-docker e2e-system e2e-quick e2e-full e2e-cost-min e2e-mock test-e2e test-e2e-live
+
+# Real E2E Pipeline (NEW - uses actual system components)
+e2e: ## Real end-to-end pipeline execution (CT.gov -> SEC -> PubMed -> Study Cards -> Evaluation)
+	$(PYTHON) scripts/e2e_run.py \
+		--config config/e2e.yaml \
+		--max-trials 5 \
+		--at-least-study-cards 1 \
+		--time-budget-seconds 900 \
+		--log-file logs/e2e_run.log \
+		--report-dir reports/ \
+		--log-level INFO
+
+e2e-docker: ## Real E2E pipeline inside Docker container  
+	$(COMPOSE) exec app python scripts/e2e_run.py \
+		--config config/e2e.yaml \
+		--max-trials 5 \
+		--at-least-study-cards 1 \
+		--time-budget-seconds 900 \
+		--log-file logs/e2e_run.log \
+		--report-dir reports/ \
+		--log-level INFO
+
+e2e-debug: ## Real E2E with debug logging and longer timeout
+	$(PYTHON) scripts/e2e_run.py \
+		--config config/e2e.yaml \
+		--max-trials 3 \
+		--at-least-study-cards 1 \
+		--time-budget-seconds 1800 \
+		--log-file logs/e2e_debug.log \
+		--report-dir reports/ \
+		--log-level DEBUG
+
+e2e-force-full: ## Real E2E with force full scan (ignores incremental state)
+	$(PYTHON) scripts/e2e_run.py \
+		--config config/e2e.yaml \
+		--max-trials 5 \
+		--at-least-study-cards 1 \
+		--time-budget-seconds 900 \
+		--log-file logs/e2e_full_scan.log \
+		--report-dir reports/ \
+		--log-level INFO \
+		--force-full-scan
+
+# Legacy E2E Tests (keep for compatibility)
+e2e-mock: ## Mock E2E test (zero cost, ~1 second, perfect for CI/CD)
+	DATABASE_URL=$(DATABASE_URL) $(PYTHON) scripts/run_system_e2e_mock.py \
+		--max-trials 5 --pubmed-max 10 --sec-ciks 1682852 \
+		--assets Keytruda --indications cancer --enable-synthesis
+
+e2e-cost-min: ## Cost-minimized E2E test (~$0.10, ~1-2 minutes)
+	DATABASE_URL=$(DATABASE_URL) $(PYTHON) scripts/run_system_e2e_cost_min.py \
+		--since-days 7 --max-trials 5 --pubmed-max 10 \
+		--sec-ciks 1682852 --assets Keytruda --indications cancer \
+		--max-cost 0.50
+
+e2e-quick: ## Quick E2E test (small scope, ~$1-2, ~2-3 minutes)
+	DATABASE_URL=$(DATABASE_URL) $(PYTHON) scripts/run_system_e2e.py \
+		--since-days 30 --max-trials 10 --pubmed-max 20 \
+		--sec-ciks 1682852 --assets Keytruda --indications cancer
+
+e2e-system: ## Standard E2E test (medium scope, ~$3-5, ~5-10 minutes)
+	DATABASE_URL=$(DATABASE_URL) $(PYTHON) scripts/run_system_e2e.py \
+		--since-days 90 --max-trials 50 --pubmed-max 100 \
+		--sec-ciks 1682852 813672 --assets Keytruda Pembrolizumab \
+		--indications cancer melanoma
+
+e2e-full: ## Full E2E with synthesis (large scope, ~$10-20, ~10-15 minutes)
+	DATABASE_URL=$(DATABASE_URL) $(PYTHON) scripts/run_system_e2e.py \
+		--since-days 90 --max-trials 50 --pubmed-max 100 \
+		--sec-ciks 1682852 813672 --assets Keytruda Pembrolizumab \
+		--indications cancer melanoma --synthesize-auto 3
+
+test-e2e: ## Run pytest E2E tests (unit tests only)
+	$(PYTHON) -m pytest -m e2e -v --tb=short
+
+test-e2e-live: ## Run E2E tests with live services (requires NCFD_E2E_LIVE=1)
+	NCFD_E2E_LIVE=1 $(PYTHON) -m pytest -m e2e -v --tb=short
+
+test-e2e-all: ## Run all E2E tests including live services
+	$(PYTHON) -m pytest -m e2e -v --tb=short
+	NCFD_E2E_LIVE=1 $(PYTHON) -m pytest -m e2e -v --tb=short
 
 # Legacy dot-notation commands (kept for compatibility)
 db.psql: db_psql_host

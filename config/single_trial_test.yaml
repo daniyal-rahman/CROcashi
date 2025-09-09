@@ -1,0 +1,142 @@
+# Single Trial Test Configuration
+# ================================
+# Configuration for isolated single-trial testing with real downstream processing
+
+# Environment settings
+env: "test"
+worker_id: "single_trial_test_orchestrator"
+
+# Orchestration Configuration
+orchestration:
+  # Only run CT.gov for trial injection, disable full pipelines
+  execution_order: ["ctgov"]  # Don't run pubmed/sec in orchestrator
+  parallel_execution: false
+  dependency_checking: false  # Skip dependency checks for testing
+  
+  # Error handling
+  max_retries: 1  # Reduce retries for faster testing
+  retry_delay_seconds: 30
+  
+  # State management
+  state_file: ".state/single_trial_test.json"
+  execution_history_limit: 10
+
+# CT.gov Configuration (for trial injection)
+ctgov:
+  # Seed trials instead of full scraping
+  seed_trials:
+    - nct_id: "NCT05515666"
+      company_name: "Cassava Sciences"
+      asset_aliases: ["simufilam", "PTI-125"]
+      indication_terms: ["Alzheimer's disease"]
+      extra_trial_fields:
+        phase: "PHASE3"
+        status: "RECRUITING"
+        brief_title: "Study of Simufilam in Patients with Mild-to-Moderate Alzheimer's Disease"
+        is_pivotal: true
+
+# PubMed Configuration (for workers)
+pubmed:
+  # Required fields (even though we're not using orchestrator pipeline)
+  asset_names: ["simufilam", "PTI-125"]
+  indications: ["Alzheimer's disease"]
+  
+  # Client configuration
+  client_config:
+    rate_limit_requests_per_minute: 90
+    timeout_seconds: 45
+    retry_attempts: 3
+    retry_delay_seconds: 2
+  
+  # Processing limits for testing
+  max_results: 150
+  max_results_per_trial: 100
+  
+  # U1+ stage configuration
+  stage_u1:
+    batch_size: 10
+    enable_entity_extraction: true
+    enable_rs_scoring: true
+    min_r_score: 0.35
+    min_s_score: 0.20
+    max_abstracts_initial: 50
+    enable_database_persistence: true
+    prefilter_sample_size: 200
+  
+  # OA stage configuration
+  stage_oa:
+    batch_size: 5
+    max_retries: 3
+    retry_delay: 30
+    enable_unpaywall: true
+    enable_pmc: true
+
+# Study Card Configuration
+study_card:
+  # Extractor configuration
+  extractor:
+    enable_method_cards: true
+    enable_results_cards: true
+    batch_size: 3
+    min_confidence_threshold: 0.7
+  
+  # Scorer configuration
+  scorer:
+    enable_automated_scoring: true
+    confidence_threshold: 0.8
+
+# LLM Configuration
+llm:
+  provider: "openai"  # or "anthropic"
+  model: "gpt-4"
+  enable_fallback: true
+  fallback_order: ["openai", "anthropic"]
+  
+  # Rate limiting for testing
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 30
+  
+  # Retry policy
+  retry_policy:
+    max_retries: 2
+    backoff_multiplier: 1.5
+
+# Task Queue Configuration
+task_queue:
+  # Lease timeouts for testing
+  default_lease_seconds: 300  # 5 minutes
+  cleanup_interval_seconds: 60
+  max_attempts: 3
+
+# Logging Configuration
+logging:
+  level: "INFO"  # Use DEBUG for more verbose output
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  # Log to files for debugging
+  handlers:
+    - type: "console"
+    - type: "file"
+      filename: "logs/single_trial_test.log"
+      max_bytes: 10485760  # 10MB
+      backup_count: 3
+
+# Database Configuration (set via environment variables)
+# DATABASE_URL should point to your test database
+# Example: postgresql://user:pass@localhost:5432/lit_test
+
+# Test-specific settings
+test:
+  # Enable detailed debugging
+  enable_debug_output: true
+  
+  # Save intermediate results for inspection
+  save_intermediate_results: true
+  
+  # Timeout settings
+  max_execution_time_seconds: 1800  # 30 minutes
+  
+  # Verification settings
+  verify_database_writes: true
+  verify_task_progression: true

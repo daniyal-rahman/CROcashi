@@ -555,3 +555,124 @@ class ProvenanceBacktracer(BaseWorker):
                 return True
         
         return False
+    
+    def backtrace_quotes_to_spans(self, quotes: List[str], raw_doc_text: str, doc_id: str, 
+                                 alignment_threshold: float = 0.8) -> List[EvidenceSpan]:
+        """
+        Simple method to backtrace LLM quotes to EvidenceSpan objects.
+        
+        Args:
+            quotes: List of quote strings from LLM
+            raw_doc_text: Raw document text to search in
+            doc_id: Document identifier
+            alignment_threshold: Minimum fuzzy match score
+            
+        Returns:
+            List of EvidenceSpan objects with backtraced spans
+        """
+        evidence_spans = []
+        
+        for quote in quotes:
+            if not quote or not quote.strip():
+                continue
+                
+            # Find best alignment in raw text
+            best_match = self._find_best_quote_alignment(quote, raw_doc_text, alignment_threshold)
+            
+            if best_match:
+                # Create EvidenceSpan object
+                evidence_span = EvidenceSpan(
+                    doc_id=doc_id,
+                    quote=quote,
+                    section=self._infer_section_from_position(best_match['start'], raw_doc_text),
+                    char_start=best_match['start'],
+                    char_end=best_match['end'],
+                    page=None,  # Will be filled later if page info available
+                    confidence=best_match['score']
+                )
+                evidence_spans.append(evidence_span)
+        
+        return evidence_spans
+    
+    def _find_best_quote_alignment(self, quote: str, raw_text: str, 
+                                  threshold: float = 0.8) -> Optional[Dict[str, Any]]:
+        """Find best alignment for a quote in raw text."""
+        normalized_quote = self._normalize_text(quote)
+        quote_len = len(quote)
+        
+        best_match = None
+        best_score = 0.0
+        
+        # Search with sliding window
+        window_size = max(quote_len, 100)  # At least quote length
+        step_size = 50
+        
+        for start in range(0, len(raw_text), step_size):
+            end = min(start + window_size, len(raw_text))
+            window_text = raw_text[start:end]
+            
+            # Calculate fuzzy match score
+            score = self._calculate_fuzzy_score(normalized_quote, self._normalize_text(window_text))
+            
+            if score > best_score and score >= threshold:
+                best_score = score
+                # Find exact boundaries within the window
+                exact_start, exact_end = self._find_exact_boundaries(quote, window_text, start)
+                best_match = {
+                    'start': exact_start,
+                    'end': exact_end,
+                    'score': score,
+                    'matched_text': raw_text[exact_start:exact_end]
+                }
+        
+        return best_match
+    
+    def _find_exact_boundaries(self, quote: str, window_text: str, window_start: int) -> Tuple[int, int]:
+        """Find exact character boundaries for quote within window."""
+        # Simple substring search for exact boundaries
+        normalized_quote = self._normalize_text(quote).strip()
+        normalized_window = self._normalize_text(window_text)
+        
+        # Find best substring match
+        best_start = 0
+        best_end = len(window_text)
+        
+        # Try to find the quote or parts of it in the window
+        quote_words = normalized_quote.split()
+        if quote_words:
+            first_word = quote_words[0]
+            last_word = quote_words[-1]
+            
+            # Find first and last word positions
+            first_pos = normalized_window.find(first_word)
+            last_pos = normalized_window.rfind(last_word)
+            
+            if first_pos >= 0 and last_pos >= 0:
+                best_start = first_pos
+                best_end = last_pos + len(last_word)
+        
+        return window_start + best_start, window_start + best_end
+    
+    def _infer_section_from_position(self, char_position: int, raw_text: str) -> str:
+        """Infer section name from character position in document."""
+        # Look backwards from position to find section headers
+        text_before = raw_text[max(0, char_position - 500):char_position]
+        
+        # Common section headers
+        section_patterns = [
+            r'(?i)\b(abstract|introduction|methods?|results?|discussion|conclusion|background)\b',
+            r'(?i)\b(study design|endpoints?|outcomes?|statistics|analysis)\b',
+            r'(?i)\b(table|figure|appendix)\s*\d*',
+        ]
+        
+        for pattern in section_patterns:
+            matches = re.finditer(pattern, text_before)
+            if matches:
+                # Get the last match (closest to position)
+                last_match = None
+                for match in matches:
+                    last_match = match
+                if last_match:
+                    return last_match.group(1).lower()
+        
+        return "unknown"

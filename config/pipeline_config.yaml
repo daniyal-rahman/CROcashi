@@ -1,5 +1,5 @@
-# Unified Pipeline Configuration
-# =============================
+# Unified Pipeline Configuration - LLM-First Architecture
+# ====================================================
 
 # Orchestration Configuration
 orchestration:
@@ -50,11 +50,29 @@ llm_path:
     section_bonus: 0.1
     allow_table_only: true
 
-# Fusion Configuration
+# LLM-First Configuration
+llm_first:
+  enabled: true
+  alignment_threshold: 0.8
+  quote_generation_enabled: true
+  provenance_backtracing_enabled: true
+
+# Retriever Configuration (LLM-first mode)
+retriever:
+  use_legacy_retriever: false  # Use EnhancedRetriever by default
+  max_span_length: 400
+  min_confidence: 0.7
+
+# Deterministic workers (hooks available but disabled)
+deterministic:
+  enabled: false  # Disabled per user requirement
+
+# Legacy Fusion Configuration (deprecated in LLM-first mode)
 fusion:
-  prefer_deterministic_if_tie: true
+  enabled: false  # Disabled in favor of direct LLM → span flow
+  prefer_deterministic_if_tie: false
   min_provenance_score: 0.75
-  hard_fail_if_missing_spans: true
+  hard_fail_if_missing_spans: false
 
 # CT.gov Pipeline Configuration
 ctgov:

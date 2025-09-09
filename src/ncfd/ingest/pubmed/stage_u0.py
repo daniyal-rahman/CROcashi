@@ -7,7 +7,7 @@ Seeds trial_doc_candidates (stage=U0_meta).
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 
@@ -89,7 +89,7 @@ class StageU0Processor:
         Returns:
             StageU0Result with execution details
         """
-        start_time = datetime.now(datetime.UTC)
+        start_time = datetime.now(timezone.utc)
         
         try:
             logger.info(f"Starting Stage U0 for trial {trial_id}")
@@ -133,7 +133,7 @@ class StageU0Processor:
                         documents_discovered=0,
                         documents_mapped=0,
                         pmids_found=0,
-                        execution_time=(datetime.now(datetime.UTC) - start_time).total_seconds(),
+                        execution_time=(datetime.now(timezone.utc) - start_time).total_seconds(),
                         query_metadata=query_metadata
                     )
                 
@@ -157,7 +157,7 @@ class StageU0Processor:
                         documents_discovered=len(pmids),
                         documents_mapped=0,
                         pmids_found=len(pmids),
-                        execution_time=(datetime.now(datetime.UTC) - start_time).total_seconds(),
+                        execution_time=(datetime.now(timezone.utc) - start_time).total_seconds(),
                         query_metadata=query_metadata
                     )
                 
@@ -174,7 +174,7 @@ class StageU0Processor:
                     enriched_documents, trial_id, 'U0_meta'
                 )
                 
-                execution_time = (datetime.now(datetime.UTC) - start_time).total_seconds()
+                execution_time = (datetime.now(timezone.utc) - start_time).total_seconds()
                 
                 logger.info(f"Stage U0 completed for {trial_id}: "
                            f"{len(enriched_documents)} documents mapped in {execution_time:.2f}s")
@@ -191,7 +191,7 @@ class StageU0Processor:
                 )
             
         except Exception as e:
-            execution_time = (datetime.now(datetime.UTC) - start_time).total_seconds()
+            execution_time = (datetime.now(timezone.utc) - start_time).total_seconds()
             error_msg = f"Stage U0 failed for trial {trial_id}: {str(e)}"
             logger.error(error_msg, exc_info=True)
             
@@ -369,7 +369,7 @@ class StageU0Processor:
                 doc['trial_context'] = {
                     'trial_id': trial_id,
                     'query_metadata': query_metadata,
-                    'enriched_at': datetime.now(datetime.UTC).isoformat()
+                    'enriched_at': datetime.now(timezone.utc).isoformat()
                 }
                 
                 # Add stage information
@@ -377,7 +377,7 @@ class StageU0Processor:
                 doc['stage_metadata'] = {
                     'stage': 'U0_meta',
                     'stage_description': 'Metadata discovery completed',
-                    'stage_completed_at': datetime.now(datetime.UTC).isoformat()
+                    'stage_completed_at': datetime.now(timezone.utc).isoformat()
                 }
                 
                 enriched.append(doc)
@@ -416,8 +416,8 @@ class StageU0Processor:
                     'stage': stage,
                     'selected': True,  # All U0 documents are selected initially
                     'dropped_reason': None,
-                    'notes': f'Discovered in Stage U0 at {datetime.now(datetime.UTC).isoformat()}',
-                    'created_at': datetime.now(datetime.UTC).isoformat()
+                    'notes': f'Discovered in Stage U0 at {datetime.now(timezone.utc).isoformat()}',
+                    'created_at': datetime.now(timezone.utc).isoformat()
                 }
                 
                 candidates.append(candidate)

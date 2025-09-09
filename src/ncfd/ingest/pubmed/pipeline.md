@@ -5,8 +5,8 @@ This document specifies the end-to-end PubMed literature processing pipeline wit
 
 ## Pipeline Stages
 
-### Stage U0: Metadata Discovery
-**Purpose**: Discover potentially relevant documents via ESearch/ESummary
+### Stage U1+: Unified Discovery and Abstract Processing
+**Purpose**: Discover potentially relevant documents and extract/analyze abstract text for R/S scoring
 
 **Inputs**:
 - Trial metadata (asset, indication, phase, NCT ID)
@@ -17,42 +17,38 @@ This document specifies the end-to-end PubMed literature processing pipeline wit
 1. **Query Construction**: Build PubMed ESearch query
 2. **ESearch**: Execute query to get PMID list
 3. **ESummary**: Fetch metadata for PMIDs
-4. **Document Creation**: Insert into documents table
-5. **Candidate Linking**: Create trial_doc_candidates rows
+4. **Document Creation**: Insert into documents table with pubmed_meta.esummary_jsonb
+5. **Candidate Linking**: Create trial_doc_candidates rows with stage='U1_discovery'
+6. **EFetch**: Retrieve abstract text for PMIDs
+7. **Text Storage**: Update document_text.abstract_text
+8. **Entity Extraction**: Extract NCTs, assets, phases, numbers
+9. **R/S Scoring**: Calculate relevance and shortability scores
+10. **Linking**: Create document_links for discovered entities
 
 **Outputs**:
-- documents rows with status='discovered'
-- document_citations with basic metadata
-- trial_doc_candidates with stage='U0_meta'
-
-**Decision Point**:
-- Keep all documents for U1 stage
-- Optional: pre-filter obvious non-clinical items
-
-### Stage U1: Abstract Processing
-**Purpose**: Extract and analyze abstract text for R/S scoring
-
-**Inputs**:
-- Documents from U0 stage
-- Trial context for relevance scoring
-
-**Process**:
-1. **EFetch**: Retrieve abstract text for PMIDs
-2. **Text Storage**: Update document_text.abstract_text
-3. **Entity Extraction**: Extract NCTs, assets, phases, numbers
-4. **R/S Scoring**: Calculate relevance and shortability scores
-5. **Linking**: Create document_links for discovered entities
-
-**Outputs**:
+- documents rows with status='discovered' → 'abstracted' → 'scored'
+- pubmed_meta with esummary_jsonb for audit/reproducibility
 - document_text with abstract content
 - document_entities with extracted information
 - document_links with trial/asset connections
 - doc_rs_scores with R/S tiers
+- trial_doc_candidates with stage='U1_discovery' → 'U1_abstract'
 
 **Decision Point**:
 - **Keep**: R≥1 and S≥S1 documents
 - **Drop**: R0 or S0 documents (keep citation only)
 - **Park**: Low-R documents for later review
+
+**Modes**:
+- **Discovery+Process**: Full pipeline from query to scoring (default)
+- **Process-only**: Skip discovery, process existing documents (legacy compatibility)
+
+### Legacy Stage U0: Metadata Discovery (Deprecated)
+**Status**: Deprecated - functionality integrated into U1+
+
+The U0 stage has been folded into U1+ to simplify orchestration and reduce complexity. 
+All U0 functionality (ESearch, ESummary, document creation, candidate linking) is now 
+performed as part of the U1+ discovery phase.
 
 ### Stage OA: Open Access Full Text (Optional)
 **Purpose**: Fetch full text for high-priority documents

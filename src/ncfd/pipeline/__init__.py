@@ -34,6 +34,18 @@ from .workflow import (
     generate_failure_report,
 )
 
+from .lit_queue import (
+    LiteratureQueue,
+    TrialQueueItem,
+)
+
+from .early_stopping import (
+    should_stop_early,
+    plateau_detected,
+    calculate_expected_utility,
+    update_trial_state,
+)
+
 __all__ = [
     # Document ingestion
     "DocumentIngestionPipeline",
@@ -58,4 +70,14 @@ __all__ = [
     "run_failure_detection",
     "batch_process_trials",
     "generate_failure_report",
+    
+    # Literature queue management
+    "LiteratureQueue",
+    "TrialQueueItem",
+    
+    # Early stopping rules
+    "should_stop_early",
+    "plateau_detected",
+    "calculate_expected_utility",
+    "update_trial_state",
 ]

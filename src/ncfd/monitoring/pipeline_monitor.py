@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import time
 import psutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Set, Tuple
 from dataclasses import dataclass, field
@@ -157,7 +157,7 @@ class Alert:
     def __post_init__(self):
         """Set created_at to current time."""
         if not self.created_at:
-            self.created_at = datetime.now(datetime.UTC)
+            self.created_at = datetime.now(timezone.utc)
 
 
 class PipelineMonitor:
@@ -251,7 +251,7 @@ class PipelineMonitor:
             metrics = PipelineMetrics(
                 pipeline_name=pipeline_name,
                 execution_id=execution_id,
-                start_time=datetime.now(datetime.UTC)
+                start_time=datetime.now(timezone.utc)
             )
             self.pipeline_metrics.append(metrics)
         
@@ -262,7 +262,7 @@ class PipelineMonitor:
         
         # Update end time and calculate duration if execution is complete
         if 'success' in kwargs and kwargs['success'] is not None:
-            metrics.end_time = datetime.now(datetime.UTC)
+            metrics.end_time = datetime.now(timezone.utc)
             metrics.duration_seconds = (metrics.end_time - metrics.start_time).total_seconds()
             
             if metrics.duration_seconds > 0:
@@ -314,7 +314,7 @@ class PipelineMonitor:
             
             # Create system metrics
             system_metrics = SystemMetrics(
-                timestamp=datetime.now(datetime.UTC),
+                timestamp=datetime.now(timezone.utc),
                 cpu_percent=cpu_percent,
                 cpu_count=cpu_count,
                 cpu_freq_mhz=cpu_freq_mhz,
@@ -571,7 +571,7 @@ class PipelineMonitor:
         for alert in self.active_alerts:
             if alert.alert_id == alert_id:
                 alert.status = AlertStatus.ACKNOWLEDGED
-                alert.acknowledged_at = datetime.now(datetime.UTC)
+                alert.acknowledged_at = datetime.now(timezone.utc)
                 alert.acknowledged_by = acknowledged_by
                 
                 # Move to history
@@ -587,7 +587,7 @@ class PipelineMonitor:
         for alert in self.alert_history:
             if alert.alert_id == alert_id:
                 alert.status = AlertStatus.RESOLVED
-                alert.resolved_at = datetime.now(datetime.UTC)
+                alert.resolved_at = datetime.now(timezone.utc)
                 
                 self.logger.info(f"Alert {alert_id} resolved by {resolved_by}")
                 return
@@ -621,7 +621,7 @@ class PipelineMonitor:
     def get_pipeline_performance_summary(self, pipeline_name: Optional[str] = None, 
                                        days: int = 7) -> Dict[str, Any]:
         """Get pipeline performance summary."""
-        cutoff_date = datetime.now(datetime.UTC) - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         if pipeline_name:
             metrics = [m for m in self.pipeline_metrics 
@@ -661,7 +661,7 @@ class PipelineMonitor:
     
     def get_system_performance_summary(self, hours: int = 24) -> Dict[str, Any]:
         """Get system performance summary."""
-        cutoff_date = datetime.now(datetime.UTC) - timedelta(hours=hours)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(hours=hours)
         recent_metrics = [m for m in self.system_metrics if m.timestamp >= cutoff_date]
         
         if not recent_metrics:
@@ -703,7 +703,7 @@ class PipelineMonitor:
     
     def get_quality_summary(self, days: int = 7) -> Dict[str, Any]:
         """Get data quality summary."""
-        cutoff_date = datetime.now(datetime.UTC) - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         recent_metrics = [m for m in self.quality_metrics if m.calculated_at >= cutoff_date]
         
         if not recent_metrics:
@@ -745,7 +745,7 @@ class PipelineMonitor:
     def generate_monitoring_report(self, format: str = "json") -> str:
         """Generate a comprehensive monitoring report."""
         report_data = {
-            'report_generated_at': datetime.now(datetime.UTC).isoformat(),
+            'report_generated_at': datetime.now(timezone.utc).isoformat(),
             'monitoring_status': self.get_monitoring_status(),
             'pipeline_performance': self.get_pipeline_performance_summary(),
             'system_performance': self.get_system_performance_summary(),
@@ -771,7 +771,7 @@ class PipelineMonitor:
     
     def clear_old_metrics(self, keep_days: int = 30):
         """Clear old metrics to free storage."""
-        cutoff_date = datetime.now(datetime.UTC) - timedelta(days=keep_days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=keep_days)
         
         # Clear old pipeline metrics
         old_pipeline_count = len([m for m in self.pipeline_metrics if m.start_time < cutoff_date])
@@ -790,7 +790,7 @@ class PipelineMonitor:
     def export_metrics(self, format: str = "json") -> str:
         """Export all metrics in specified format."""
         export_data = {
-            'exported_at': datetime.now(datetime.UTC).isoformat(),
+            'exported_at': datetime.now(timezone.utc).isoformat(),
             'pipeline_metrics': [vars(m) for m in self.pipeline_metrics[-100:]],  # Last 100
             'system_metrics': [vars(m) for m in self.system_metrics[-100:]],      # Last 100
             'quality_metrics': [vars(m) for m in self.quality_metrics[-100:]],    # Last 100

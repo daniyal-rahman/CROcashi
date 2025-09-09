@@ -1,0 +1,106 @@
+{
+  "execution_summary": {
+    "execution_id": "e2e_20250906_010639",
+    "start_time": "2025-09-06T01:06:39.074265",
+    "end_time": "2025-09-06T01:06:41.977782",
+    "execution_time_seconds": 2.903514,
+    "success": true
+  },
+  "stopping_conditions": {
+    "max_trials": 5,
+    "time_budget_seconds": 900,
+    "at_least_study_cards": 1
+  },
+  "results": {
+    "trials_processed": 5,
+    "study_cards_completed": 0,
+    "study_card_ids": []
+  },
+  "pipeline_results": {
+    "ctgov": {
+      "pipeline_name": "ctgov",
+      "success": true,
+      "start_time": "2025-09-06T08:06:39.791075+00:00",
+      "end_time": "2025-09-06T08:06:39.946340+00:00",
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": [],
+      "processing_time_seconds": 0.155265
+    },
+    "sec": {
+      "pipeline_name": "sec",
+      "success": true,
+      "start_time": "2025-09-06T08:06:39.946380+00:00",
+      "end_time": "2025-09-06T08:06:39.947091+00:00",
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": [],
+      "processing_time_seconds": 0.000711
+    },
+    "pubmed": {
+      "pipeline_name": "pubmed",
+      "success": true,
+      "start_time": "2025-09-06T08:06:39.947110+00:00",
+      "end_time": "2025-09-06T08:06:39.947141+00:00",
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": [
+        "PubMed pipeline requires async context for full execution"
+      ],
+      "processing_time_seconds": 3.1e-05
+    },
+    "total_trials_processed": 0,
+    "total_filings_processed": 0,
+    "total_documents_processed": 0,
+    "all_pipelines_successful": true
+  },
+  "evaluation_summary": {
+    "completed": false
+  },
+  "errors": [],
+  "warnings": [
+    "Study card generation failed for NCT05352763: ['LLM Method auditing failed: Invalid inputs: missing required evidence_spans, design_json, or pocket_context']",
+    "Study card generation failed for NCT06615557: ['LLM Method auditing failed: Invalid inputs: missing required evidence_spans, design_json, or pocket_context']",
+    "Study card generation failed for NCT05800015: ['LLM Method auditing failed: Invalid inputs: missing required evidence_spans, design_json, or pocket_context']",
+    "Study card generation failed for NCT05039840: ['LLM Method auditing failed: Invalid inputs: missing required evidence_spans, design_json, or pocket_context']",
+    "Study card generation failed for NCT07000123: ['LLM Method auditing failed: Invalid inputs: missing required evidence_spans, design_json, or pocket_context']"
+  ],
+  "config_summary": {
+    "max_trials": 5,
+    "time_budget_seconds": 900,
+    "at_least_study_cards": 1
+  }
+}

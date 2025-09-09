@@ -1,0 +1,102 @@
+{
+  "execution_summary": {
+    "execution_id": "e2e_20250906_010700",
+    "start_time": "2025-09-06T01:07:00.462700",
+    "end_time": "2025-09-06T01:07:03.293449",
+    "execution_time_seconds": 2.830747,
+    "success": true
+  },
+  "stopping_conditions": {
+    "max_trials": 1,
+    "time_budget_seconds": 900,
+    "at_least_study_cards": 1
+  },
+  "results": {
+    "trials_processed": 1,
+    "study_cards_completed": 0,
+    "study_card_ids": []
+  },
+  "pipeline_results": {
+    "ctgov": {
+      "pipeline_name": "ctgov",
+      "success": true,
+      "start_time": "2025-09-06T08:07:01.134758+00:00",
+      "end_time": "2025-09-06T08:07:01.308936+00:00",
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": [],
+      "processing_time_seconds": 0.174178
+    },
+    "sec": {
+      "pipeline_name": "sec",
+      "success": true,
+      "start_time": "2025-09-06T08:07:01.308967+00:00",
+      "end_time": "2025-09-06T08:07:01.309176+00:00",
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": [],
+      "processing_time_seconds": 0.000209
+    },
+    "pubmed": {
+      "pipeline_name": "pubmed",
+      "success": true,
+      "start_time": "2025-09-06T08:07:01.309192+00:00",
+      "end_time": "2025-09-06T08:07:01.309222+00:00",
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": [
+        "PubMed pipeline requires async context for full execution"
+      ],
+      "processing_time_seconds": 3e-05
+    },
+    "total_trials_processed": 0,
+    "total_filings_processed": 0,
+    "total_documents_processed": 0,
+    "all_pipelines_successful": true
+  },
+  "evaluation_summary": {
+    "completed": false
+  },
+  "errors": [],
+  "warnings": [
+    "Study card generation failed for NCT05352763: [\"LLM Method auditing failed: Error processing methodology: 'MethodAuditor' object has no attribute 'logger'\"]"
+  ],
+  "config_summary": {
+    "max_trials": 1,
+    "time_budget_seconds": 900,
+    "at_least_study_cards": 1
+  }
+}

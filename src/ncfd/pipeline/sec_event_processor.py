@@ -12,7 +12,7 @@ This module processes extracted SEC information and:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Set
 from dataclasses import dataclass
 
@@ -58,7 +58,7 @@ class TrialEvent:
         if self.safety_events is None:
             self.safety_events = []
         if self.extracted_at is None:
-            self.extracted_at = datetime.now(datetime.UTC)
+            self.extracted_at = datetime.now(timezone.utc)
 
 
 @dataclass
@@ -107,7 +107,7 @@ class ClinicalDevelopmentUpdate:
         if self.linked_trials is None:
             self.linked_trials = []
         if self.extracted_at is None:
-            self.extracted_at = datetime.now(datetime.UTC)
+            self.extracted_at = datetime.now(timezone.utc)
 
 
 @dataclass
@@ -324,7 +324,7 @@ class SecEventProcessor:
             confidence=getattr(item, 'confidence', 0.0),
             extracted_content=str(item),
             evidence_spans=getattr(item, 'evidence_spans', []),
-            flagged_at=datetime.now(datetime.UTC)
+            flagged_at=datetime.now(timezone.utc)
         )
         
         return review_item
@@ -423,7 +423,7 @@ class SecEventProcessor:
             if item.item_id == item_id:
                 item.review_status = status
                 item.review_notes = notes
-                item.reviewed_at = datetime.now(datetime.UTC)
+                item.reviewed_at = datetime.now(timezone.utc)
                 self.logger.info(f"Updated review status for {item_id} to {status}")
                 break
     
@@ -440,7 +440,7 @@ class SecEventProcessor:
             data = {
                 'trial_events': [vars(event) for event in self.trial_events],
                 'clinical_updates': [vars(update) for update in self.clinical_updates],
-                'exported_at': datetime.now(datetime.UTC).isoformat()
+                'exported_at': datetime.now(timezone.utc).isoformat()
             }
             return json.dumps(data, indent=2, default=str)
         else:

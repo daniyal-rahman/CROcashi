@@ -1,0 +1,32 @@
+{
+  "execution_summary": {
+    "execution_id": "e2e_20250905_172501",
+    "start_time": "2025-09-05T17:25:01.315347",
+    "end_time": "2025-09-05T17:25:01.941226",
+    "execution_time_seconds": 0.625874,
+    "success": false
+  },
+  "stopping_conditions": {
+    "max_trials": 3,
+    "time_budget_seconds": 600,
+    "at_least_study_cards": 1
+  },
+  "results": {
+    "trials_processed": 0,
+    "study_cards_completed": 0,
+    "study_card_ids": []
+  },
+  "pipeline_results": {},
+  "evaluation_summary": {
+    "completed": false
+  },
+  "errors": [
+    "E2E execution failed: Pipeline ingestion failed: type object 'datetime.datetime' has no attribute 'UTC'"
+  ],
+  "warnings": [],
+  "config_summary": {
+    "max_trials": 3,
+    "time_budget_seconds": 600,
+    "at_least_study_cards": 1
+  }
+}

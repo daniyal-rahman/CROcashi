@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import hashlib
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from ncfd.db.session import get_session

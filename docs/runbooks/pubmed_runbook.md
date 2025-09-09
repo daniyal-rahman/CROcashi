@@ -22,7 +22,7 @@ This runbook provides operational procedures for the PubMed literature processin
 **Commands**:
 ```bash
 # Refresh trial priorities
-python -m ncfd.orchestrate.lit_queue --refresh
+python -m ncfd.pipeline.lit_queue --refresh
 
 # Check queue health
 python -m ncfd.monitoring.pipeline_monitor --queue-health
@@ -123,7 +123,7 @@ python -m ncfd.pipeline.orchestrator --cleanup
 **Commands**:
 ```bash
 # Select drift sample
-python -m ncfd.orchestrate.lit_queue --drift-sample --sample-rate 0.08
+python -m ncfd.pipeline.lit_queue --drift-sample --sample-rate 0.08
 
 # Generate drift report
 python -m ncfd.monitoring.pipeline_monitor --drift-report

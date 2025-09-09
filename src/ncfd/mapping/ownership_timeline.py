@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, UTC
+from datetime import date, datetime, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from decimal import Decimal
 from sqlalchemy.orm import Session

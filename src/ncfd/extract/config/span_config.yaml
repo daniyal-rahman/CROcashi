@@ -29,7 +29,7 @@ span_generation:
     - 'stable'  # Stable disease
     - 'progressive'  # Progressive disease
 
-# Indexing Settings
+# Indexing Settings  
 indexing:
   bm25:
     k1: 1.2
@@ -39,6 +39,22 @@ indexing:
     preserve_numerics: true
   
   dense:
+    dimension: 768
+    model_name: "sentence-transformers/all-MiniLM-L6-v2"
+    fallback_to_tfidf: true
+
+# Span Indexing Settings (alias for indexing)
+span_indexing:
+  bm25:
+    enabled: true
+    k1: 1.2
+    b: 0.75
+    max_features: 10000
+    normalize_tokens: true
+    preserve_numerics: true
+  
+  dense:
+    enabled: false
     dimension: 768
     model_name: "sentence-transformers/all-MiniLM-L6-v2"
     fallback_to_tfidf: true

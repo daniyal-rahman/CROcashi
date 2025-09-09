@@ -1,0 +1,236 @@
+{
+  "execution_summary": {
+    "execution_id": "enhanced_late_fusion_e2e_20250905_185503",
+    "start_time": "2025-09-05T18:55:03.704607",
+    "end_time": "2025-09-05T18:55:06.538880",
+    "total_execution_time_seconds": 2.8342678546905518,
+    "success": true,
+    "enhanced_pipeline": true,
+    "late_fusion_integration": true,
+    "automatic_span_generation": true,
+    "dual_path_processing": true
+  },
+  "targets_and_results": {
+    "max_trials": 1,
+    "trials_processed": 1,
+    "at_least_study_cards": 1,
+    "study_cards_completed": 0,
+    "study_card_ids": [],
+    "target_achieved": false
+  },
+  "pipeline_results": {
+    "execution_id": "daily_20250906_015504",
+    "start_time": "2025-09-06 01:55:04.434472+00:00",
+    "end_time": "2025-09-06 01:55:04.594808+00:00",
+    "total_processing_time": 0.160336,
+    "ctgov_result": {
+      "pipeline_name": "ctgov",
+      "success": true,
+      "start_time": "2025-09-06 01:55:04.434484+00:00",
+      "end_time": "2025-09-06 01:55:04.594267+00:00",
+      "processing_time_seconds": 0.159783,
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": []
+    },
+    "sec_result": {
+      "pipeline_name": "sec",
+      "success": true,
+      "start_time": "2025-09-06 01:55:04.594316+00:00",
+      "end_time": "2025-09-06 01:55:04.594734+00:00",
+      "processing_time_seconds": 0.000418,
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": []
+    },
+    "pubmed_result": {
+      "pipeline_name": "pubmed",
+      "success": true,
+      "start_time": "2025-09-06 01:55:04.594763+00:00",
+      "end_time": "2025-09-06 01:55:04.594804+00:00",
+      "processing_time_seconds": 4.1e-05,
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": [
+        "PubMed pipeline requires async context for full execution"
+      ]
+    },
+    "total_trials_processed": 0,
+    "total_filings_processed": 0,
+    "total_documents_processed": 0,
+    "total_changes_detected": 0,
+    "total_significant_changes": 0,
+    "all_pipelines_successful": true,
+    "errors": [],
+    "warnings": []
+  },
+  "errors": [],
+  "warnings": [
+    "Enhanced study card generation failed for NCT05352763: [\"Enhanced retrieval failed: Enhanced Retriever failed: EvidenceSpan.__init__() got an unexpected keyword argument 'span_id'\"]"
+  ],
+  "configuration": {
+    "db": {
+      "dsn": "${PSQL_DSN}"
+    },
+    "llm": {
+      "provider": "openai",
+      "model_map": {
+        "llm_decider": "gpt-4o-mini",
+        "results_distiller": "gpt-4o-mini",
+        "method_auditor": "gpt-4o-mini",
+        "study_card_evaluator": "gpt-4o-mini"
+      },
+      "api_keys": {
+        "openai": "${OPENAI_API_KEY}"
+      },
+      "rate_limits": {
+        "openai": {
+          "requests_per_minute": 60,
+          "tokens_per_minute": 50000
+        }
+      }
+    },
+    "ctgov": {
+      "incremental": true,
+      "window_days": 1,
+      "batch_size": 100,
+      "retry_attempts": 3,
+      "retry_delay_seconds": 60
+    },
+    "sec": {
+      "enable": true,
+      "incremental": true,
+      "batch_size": 50,
+      "retry_attempts": 3
+    },
+    "pubmed": {
+      "client_config": {
+        "rate_limit_requests_per_minute": 60,
+        "batch_size": 20
+      },
+      "retrieval": {
+        "backend": "bm25",
+        "max_docs_per_trial": 50,
+        "min_relevance_score": 0.1
+      },
+      "asset_names": [
+        "pembrolizumab",
+        "keytruda",
+        "nivolumab",
+        "opdivo",
+        "atezolizumab",
+        "tecentriq"
+      ],
+      "indications": [
+        "cancer",
+        "oncology",
+        "melanoma",
+        "lung cancer",
+        "breast cancer",
+        "alzheimer",
+        "diabetes"
+      ]
+    },
+    "literature_queue": {
+      "ranker": "default",
+      "filters": {
+        "require_public_company": true,
+        "min_phase": 1,
+        "max_age_days": 365
+      },
+      "scoring": {
+        "company_weight": 0.3,
+        "literature_weight": 0.4,
+        "phase_weight": 0.2,
+        "recency_weight": 0.1
+      }
+    },
+    "study_cards": {
+      "max_docs_per_trial": 50,
+      "store_json_snapshots": true,
+      "llm_timeout_seconds": 120,
+      "retrieval_timeout_seconds": 60,
+      "stages": {
+        "retrieval": {
+          "enable": true,
+          "timeout_seconds": 60
+        },
+        "llm_method_auditing": {
+          "enable": true,
+          "timeout_seconds": 120
+        },
+        "deterministic_method_auditing": {
+          "enable": true,
+          "timeout_seconds": 30
+        },
+        "llm_results_distillation": {
+          "enable": true,
+          "timeout_seconds": 120
+        },
+        "deterministic_results_distillation": {
+          "enable": true,
+          "timeout_seconds": 30
+        }
+      }
+    },
+    "automated_evaluation": {
+      "use_llm_resolution": true,
+      "llm_timeout_seconds": 90,
+      "confidence_threshold": 0.7,
+      "high_risk_threshold": 0.3
+    },
+    "execution_order": [
+      "ctgov",
+      "sec",
+      "pubmed"
+    ],
+    "parallel_execution": false,
+    "dependency_checking": true,
+    "max_retries": 3,
+    "retry_delay_seconds": 300,
+    "state_file": ".state/e2e_orchestrator.json",
+    "logging": {
+      "level": "INFO",
+      "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    }
+  },
+  "enhancement_summary": {
+    "late_fusion_orchestrator": "Integrates LLM and deterministic processing paths",
+    "enhanced_retriever": "Automatically generates spans when none exist",
+    "dual_path_processing": "Combines LLM creativity with deterministic reliability",
+    "automatic_span_generation": "No more pipeline failures due to missing BaseSpans"
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "execution_summary": {
+    "execution_id": "e2e_20250906_020250",
+    "start_time": "2025-09-06T02:02:50.583869",
+    "end_time": "2025-09-06T02:02:53.116223",
+    "execution_time_seconds": 2.532351,
+    "success": false
+  },
+  "stopping_conditions": {
+    "max_trials": 1,
+    "time_budget_seconds": 900,
+    "at_least_study_cards": 1
+  },
+  "results": {
+    "trials_processed": 1,
+    "study_cards_completed": 1,
+    "study_card_ids": [
+      6
+    ]
+  },
+  "pipeline_results": {
+    "ctgov": {
+      "pipeline_name": "ctgov",
+      "success": true,
+      "start_time": "2025-09-06T09:02:51.102679+00:00",
+      "end_time": "2025-09-06T09:02:51.271871+00:00",
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": [],
+      "processing_time_seconds": 0.169192
+    },
+    "sec": {
+      "pipeline_name": "sec",
+      "success": true,
+      "start_time": "2025-09-06T09:02:51.271923+00:00",
+      "end_time": "2025-09-06T09:02:51.272218+00:00",
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": [],
+      "processing_time_seconds": 0.000295
+    },
+    "pubmed": {
+      "pipeline_name": "pubmed",
+      "success": true,
+      "start_time": "2025-09-06T09:02:51.272247+00:00",
+      "end_time": "2025-09-06T09:02:51.272300+00:00",
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": [
+        "PubMed pipeline requires async context for full execution"
+      ],
+      "processing_time_seconds": 5.3e-05
+    },
+    "total_trials_processed": 0,
+    "total_filings_processed": 0,
+    "total_documents_processed": 0,
+    "all_pipelines_successful": true
+  },
+  "evaluation_summary": {
+    "completed": true,
+    "study_cards_evaluated": 1,
+    "average_confidence": 0.271
+  },
+  "errors": [
+    "Automated evaluation failed: 'BatchEvaluationResult' object has no attribute 'study_results'"
+  ],
+  "warnings": [],
+  "config_summary": {
+    "max_trials": 1,
+    "time_budget_seconds": 900,
+    "at_least_study_cards": 1
+  }
+}

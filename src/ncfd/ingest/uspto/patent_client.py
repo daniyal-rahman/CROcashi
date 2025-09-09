@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from datetime import date, datetime, UTC, timedelta
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Iterator, Tuple
 from urllib.parse import urljoin, quote_plus

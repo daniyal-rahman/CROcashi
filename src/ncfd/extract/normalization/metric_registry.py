@@ -73,6 +73,7 @@ class MetricRegistry:
         """Initialize the metric registry with oncology-specific metrics."""
         self.metrics: Dict[str, MetricDefinition] = {}
         self._initialize_oncology_metrics()
+        self._initialize_cognitive_metrics()
     
     def _initialize_oncology_metrics(self):
         """Initialize oncology-specific metrics."""
@@ -202,6 +203,42 @@ class MetricRegistry:
                 "min_value": 0,
                 "max_value": 100,
                 "require_n": True
+            }
+        ))
+    
+    def _initialize_cognitive_metrics(self):
+        """Initialize cognitive/neurological metrics."""
+        # Cognitive improvement metrics
+        self.register_metric(MetricDefinition(
+            metric_id="cognitive_improvement",
+            name="Cognitive Improvement",
+            metric_type=MetricType.EFFICACY,
+            description="Cognitive improvement measured by various scales",
+            allowed_units=["points", "score", "%", "percent"],
+            default_unit="points",
+            normalize_to_unit="points",
+            validation_rules={
+                "min_value": -100,
+                "max_value": 100,
+                "require_n": False,  # Don't require n for cognitive metrics
+                "require_ci": False
+            }
+        ))
+        
+        # ADAS-Cog metrics
+        self.register_metric(MetricDefinition(
+            metric_id="adas_cog_change",
+            name="ADAS-Cog Change",
+            metric_type=MetricType.EFFICACY,
+            description="Change in ADAS-Cog score",
+            allowed_units=["points", "score"],
+            default_unit="points",
+            normalize_to_unit="points",
+            validation_rules={
+                "min_value": -50,
+                "max_value": 50,
+                "require_n": False,  # Don't require n for cognitive metrics
+                "require_ci": False
             }
         ))
     

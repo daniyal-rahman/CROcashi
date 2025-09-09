@@ -1,0 +1,241 @@
+# U1+ Pipeline Configuration
+# Unified Discovery and Abstract Processing Pipeline
+
+# Pipeline execution settings
+pipeline:
+  # Enable/disable stages
+  enable_stages:
+    - "U1"  # Unified discovery + processing (replaces U0 + U1)
+    - "OA"  # Open access full-text retrieval
+    - "STUDYCARD"  # Study card generation
+  
+  # Execution mode
+  parallel_execution: true
+  execution_order: ["ctgov", "pubmed", "sec"]  # Fallback if parallel_execution is false
+  
+  # Worker settings
+  worker_id: "u1_plus_worker"
+  max_concurrent_tasks: 5
+  
+  # Retry settings
+  max_retries: 3
+  retry_delay_seconds: 300  # 5 minutes
+
+# U1+ Stage Configuration
+u1_plus:
+  # Discovery settings
+  discovery:
+    max_results_per_trial: 1000
+    enable_prefiltering: true
+    prefilter_sample_size: 100
+    batch_size: 50
+    
+  # Processing settings
+  processing:
+    batch_size: 10
+    enable_entity_extraction: true
+    enable_rs_scoring: true
+    min_r_score: 0.35  # R1 threshold
+    min_s_score: 0.35  # S1 threshold
+    
+  # Query building
+  query_builder:
+    max_query_length: 2000
+    enable_nct_matching: true
+    enable_phase_filtering: true
+    enable_design_filtering: true
+
+# Task Queue Configuration
+queue:
+  # Lease settings
+  lease_seconds: 600  # 10 minutes
+  cleanup_interval_seconds: 300  # 5 minutes
+  
+  # Priority weights
+  priority_weights:
+    best_s_weight: 0.55
+    time_weight: 0.25
+    uncertainty_weight: 0.15
+    company_pressure_weight: 0.05
+  
+  # Time decay parameters
+  catalyst_decay_days: 120
+  
+  # Queue limits
+  max_queue_size: 10000
+  park_after_days: 30
+
+# OA Stage Configuration
+oa_stage:
+  # Batch processing
+  batch_size: 5
+  max_retries: 3
+  retry_delay: 30
+  
+  # Source preferences
+  enable_pmc: true
+  enable_unpaywall: true
+  enable_publisher_fallback: false
+  
+  # Rate limiting
+  requests_per_minute: 60
+  delay_between_batches: 2
+
+# Study Card Stage Configuration
+studycard_stage:
+  # Batch processing
+  batch_size: 3
+  max_retries: 2
+  retry_delay: 60
+  
+  # Card generation
+  enable_method_cards: true
+  enable_results_cards: true
+  min_confidence_threshold: 0.7
+  
+  # Rate limiting
+  requests_per_minute: 20
+  delay_between_batches: 5
+
+# Budget Configuration
+budget:
+  # Daily limits
+  llm_daily_limit: 1000000  # tokens
+  pubmed_rpm: 600  # requests per minute
+  
+  # Budget buckets
+  buckets:
+    llm_daily:
+      limit_units: 1000000
+      period_hours: 24
+    pubmed_rpm:
+      limit_units: 600
+      period_minutes: 1
+  
+  # Budget checking
+  check_before_lease: true
+  fail_on_budget_exceeded: false
+
+# Database Configuration
+database:
+  # Connection settings
+  connection_pool_size: 10
+  connection_timeout: 30
+  
+  # Batch sizes
+  batch_insert_size: 100
+  batch_update_size: 50
+  
+  # Transaction settings
+  auto_commit: false
+  isolation_level: "READ_COMMITTED"
+
+# Logging Configuration
+logging:
+  # Log levels
+  level: "INFO"
+  structured_logging: true
+  
+  # Context tracking
+  enable_context_tracking: true
+  log_context_vars: ["run_id", "trial_id", "task_id", "task_type"]
+  
+  # Metrics
+  enable_metrics: true
+  metrics_log_interval: 300  # 5 minutes
+  
+  # Output
+  log_to_file: true
+  log_file_path: "logs/u1_plus_pipeline.log"
+  log_format: "json"
+
+# Monitoring Configuration
+monitoring:
+  # Health checks
+  enable_health_checks: true
+  health_check_interval: 60  # seconds
+  
+  # Metrics collection
+  enable_metrics_collection: true
+  metrics_export_interval: 300  # 5 minutes
+  
+  # Alerting
+  enable_alerts: true
+  alert_thresholds:
+    task_failure_rate: 0.1  # 10%
+    queue_depth: 1000
+    processing_time_p95: 3600  # 1 hour
+
+# PubMed API Configuration
+pubmed_api:
+  # Base settings
+  base_url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+  timeout: 30
+  
+  # Rate limiting
+  requests_per_second: 3
+  requests_per_minute: 180
+  
+  # Retry settings
+  max_retries: 3
+  retry_delay: 1
+  
+  # Batch sizes
+  esearch_batch_size: 100
+  esummary_batch_size: 200
+  efetch_batch_size: 50
+
+# External API Configuration
+external_apis:
+  # Unpaywall
+  unpaywall:
+    base_url: "https://api.unpaywall.org/v2/"
+    timeout: 10
+    requests_per_minute: 100
+  
+  # PMC
+  pmc:
+    base_url: "https://www.ncbi.nlm.nih.gov/pmc/oai/oai.cgi"
+    timeout: 30
+    requests_per_minute: 60
+
+# Performance Configuration
+performance:
+  # Caching
+  enable_caching: true
+  cache_ttl_seconds: 3600  # 1 hour
+  
+  # Memory management
+  max_memory_usage_mb: 2048
+  gc_threshold: 0.8
+  
+  # Async settings
+  max_concurrent_requests: 10
+  request_timeout: 30
+
+# Security Configuration
+security:
+  # API keys
+  api_key_rotation_days: 90
+  
+  # Rate limiting
+  enable_rate_limiting: true
+  rate_limit_window_seconds: 60
+  
+  # Input validation
+  validate_inputs: true
+  max_input_size_mb: 10
+
+# Development Configuration
+development:
+  # Debug settings
+  debug_mode: false
+  verbose_logging: false
+  
+  # Testing
+  enable_mock_apis: false
+  mock_response_delay: 0.1
+  
+  # Profiling
+  enable_profiling: false
+  profile_output_dir: "profiles/"

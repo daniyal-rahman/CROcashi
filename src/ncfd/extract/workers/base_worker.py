@@ -7,9 +7,10 @@ Abstract base class for all study card workers.
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
+import logging
 
 
 @dataclass
@@ -32,10 +33,11 @@ class BaseWorker(ABC):
     def __init__(self, name: str, version: str = "1.0.0"):
         self.name = name
         self.version = version
-        self.created_at = datetime.now(datetime.UTC)
+        self.created_at = datetime.now(timezone.utc)
         self.execution_count = 0
         self.total_execution_time = 0.0
         self.error_count = 0
+        self.logger = logging.getLogger(f"ncfd.extract.workers.{name.lower()}")
         
     @abstractmethod
     def process(self, inputs: Dict[str, Any]) -> WorkerResult:
@@ -44,7 +46,7 @@ class BaseWorker(ABC):
     
     def execute(self, inputs: Dict[str, Any]) -> WorkerResult:
         """Execute the worker with timing and error handling."""
-        start_time = datetime.now(datetime.UTC)
+        start_time = datetime.now(timezone.utc)
         self.execution_count += 1
         
         try:
@@ -61,7 +63,7 @@ class BaseWorker(ABC):
             result = self.process(inputs)
             
             # Calculate execution time
-            execution_time = (datetime.now(datetime.UTC) - start_time).total_seconds()
+            execution_time = (datetime.now(timezone.utc) - start_time).total_seconds()
             result.execution_time = execution_time
             self.total_execution_time += execution_time
             
@@ -77,7 +79,7 @@ class BaseWorker(ABC):
             return result
             
         except Exception as e:
-            execution_time = (datetime.now(datetime.UTC) - start_time).total_seconds()
+            execution_time = (datetime.now(timezone.utc) - start_time).total_seconds()
             self.error_count += 1
             self.total_execution_time += execution_time
             

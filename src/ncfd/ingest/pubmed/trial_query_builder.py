@@ -6,7 +6,7 @@ with catalyst-window filters for recency bias.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Set, Tuple, Any
 import re
 
@@ -36,6 +36,7 @@ class TrialQueryBuilder:
         self.max_asset_aliases = self.config.get('max_asset_aliases', 10)
         self.max_indication_terms = self.config.get('max_indication_terms', 15)
         self.max_query_length = self.config.get('max_query_length', 2000)
+        self.include_basic_science = self.config.get('include_basic_science', True)
         
         # Trial-specific filters
         self.required_publication_types = [
@@ -43,6 +44,20 @@ class TrialQueryBuilder:
             "Randomized Controlled Trial", 
             "Controlled Clinical Trial",
             "Clinical Study"
+        ]
+        
+        # Basic science publication types for mechanism-of-action papers
+        self.basic_science_publication_types = [
+            "Journal Article",
+            "Research Support, Non-U.S. Gov't",
+            "Research Support, U.S. Gov't, Non-P.H.S.",
+            "Research Support, U.S. Gov't, P.H.S.",
+            "Research Support, N.I.H., Extramural",
+            "Research Support, N.I.H., Intramural",
+            "Research Support, U.S. Gov't",
+            "Comparative Study",
+            "Evaluation Study",
+            "Validation Study"
         ]
         
         self.optional_publication_types = [
@@ -90,7 +105,10 @@ class TrialQueryBuilder:
             # Build core query components
             asset_query = self._build_asset_query_component(validated_assets)
             indication_query = self._build_indication_query_component(validated_indications)
-            publication_query = self._build_publication_type_query(include_optional_types)
+            publication_query = self._build_publication_type_query(
+                include_optional_types, 
+                include_basic_science=self.include_basic_science
+            )
             
             # Build trial-specific filters
             trial_filters = self._build_trial_filters(trial_phase, trial_design)
@@ -198,6 +216,32 @@ class TrialQueryBuilder:
         else:
             return f"({' OR '.join(asset_terms)})"
     
+    def _expand_disease_term(self, term: str) -> List[str]:
+        """Expand disease terms for better search coverage."""
+        term_lower = term.lower().strip()
+        
+        # Common disease expansions
+        expansions = {
+            "alzheimer's disease": ["alzheimer's disease", "alzheimer disease", "alzheimer", "ad"],
+            "alzheimer disease": ["alzheimer disease", "alzheimer's disease", "alzheimer", "ad"],
+            "alzheimer": ["alzheimer", "alzheimer's disease", "alzheimer disease", "ad"],
+            "parkinson's disease": ["parkinson's disease", "parkinson disease", "parkinson", "pd"],
+            "parkinson disease": ["parkinson disease", "parkinson's disease", "parkinson", "pd"],
+            "parkinson": ["parkinson", "parkinson's disease", "parkinson disease", "pd"],
+            "multiple sclerosis": ["multiple sclerosis", "ms"],
+            "amyotrophic lateral sclerosis": ["amyotrophic lateral sclerosis", "als", "lou gehrig"],
+            "huntington's disease": ["huntington's disease", "huntington disease", "huntington"],
+            "diabetes": ["diabetes", "diabetes mellitus", "dm"],
+            "hypertension": ["hypertension", "high blood pressure", "htn"],
+            "cancer": ["cancer", "carcinoma", "tumor", "tumour", "neoplasm"],
+            "breast cancer": ["breast cancer", "breast carcinoma", "mammary cancer"],
+            "lung cancer": ["lung cancer", "pulmonary cancer", "lung carcinoma"],
+            "prostate cancer": ["prostate cancer", "prostatic cancer", "prostate carcinoma"]
+        }
+        
+        # Return expanded terms if found, otherwise return original term
+        return expansions.get(term_lower, [term])
+    
     def _build_indication_query_component(self, indication_terms: List[str]) -> str:
         """Build the indication/disease query component."""
         if not indication_terms:
@@ -216,12 +260,16 @@ class TrialQueryBuilder:
         # Build indication query with OR logic and proper field tags
         indication_queries = []
         for term in cleaned_terms:
-            if ' ' in term:
-                # Multi-word indications get phrase matching with field tag
-                indication_queries.append(f'"{term}"[tiab]')
-            else:
-                # Single words get term matching with field tag
-                indication_queries.append(f'{term}[tiab]')
+            # Expand common disease terms for better coverage
+            expanded_terms = self._expand_disease_term(term)
+            
+            for expanded_term in expanded_terms:
+                if ' ' in expanded_term:
+                    # Multi-word indications get phrase matching with field tag
+                    indication_queries.append(f'"{expanded_term}"[tiab]')
+                else:
+                    # Single words get term matching with field tag
+                    indication_queries.append(f'{expanded_term}[tiab]')
         
         # Combine with OR
         if len(indication_queries) == 1:
@@ -229,12 +277,15 @@ class TrialQueryBuilder:
         else:
             return f"({' OR '.join(indication_queries)})"
     
-    def _build_publication_type_query(self, include_optional: bool = False) -> str:
+    def _build_publication_type_query(self, include_optional: bool = False, include_basic_science: bool = True) -> str:
         """Build publication type filter query."""
         pub_types = self.required_publication_types.copy()
         
         if include_optional:
             pub_types.extend(self.optional_publication_types)
+            
+        if include_basic_science:
+            pub_types.extend(self.basic_science_publication_types)
         
         # Build publication type query with correct field tag [pt]
         pub_type_terms = [f'"{pt}"[pt]' for pt in pub_types]
@@ -370,12 +421,18 @@ class TrialQueryBuilder:
         # Clean NCT ID
         clean_nct = nct_id.strip().upper()
         
-        # Add NCT as OR condition for broader matching
+        # Add both specific NCT and general NCT pattern for broader matching
         # Use both [tiab] and [si] (Secondary Source ID) for better coverage
-        nct_query = f'"{clean_nct}"[tiab] OR "{clean_nct}"[si]'
+        specific_nct_query = f'"{clean_nct}"[tiab] OR "{clean_nct}"[si]'
+        
+        # Add general NCT pattern to catch any NCT ID
+        general_nct_query = 'NCT[0-9]{8}[tiab] OR NCT[0-9]{8}[si]'
+        
+        # Combine specific NCT, general NCT pattern, and base query
+        nct_query = f'{specific_nct_query} OR {general_nct_query}'
         
         # Combine with OR for broader matching
-        return f"({base_query}) OR {nct_query}"
+        return f"({base_query}) OR ({nct_query})"
     
     def _optimize_trial_query(self, query: str) -> str:
         """Optimize the trial query for better performance."""
@@ -508,7 +565,7 @@ class TrialQueryBuilder:
                 'has_design': bool(trial_design),
                 'has_catalyst_window': bool(catalyst_date)
             },
-            'built_at': datetime.now(datetime.UTC).isoformat()
+            'built_at': datetime.now(timezone.utc).isoformat()
         }
     
     def _clean_asset_alias(self, alias: str) -> str:

@@ -16,7 +16,7 @@ import json
 import logging
 import re
 import time
-from datetime import date, UTC, datetime, timedelta
+from datetime import date, timezone, datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple, Generator
 from urllib.parse import urljoin, urlparse

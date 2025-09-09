@@ -460,11 +460,8 @@ class GateAssessor(BaseWorker):
             status=decision_result['status'],
             rationale=self._generate_rationale(gate_spec, decision_result, computed_values),
             sensitivity=self._generate_sensitivity_analysis(computed_values),
-            audit={
-                'assessed_by': self.name,
-                'version': self.version,
-                'computation_details': decision_result['rule_evaluations']
-            }
+            assessment_method=self.name,
+            confidence_in_assessment=0.7
         )
         
         # Add computed values to metadata
@@ -488,11 +485,8 @@ class GateAssessor(BaseWorker):
             status='UNCERTAIN',
             rationale=f"Unable to assess gate due to computation errors: {'; '.join(computation_errors)}",
             sensitivity=[],
-            audit={
-                'assessed_by': self.name,
-                'version': self.version,
-                'computation_errors': computation_errors
-            }
+            assessment_method=self.name,
+            confidence_in_assessment=0.3
         )
         
         # Add partial computed values if any

@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from ncfd.orchestrate.early_stopping import EarlyStopping
+from ncfd.pipeline.early_stopping import EarlyStopping
 from ncfd.config import get_config
 
 

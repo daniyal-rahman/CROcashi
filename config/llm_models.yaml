@@ -179,6 +179,19 @@ workers:
   mechanistic_dose_researcher:
     provider: openai
     model: gpt-5
+    
+  # Direct card generators - use GPT-5-mini for efficiency
+  LLMMethodCardGenerator:
+    provider: openai
+    model: gpt-5-mini
+    
+  LLMResultsFactsheetGenerator:
+    provider: openai
+    model: gpt-5-mini
+    
+  LLMGateAssessmentGenerator:
+    provider: openai
+    model: gpt-5-mini
 
 # Rate Limiting & Performance
 rate_limiting:

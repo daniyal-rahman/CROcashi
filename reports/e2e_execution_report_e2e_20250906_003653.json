@@ -1,0 +1,102 @@
+{
+  "execution_summary": {
+    "execution_id": "e2e_20250906_003653",
+    "start_time": "2025-09-06T00:36:53.608498",
+    "end_time": "2025-09-06T00:36:56.718788",
+    "execution_time_seconds": 3.110286,
+    "success": true
+  },
+  "stopping_conditions": {
+    "max_trials": 1,
+    "time_budget_seconds": 200,
+    "at_least_study_cards": 1
+  },
+  "results": {
+    "trials_processed": 1,
+    "study_cards_completed": 0,
+    "study_card_ids": []
+  },
+  "pipeline_results": {
+    "ctgov": {
+      "pipeline_name": "ctgov",
+      "success": true,
+      "start_time": "2025-09-06T07:36:54.290972+00:00",
+      "end_time": "2025-09-06T07:36:54.458704+00:00",
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": [],
+      "processing_time_seconds": 0.167732
+    },
+    "sec": {
+      "pipeline_name": "sec",
+      "success": true,
+      "start_time": "2025-09-06T07:36:54.458759+00:00",
+      "end_time": "2025-09-06T07:36:54.459510+00:00",
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": [],
+      "processing_time_seconds": 0.000751
+    },
+    "pubmed": {
+      "pipeline_name": "pubmed",
+      "success": true,
+      "start_time": "2025-09-06T07:36:54.459549+00:00",
+      "end_time": "2025-09-06T07:36:54.459666+00:00",
+      "trials_processed": 0,
+      "trials_updated": 0,
+      "trials_new": 0,
+      "changes_detected": 0,
+      "significant_changes": 0,
+      "filings_processed": 0,
+      "filings_successful": 0,
+      "filings_failed": 0,
+      "new_filings": 0,
+      "updated_filings": 0,
+      "documents_processed": 0,
+      "documents_failed": 0,
+      "errors": [],
+      "warnings": [
+        "PubMed pipeline requires async context for full execution"
+      ],
+      "processing_time_seconds": 0.000117
+    },
+    "total_trials_processed": 0,
+    "total_filings_processed": 0,
+    "total_documents_processed": 0,
+    "all_pipelines_successful": true
+  },
+  "evaluation_summary": {
+    "completed": false
+  },
+  "errors": [],
+  "warnings": [
+    "Study card generation failed for NCT05352763: ['Gate validation failed: Invalid inputs: missing required gate_candidates']"
+  ],
+  "config_summary": {
+    "max_trials": 1,
+    "time_budget_seconds": 200,
+    "at_least_study_cards": 1
+  }
+}

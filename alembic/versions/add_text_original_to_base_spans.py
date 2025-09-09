@@ -18,6 +18,13 @@ depends_on = None
 
 def upgrade() -> None:
     """Add text_original field to base_spans table."""
+    # Check if base_spans table exists before trying to modify it
+    connection = op.get_bind()
+    inspector = sa.inspect(connection)
+    if 'base_spans' not in inspector.get_table_names():
+        print("base_spans table does not exist, skipping migration")
+        return
+    
     # Add text_original column
     op.add_column('base_spans', sa.Column('text_original', sa.Text(), nullable=True))
     

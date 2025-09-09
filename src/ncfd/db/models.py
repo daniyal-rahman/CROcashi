@@ -12,7 +12,7 @@ from decimal import Decimal
 from typing import Optional, List, Dict, Any
 
 # import sqlalchemy as sa
-from sqlalchemy import (String, Text, Boolean, Date, DateTime, ForeignKey, Index, UniqueConstraint, Integer, BigInteger, CheckConstraint, func, Numeric, Enum as SQLEnum, CHAR, text, MetaData, PrimaryKeyConstraint, ForeignKeyConstraint)
+from sqlalchemy import (String, Text, Boolean, Date, DateTime, Float, ForeignKey, Index, UniqueConstraint, Integer, BigInteger, CheckConstraint, func, Numeric, Enum as SQLEnum, CHAR, text, MetaData, PrimaryKeyConstraint, ForeignKeyConstraint)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, ENUM as PGEnum
 
@@ -668,6 +668,7 @@ class Document(Base):
     publisher: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships
+    text: Mapped[Optional["DocumentText"]] = relationship(back_populates="document", uselist=False, cascade="all, delete-orphan")
     text_pages: Mapped[List["DocumentTextPage"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     tables: Mapped[List["DocumentTable"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     citations: Mapped[List["DocumentCitation"]] = relationship(back_populates="document", cascade="all, delete-orphan")
@@ -680,6 +681,8 @@ class Document(Base):
     # trials: Mapped[List["Trial"]] = relationship(back_populates="documents")
     rs_scores: Mapped[List["DocRSScore"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     trial_candidates: Mapped[List["TrialDocCandidate"]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    pubmed_meta: Mapped[Optional["PubMedMeta"]] = relationship(back_populates="document", uselist=False, cascade="all, delete-orphan")
+    pmc_meta: Mapped[Optional["PmcMeta"]] = relationship(back_populates="document", uselist=False, cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_documents_lower_doi", "doi"),
@@ -692,6 +695,25 @@ class Document(Base):
         Index("ix_documents_source_url", "source_url"),
         CheckConstraint("source_type::text = ANY (ARRAY['PR','IR','SEC','Registry','Abstract','Poster','Paper','FDA','Patent']::text[])", name='ck_documents_source_type'),
         CheckConstraint("status::text = ANY (ARRAY['discovered','fetched','parsed','linked','failed']::text[])", name='ck_documents_status')
+    )
+
+
+class DocumentText(Base):
+    """Document text table - abstracts and full text content."""
+    __tablename__ = "document_text"
+
+    doc_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    abstract_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    fulltext_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    fulltext_ttl_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    char_count_abstract: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    char_count_fulltext: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # Relationships
+    document: Mapped["Document"] = relationship(back_populates="text")
+
+    __table_args__ = (
+        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
     )
 
 
@@ -742,6 +764,14 @@ class DocumentCitation(Base):
     pmid: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     pmcid: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     nct_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    journal: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    volume: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    issue: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pages: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    article_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pub_year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    mesh_jsonb: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    substances_jsonb: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # Relationships
     document: Mapped["Document"] = relationship(back_populates="citations")
@@ -991,7 +1021,46 @@ class TrialDocCandidate(Base):
         PrimaryKeyConstraint('trial_id', 'doc_id'),
         ForeignKeyConstraint(['trial_id'], ['trials.trial_id'], ondelete='CASCADE'),
         ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
-        CheckConstraint("stage::text = ANY (ARRAY['U0_meta','U1_abstract','OA_fulltext']::text[])", name='ck_trial_doc_candidates_stage')
+        CheckConstraint("stage::text = ANY (ARRAY['U0_meta','U1_discovery','U1_abstract','OA_fulltext']::text[])", name='ck_trial_doc_candidates_stage')
+    )
+
+
+class PubMedMeta(Base):
+    """PubMed-specific metadata for documents."""
+    __tablename__ = "pubmed_meta"
+
+    doc_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pmid: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    medline_xml_sha: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    language: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    authors_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    affiliations_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    esummary_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    efetch_header_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+
+    # Relationships
+    document: Mapped["Document"] = relationship(back_populates="pubmed_meta")
+
+    __table_args__ = (
+        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
+    )
+
+
+class PmcMeta(Base):
+    """PMC-specific metadata for documents."""
+    __tablename__ = "pmc_meta"
+
+    doc_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pmcid: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    license: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    oa_route: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    oai_identifier: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    document: Mapped["Document"] = relationship(back_populates="pmc_meta")
+
+    __table_args__ = (
+        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
     )
 
 
@@ -1035,4 +1104,31 @@ class CtgovIngestState(Base):
 
     __table_args__ = (
         CheckConstraint("ingest_status::text = ANY (ARRAY['idle','running','completed','failed']::text[])", name='ck_ctgov_ingest_state_status'),
+    )
+
+
+class Task(Base):
+    """Task queue for pipeline processing."""
+    __tablename__ = "tasks"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    task_type: Mapped[str] = mapped_column(Text, nullable=False)
+    task_key: Mapped[str] = mapped_column(Text, nullable=False)
+    trial_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    company_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    priority: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default='queued')
+    leased_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    leased_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default='0')
+    payload: Mapped[Dict[str, Any]] = mapped_column(JSONB(astext_type=Text), nullable=False, server_default='{}')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("task_type", "task_key", name="uq_tasks_type_key"),
+        CheckConstraint(
+            "status IN ('queued','leased','done','failed','parked','canceled')",
+            name="ck_tasks_status_valid",
+        ),
     )

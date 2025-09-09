@@ -9,7 +9,7 @@ import json
 import pickle
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -506,7 +506,7 @@ class SpanIndexer(BaseWorker):
         
         # Create manifest for safe serialization
         manifest = {
-            'created_at': datetime.now(datetime.UTC).isoformat(),
+            'created_at': datetime.now(timezone.utc).isoformat(),
             'config': self.config.__dict__,
             'span_mapping': self.span_mapping,
             'feature_names': self.feature_names

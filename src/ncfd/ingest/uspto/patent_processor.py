@@ -14,7 +14,7 @@ Integrates all USPTO components into a cohesive processing pipeline.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, UTC
+from datetime import date, datetime, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from sqlalchemy.orm import Session

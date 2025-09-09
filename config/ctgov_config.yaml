@@ -221,3 +221,22 @@ development:
   sample_data: false
   sample_size: 10
   sample_percentage: 0.1
+
+# LLM-First Pipeline Configuration
+pipeline:
+  # Enhanced retriever settings
+  retriever:
+    use_legacy_retriever: false
+    max_span_length: 400
+    min_confidence: 0.7
+    
+  # LLM-first mode
+  llm_first:
+    enabled: true
+    quote_generation_enabled: true
+    provenance_backtracing_enabled: true
+    alignment_threshold: 0.8
+    
+  # Deterministic workers (disabled)
+  deterministic:
+    enabled: false

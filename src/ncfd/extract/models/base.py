@@ -4,7 +4,7 @@ Base models for study card system.
 
 from abc import ABC
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 import uuid
 import json
@@ -61,5 +61,5 @@ class BaseModel(ABC):
             try:
                 data['created_at'] = datetime.fromisoformat(data['created_at'])
             except ValueError:
-                data['created_at'] = datetime.now(datetime.UTC)
+                data['created_at'] = datetime.now(timezone.utc)
         return cls(**data)

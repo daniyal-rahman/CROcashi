@@ -12,7 +12,7 @@ import logging
 import os
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 import aiohttp
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -197,7 +197,7 @@ IMPORTANT:
                 relevant_papers=data.get("relevant_papers", []),
                 search_queries=search_queries,
                 confidence_score=data.get("confidence_score", 0.5),
-                timestamp=datetime.now(datetime.UTC)
+                timestamp=datetime.now(timezone.utc)
             )
             
         except Exception as e:
@@ -210,7 +210,7 @@ IMPORTANT:
                 relevant_papers=[],
                 search_queries=search_queries,
                 confidence_score=0.0,
-                timestamp=datetime.now(datetime.UTC)
+                timestamp=datetime.now(timezone.utc)
             )
     
     def _build_search_queries(
@@ -388,7 +388,7 @@ STRONG RED FLAGS (only include if VERY strong):
                 confidence_level=data.get("confidence_level", "Low"),
                 strong_red_flags=data.get("strong_red_flags", []),
                 recommendation=data.get("recommendation", ""),
-                timestamp=datetime.now(datetime.UTC)
+                timestamp=datetime.now(timezone.utc)
             )
             
         except Exception as e:
@@ -407,7 +407,7 @@ STRONG RED FLAGS (only include if VERY strong):
                 confidence_level="Low",
                 strong_red_flags=[],
                 recommendation="Analysis failed",
-                timestamp=datetime.now(datetime.UTC)
+                timestamp=datetime.now(timezone.utc)
             )
     
     def _prepare_literature_summary(self, literature_result: LiteratureResult) -> str:
@@ -497,7 +497,7 @@ class GPT5ThinkingHook:
             result = {
                 "trial_id": trial_id,
                 "nct_id": nct_id,
-                "timestamp": datetime.now(datetime.UTC).isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 
                 # Literature review results
                 "literature_confidence": literature_result.confidence_score,
@@ -531,7 +531,7 @@ class GPT5ThinkingHook:
             return {
                 "trial_id": trial_id,
                 "nct_id": nct_id,
-                "timestamp": datetime.now(datetime.UTC).isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "error": str(e),
                 "gpt5_p_fail": None,
                 "confidence_level": "Low",

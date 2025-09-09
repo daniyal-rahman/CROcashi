@@ -73,7 +73,13 @@ class LLMResultsDraft(BaseModel):
             'metric': metric,
             'value': value,
             'units': units,
-            'summary_statistic': summary_statistic
+            'summary_statistic': summary_statistic,
+            'verbatim_quote': verbatim_quote,
+            'evidence_kind': evidence_kind,
+            'section_hint': section_hint,
+            'table_hint': table_hint,
+            'page_hint': page_hint,
+            'confidence_llm': confidence_llm
         }
         
         self.results.append(result)

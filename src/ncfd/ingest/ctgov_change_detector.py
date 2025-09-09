@@ -8,7 +8,7 @@ trigger signal evaluation and risk assessment updates.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 
@@ -136,7 +136,7 @@ class CtgovChangeDetector:
             version_from=getattr(old_trial, 'version_id', 'unknown'),
             version_to=getattr(new_trial, 'version_id', 'unknown'),
             changes=changes,
-            detected_at=datetime.now(datetime.UTC)
+            detected_at=datetime.now(timezone.utc)
         )
         
         self.logger.info(

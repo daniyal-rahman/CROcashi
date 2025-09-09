@@ -8,7 +8,7 @@ detailed trial information from the CT.gov API v2.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, UTC
+from datetime import date, datetime, timezone
 from typing import List, Optional, Dict, Any, Set
 from enum import Enum
 

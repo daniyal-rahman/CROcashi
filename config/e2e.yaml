@@ -1,0 +1,114 @@
+# Real End-to-End Pipeline Configuration
+# This config uses real system components to avoid mocking
+
+# Database configuration
+db:
+  dsn: ${PSQL_DSN}
+
+# LLM configuration for real study card generation
+llm:
+  provider: openai
+  model_map:
+    llm_decider: gpt-4o-mini
+    results_distiller: gpt-4o-mini
+    method_auditor: gpt-4o-mini
+    study_card_evaluator: gpt-4o-mini
+  api_keys:
+    openai: ${OPENAI_API_KEY}
+  rate_limits:
+    openai:
+      requests_per_minute: 60
+      tokens_per_minute: 50000
+
+# CT.gov pipeline configuration
+ctgov:
+  incremental: true
+  window_days: 1
+  batch_size: 100
+  retry_attempts: 3
+  retry_delay_seconds: 60
+
+# SEC pipeline configuration  
+sec:
+  enable: true
+  incremental: true
+  batch_size: 50
+  retry_attempts: 3
+
+# PubMed pipeline configuration
+pubmed:
+  client_config:
+    rate_limit_requests_per_minute: 60
+    batch_size: 20
+  retrieval:
+    backend: bm25  # Use BM25 to avoid Java dependencies
+    max_docs_per_trial: 50
+    min_relevance_score: 0.1
+  asset_names: ["pembrolizumab", "keytruda", "nivolumab", "opdivo", "atezolizumab", "tecentriq"]  # Common drug assets
+  indications: ["cancer", "oncology", "melanoma", "lung cancer", "breast cancer", "alzheimer", "diabetes"]  # Common indications
+
+# Literature queue configuration for trial prioritization
+literature_queue:
+  ranker: default
+  filters:
+    require_public_company: true
+    min_phase: 1
+    max_age_days: 365
+  scoring:
+    company_weight: 0.3
+    literature_weight: 0.4
+    phase_weight: 0.2
+    recency_weight: 0.1
+
+# Study card pipeline configuration
+study_cards:
+  max_docs_per_trial: 50
+  store_json_snapshots: true
+  llm_timeout_seconds: 120
+  retrieval_timeout_seconds: 60
+  
+  # Retriever configuration - Pure LLM mode (no fusion needed)
+  retriever:
+    auto_span_generation: true  # Enable LLM-based span generation 
+    late_fusion: false         # Disable Late Fusion - using pure LLM mode
+    max_span_length: 400
+    min_confidence: 0.7
+  
+  stages:
+    retrieval:
+      enable: true
+      timeout_seconds: 60
+    llm_method_auditing:
+      enable: true
+      timeout_seconds: 120
+    deterministic_method_auditing:
+      enable: false             # Disable deterministic - pure LLM mode
+      timeout_seconds: 30
+    llm_results_distillation:
+      enable: true
+      timeout_seconds: 120
+    deterministic_results_distillation:
+      enable: false             # Disable deterministic - pure LLM mode
+      timeout_seconds: 30
+
+# Automated evaluation configuration
+automated_evaluation:
+  use_llm_resolution: true
+  llm_timeout_seconds: 90
+  confidence_threshold: 0.7
+  high_risk_threshold: 0.3
+
+# Orchestrator configuration
+execution_order: ['ctgov', 'sec', 'pubmed']
+parallel_execution: false
+dependency_checking: true
+max_retries: 3
+retry_delay_seconds: 300
+
+# State management
+state_file: .state/e2e_orchestrator.json
+
+# Logging configuration
+logging:
+  level: INFO
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

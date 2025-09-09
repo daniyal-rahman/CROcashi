@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 import json
@@ -21,7 +21,11 @@ from dataclasses import dataclass, field, asdict
 from .ctgov_pipeline import CtgovPipeline
 from .sec_pipeline import SecPipeline
 from ..ingest.pubmed.pipeline import PubMedPipeline
-from ..orchestrate.lit_queue import LiteratureQueue
+from ..ingest.pubmed.db_service import PubMedDBService
+from ..ingest.pubmed.queue_service import TaskQueueService
+from ..db.session import session_scope
+from ..db.models import Trial, Company
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -135,8 +139,13 @@ class UnifiedPipelineOrchestrator:
         self.sec_pipeline = SecPipeline(config.get('sec', {}))
         self.pubmed_pipeline = PubMedPipeline(config.get('pubmed', {}))
         
-        # Initialize literature queue for trial prioritization
-        self.literature_queue = LiteratureQueue(config.get('literature_queue', {}))
+        # Initialize task queue service for trial prioritization
+        self.task_queue_service = TaskQueueService(
+            worker_id=config.get('worker_id', 'orchestrator')
+        )
+        
+        # Initialize database service for accessing trial literature state
+        self.pubmed_db_service = PubMedDBService()
         
         # Orchestration state
         self.state_file = Path(config.get('state_file', '.state/unified_orchestrator.json'))
@@ -154,9 +163,130 @@ class UnifiedPipelineOrchestrator:
         
         # Error handling
         self.max_retries = config.get('max_retries', 3)
-        self.retry_delay_seconds = config.get('retry_delay_seconds', 300)  # 5 minutes
+        self.retry_delay_seconds = config.get('retry_delay_seconds', 300)
+    
+    def inject_ctgov_trial_for_test(
+        self,
+        nct_id: str,
+        company_name: str,
+        asset_aliases: List[str],
+        indication_terms: List[str],
+        extra_trial_fields: Optional[Dict[str, Any]] = None,
+    ) -> int:
+        """
+        Create a company & trial (if missing), wire them, and enqueue a PUBMED_U1 task.
         
-        self.logger.info("Unified Pipeline Orchestrator initialized")
+        This method simulates CT.gov ingestion for testing purposes by creating
+        the necessary database records and enqueueing the first pipeline task.
+        
+        Args:
+            nct_id: Clinical trial NCT identifier
+            company_name: Sponsor company name
+            asset_aliases: List of asset names/aliases for the trial
+            indication_terms: List of disease/indication terms
+            extra_trial_fields: Additional trial fields for realism
+            
+        Returns:
+            trial_id: The created/updated trial ID
+        """
+        # Phase mapping for database constraints
+        PHASE_MAP = {
+            "P1": "PHASE1", "P2": "PHASE2", "P2B": "PHASE2B", 
+            "P2/3": "PHASE2_3", "P2-3": "PHASE2_PHASE3", 
+            "P3": "PHASE3", "P4": "PHASE4"
+        }
+        
+        with session_scope() as s:
+            # 1) upsert company
+            company = s.query(Company).filter(Company.name == company_name).one_or_none()
+            if not company:
+                company = Company(
+                    name=company_name,
+                    name_norm=company_name.lower().strip()
+                )
+                s.add(company)
+                s.flush()
+                self.logger.info(f"Created company: {company_name}")
+
+            # 2) upsert trial
+            trial = s.query(Trial).filter(Trial.nct_id == nct_id).one_or_none()
+            if not trial:
+                # Create new trial with required fields
+                now = datetime.now(timezone.utc)
+                trial = Trial(
+                    nct_id=nct_id,
+                    sponsor_company_id=company.company_id,
+                    status="Recruiting",
+                    current_sha256="test_injection_" + nct_id,  # Required field
+                    brief_title=f"Study of {asset_aliases[0] if asset_aliases else 'investigational therapy'}",
+                    indication=indication_terms[0] if indication_terms else "Unknown",
+                    created_at=now,
+                    updated_at=now,
+                    last_seen_at=now
+                )
+                # Apply any extra CT.gov-like fields for realism
+                for k, v in (extra_trial_fields or {}).items():
+                    if hasattr(trial, k):
+                        # Map phase if it's a short code
+                        if k == 'phase' and v in PHASE_MAP:
+                            setattr(trial, k, PHASE_MAP[v])
+                        else:
+                            setattr(trial, k, v)
+                
+                s.add(trial)
+                s.flush()
+                self.logger.info(f"Created trial: {nct_id}")
+            else:
+                # Make sure it's wired to the company
+                trial.sponsor_company_id = company.company_id
+                self.logger.info(f"Updated existing trial: {nct_id}")
+
+            trial_id = trial.trial_id
+            s.commit()
+
+        # 3) enqueue initial PubMed pass (U1+) for this trial
+        payload = {
+            "trial_id": trial_id,
+            "nct_id": nct_id,
+            "asset_aliases": asset_aliases,
+            "indication_terms": indication_terms,
+            "max_results": self.config.get('pubmed', {}).get('max_results', 150)
+        }
+        
+        success = self.task_queue_service.enqueue_task(
+            task_type="PUBMED_U1",
+            task_key=f"trial:{trial_id}:U1",
+            priority=0.50,  # baseline priority
+            payload=payload,
+            trial_id=trial_id,
+        )
+        
+        if success:
+            self.logger.info(f"Enqueued PUBMED_U1 task for trial {trial_id} ({nct_id})")
+        else:
+            self.logger.error(f"Failed to enqueue PUBMED_U1 task for trial {trial_id}")
+            
+        return trial_id
+    
+    def _run_startup_validation(self):
+        """Run startup validation checks."""
+        try:
+            from ..utils.startup_validation import run_startup_validation, validate_config_before_pipeline_run
+            
+            # Run general startup validation (non-blocking)
+            validation_passed = run_startup_validation(fail_fast=False)
+            if not validation_passed:
+                self.logger.warning("Some startup validations failed - see logs for details")
+            
+            # Validate orchestrator config
+            config_valid, config_errors = validate_config_before_pipeline_run(self.config)
+            if not config_valid:
+                self.logger.error(f"Orchestrator configuration validation failed: {config_errors}")
+                for error in config_errors:
+                    self.logger.error(f"  • {error}")
+        
+        except Exception as e:
+            self.logger.warning(f"Startup validation failed: {e}")
     
     def run_daily_ingestion(self, force_full_scan: bool = False) -> OrchestrationResult:
         """
@@ -168,8 +298,8 @@ class UnifiedPipelineOrchestrator:
         Returns:
             Orchestration result
         """
-        execution_id = f"daily_{datetime.now(datetime.UTC).strftime('%Y%m%d_%H%M%S')}"
-        start_time = datetime.now(datetime.UTC)
+        execution_id = f"daily_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+        start_time = datetime.now(timezone.utc)
         
         self.logger.info(f"Starting daily ingestion: {execution_id}")
         
@@ -188,7 +318,7 @@ class UnifiedPipelineOrchestrator:
                 result = self._run_sequential_execution(force_full_scan)
             
             # Update execution result
-            self.current_execution.end_time = datetime.now(datetime.UTC)
+            self.current_execution.end_time = datetime.now(timezone.utc)
             self.current_execution.ctgov_result = result.get('ctgov')
             self.current_execution.pubmed_result = result.get('pubmed')
             self.current_execution.sec_result = result.get('sec')
@@ -215,7 +345,7 @@ class UnifiedPipelineOrchestrator:
             error_msg = f"Error in daily ingestion: {e}"
             self.logger.error(error_msg)
             self.current_execution.errors.append(error_msg)
-            self.current_execution.end_time = datetime.now(datetime.UTC)
+            self.current_execution.end_time = datetime.now(timezone.utc)
             self.current_execution.finalize()
             return self.current_execution
     
@@ -258,7 +388,7 @@ class UnifiedPipelineOrchestrator:
     
     def _execute_ctgov_pipeline(self, force_full_scan: bool) -> Optional[PipelineExecutionResult]:
         """Execute CT.gov pipeline."""
-        start_time = datetime.now(datetime.UTC)
+        start_time = datetime.now(timezone.utc)
         self.logger.info("Executing CT.gov pipeline")
         
         try:
@@ -270,7 +400,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="ctgov",
                 success=result.success,
                 start_time=start_time,
-                end_time=datetime.now(datetime.UTC),
+                end_time=datetime.now(timezone.utc),
                 trials_processed=result.trials_processed,
                 trials_updated=result.trials_updated,
                 trials_new=result.trials_new,
@@ -292,7 +422,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="ctgov",
                 success=False,
                 start_time=start_time,
-                end_time=datetime.now(datetime.UTC),
+                end_time=datetime.now(timezone.utc),
                 errors=[error_msg]
             )
             
@@ -300,7 +430,7 @@ class UnifiedPipelineOrchestrator:
     
     def _execute_pubmed_pipeline(self, force_full_scan: bool) -> Optional[PipelineExecutionResult]:
         """Execute PubMed pipeline."""
-        start_time = datetime.now(datetime.UTC)
+        start_time = datetime.now(timezone.utc)
         self.logger.info("Executing PubMed pipeline")
         
         try:
@@ -344,7 +474,7 @@ class UnifiedPipelineOrchestrator:
                         pipeline_name="pubmed",
                         success=True,
                         start_time=start_time,
-                        end_time=datetime.now(datetime.UTC),
+                        end_time=datetime.now(timezone.utc),
                         documents_processed=0,
                         documents_failed=0,
                         warnings=["PubMed pipeline requires async context for full execution"]
@@ -374,7 +504,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="pubmed",
                 success=result.get('success', False),
                 start_time=start_time,
-                end_time=datetime.now(datetime.UTC),
+                end_time=datetime.now(timezone.utc),
                 documents_processed=result.get('documents_processed', 0),
                 documents_failed=result.get('documents_failed', 0),
                 errors=result.get('errors', []),
@@ -382,6 +512,11 @@ class UnifiedPipelineOrchestrator:
             )
             
             self.logger.info(f"PubMed pipeline completed: {result.get('documents_processed', 0)} documents processed")
+            
+            # Enqueue OA tasks for trials that completed U1+ processing
+            if result.get('success', False):
+                self._enqueue_oa_tasks_from_pubmed_results(result)
+            
             return execution_result
             
         except Exception as e:
@@ -393,7 +528,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="pubmed",
                 success=False,
                 start_time=start_time,
-                end_time=datetime.now(datetime.UTC),
+                end_time=datetime.now(timezone.utc),
                 errors=[error_msg]
             )
             
@@ -401,7 +536,7 @@ class UnifiedPipelineOrchestrator:
     
     def _execute_sec_pipeline(self, force_full_scan: bool) -> Optional[PipelineExecutionResult]:
         """Execute SEC pipeline."""
-        start_time = datetime.now(datetime.UTC)
+        start_time = datetime.now(timezone.utc)
         self.logger.info("Executing SEC pipeline")
         
         try:
@@ -413,7 +548,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="sec",
                 success=result.success,
                 start_time=start_time,
-                end_time=datetime.now(datetime.UTC),
+                end_time=datetime.now(timezone.utc),
                 filings_processed=result.filings_processed,
                 filings_successful=result.filings_successful,
                 filings_failed=result.filings_failed,
@@ -435,7 +570,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="sec",
                 success=False,
                 start_time=start_time,
-                end_time=datetime.now(datetime.UTC),
+                end_time=datetime.now(timezone.utc),
                 errors=[error_msg]
             )
             
@@ -450,7 +585,7 @@ class UnifiedPipelineOrchestrator:
                 return False
             
             last_run_time = datetime.fromisoformat(last_ctgov_run)
-            time_since_run = datetime.now(datetime.UTC) - last_run_time
+            time_since_run = datetime.now(timezone.utc) - last_run_time
             
             # Require CT.gov to have run within the last 24 hours
             return time_since_run < timedelta(hours=24)
@@ -477,7 +612,7 @@ class UnifiedPipelineOrchestrator:
             Orchestration result
         """
         execution_id = f"backfill_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}"
-        start_time = datetime.now(datetime.UTC)
+        start_time = datetime.now(timezone.utc)
         
         self.logger.info(f"Starting backfill: {execution_id}")
         
@@ -502,7 +637,7 @@ class UnifiedPipelineOrchestrator:
                     results['sec'] = self._execute_sec_backfill(start_date, end_date)
             
             # Update execution result
-            self.current_execution.end_time = datetime.now(datetime.UTC)
+            self.current_execution.end_time = datetime.now(timezone.utc)
             self.current_execution.ctgov_result = results.get('ctgov')
             self.current_execution.pubmed_result = results.get('pubmed')
             self.current_execution.sec_result = results.get('sec')
@@ -523,13 +658,13 @@ class UnifiedPipelineOrchestrator:
             error_msg = f"Error in backfill: {e}"
             self.logger.error(error_msg)
             self.current_execution.errors.append(error_msg)
-            self.current_execution.end_time = datetime.now(datetime.UTC)
+            self.current_execution.end_time = datetime.now(timezone.utc)
             self.current_execution.finalize()
             return self.current_execution
     
     def _execute_ctgov_backfill(self, start_date: datetime, end_date: datetime) -> Optional[PipelineExecutionResult]:
         """Execute CT.gov backfill."""
-        start_time = datetime.now(datetime.UTC)
+        start_time = datetime.now(timezone.utc)
         self.logger.info("Executing CT.gov backfill")
         
         try:
@@ -539,7 +674,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="ctgov",
                 success=False,
                 start_time=start_time,
-                end_time=datetime.now(datetime.UTC),
+                end_time=datetime.now(timezone.utc),
                 errors=["CT.gov backfill not yet implemented"]
             )
             
@@ -551,7 +686,7 @@ class UnifiedPipelineOrchestrator:
     
     def _execute_pubmed_backfill(self, start_date: datetime, end_date: datetime) -> Optional[PipelineExecutionResult]:
         """Execute PubMed backfill."""
-        start_time = datetime.now(datetime.UTC)
+        start_time = datetime.now(timezone.utc)
         self.logger.info("Executing PubMed backfill")
         
         try:
@@ -576,7 +711,7 @@ class UnifiedPipelineOrchestrator:
                         pipeline_name="pubmed",
                         success=False,
                         start_time=start_time,
-                        end_time=datetime.now(datetime.UTC),
+                        end_time=datetime.now(timezone.utc),
                         errors=["PubMed backfill requires async context for full execution"]
                     )
                     return execution_result
@@ -600,7 +735,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="pubmed",
                 success=result.get('success', False),
                 start_time=start_time,
-                end_time=datetime.now(datetime.UTC),
+                end_time=datetime.now(timezone.utc),
                 documents_processed=result.get('documents_processed', 0),
                 documents_failed=result.get('documents_failed', 0),
                 errors=result.get('errors', []),
@@ -616,7 +751,7 @@ class UnifiedPipelineOrchestrator:
     
     def _execute_sec_backfill(self, start_date: datetime, end_date: datetime) -> Optional[PipelineExecutionResult]:
         """Execute SEC backfill."""
-        start_time = datetime.now(datetime.UTC)
+        start_time = datetime.now(timezone.utc)
         self.logger.info("Executing SEC backfill")
         
         try:
@@ -628,7 +763,7 @@ class UnifiedPipelineOrchestrator:
                 pipeline_name="sec",
                 success=result.success,
                 start_time=start_time,
-                end_time=datetime.now(datetime.UTC),
+                end_time=datetime.now(timezone.utc),
                 filings_processed=result.filings_processed,
                 filings_successful=result.filings_successful,
                 filings_failed=result.filings_failed,
@@ -716,6 +851,341 @@ class UnifiedPipelineOrchestrator:
                 
         except Exception as e:
             self.logger.error(f"Failed to update orchestration state: {e}")
+    
+    def _enqueue_oa_tasks_from_pubmed_results(self, pubmed_result: Dict[str, Any]):
+        """
+        Enqueue OA tasks for trials that have completed PubMed U1+ processing.
+        
+        Args:
+            pubmed_result: Result from PubMed pipeline execution
+        """
+        try:
+            self.logger.info("Enqueueing OA tasks from PubMed results")
+            
+            # For now, we'll add a default trial since the PubMed pipeline
+            # doesn't currently track which specific trials were processed
+            # TODO: Enhance PubMed pipeline to return trial_ids that were processed
+            
+            # Get all trials that have literature state (were processed by U1)
+            # This is a simplified approach - in practice, we'd get trial_ids from the pipeline result
+            from ...db.session import session_scope
+            from ...db.models import TrialLitState, Trial
+            
+            with session_scope() as session:
+                # Get trials with recent literature state updates
+                recent_trials = session.query(TrialLitState, Trial).join(
+                    Trial, TrialLitState.trial_id == Trial.trial_id
+                ).filter(
+                    TrialLitState.best_S_Rge2.isnot(None)  # Has R/S scores
+                ).limit(10).all()  # Limit to recent trials
+                
+                for lit_state, trial in recent_trials:
+                    try:
+                        # Calculate time_to_catalyst (simplified)
+                        # TODO: Use actual catalyst detection from trial data
+                        time_to_catalyst = self._calculate_time_to_catalyst(trial)
+                        
+                        # Calculate max expected utility (simplified)
+                        max_expected_utility = self._calculate_max_expected_utility(lit_state)
+                        
+                        # Create trial data for queue
+                        trial_data = {
+                            'trial_id': lit_state.trial_id,
+                            'nct_id': trial.nct_id,
+                            'best_S_Rge2': float(lit_state.best_S_Rge2) if lit_state.best_S_Rge2 else 0.0,
+                            'time_to_catalyst': time_to_catalyst,
+                            'uncertainty': float(lit_state.uncertainty) if lit_state.uncertainty else 0.5,
+                            'max_expected_utility_next_doc': max_expected_utility,
+                            'p_short': float(lit_state.p_short) if lit_state.p_short else 0.0,
+                            'n_docs_seen': lit_state.n_docs_seen or 0,
+                            'n_docs_selected': lit_state.n_docs_selected or 0,
+                            'status': lit_state.status or 'active'
+                        }
+                        
+                        # Calculate priority for OA task
+                        priority = self._calculate_oa_priority(lit_state, trial)
+                        
+                        # Enqueue OA task
+                        success = self.task_queue_service.enqueue_task(
+                            task_type='PUBMED_OA',
+                            task_key=f'trial:{lit_state.trial_id}:OA',
+                            priority=priority,
+                            payload=trial_data,
+                            trial_id=lit_state.trial_id
+                        )
+                        
+                        if success:
+                            self.logger.debug(f"Enqueued OA task for trial {lit_state.trial_id} with priority {priority}")
+                        else:
+                            self.logger.warning(f"Failed to enqueue OA task for trial {lit_state.trial_id}")
+                        
+                    except Exception as e:
+                        self.logger.warning(f"Failed to add trial {lit_state.trial_id} to queue: {e}")
+                        continue
+                
+                self.logger.info(f"Successfully enqueued OA tasks for {len(recent_trials)} trials")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to enqueue OA tasks from PubMed results: {e}")
+    
+    def _calculate_oa_priority(self, lit_state, trial) -> float:
+        """
+        Calculate priority for OA task based on trial metrics.
+        
+        Args:
+            lit_state: Trial literature state
+            trial: Trial data
+            
+        Returns:
+            Priority score
+        """
+        # Base priority from trial metrics
+        base_priority = 0.0
+        
+        # Best S score among R≥2 documents
+        best_s_rge2 = float(lit_state.best_S_Rge2) if lit_state.best_S_Rge2 else 0.0
+        base_priority += 0.4 * best_s_rge2
+        
+        # Uncertainty (higher uncertainty = higher priority)
+        uncertainty = float(lit_state.uncertainty) if lit_state.uncertainty else 0.0
+        base_priority += 0.3 * uncertainty
+        
+        # Number of selected documents
+        n_selected = lit_state.n_docs_selected or 0
+        if n_selected > 0:
+            base_priority += 0.2 * min(n_selected / 10, 1.0)  # Cap at 10 docs
+        
+        # Add trial ID for deterministic ordering
+        base_priority += lit_state.trial_id / 1000000.0
+        
+        return base_priority
+    
+    def _calculate_studycard_priority(self, trial_id: int, payload: Dict[str, Any]) -> float:
+        """
+        Calculate priority for STUDY CARD task.
+        
+        Args:
+            trial_id: Trial ID
+            payload: Task payload with trial data
+            
+        Returns:
+            Priority score
+        """
+        # Base priority from trial metrics
+        base_priority = 0.0
+        
+        # Best S score among R≥2 documents
+        best_s_rge2 = payload.get('best_S_Rge2', 0.0)
+        base_priority += 0.4 * best_s_rge2
+        
+        # Uncertainty (higher uncertainty = higher priority)
+        uncertainty = payload.get('uncertainty', 0.0)
+        base_priority += 0.3 * uncertainty
+        
+        # Number of selected documents
+        n_selected = payload.get('n_docs_selected', 0)
+        if n_selected > 0:
+            base_priority += 0.2 * min(n_selected / 10, 1.0)  # Cap at 10 docs
+        
+        # Add trial ID for deterministic ordering
+        base_priority += trial_id / 1000000.0
+        
+        return base_priority
+    
+    def _calculate_time_to_catalyst(self, trial) -> Optional[float]:
+        """
+        Calculate time to next catalyst event for a trial.
+        
+        Args:
+            trial: Trial database model
+            
+        Returns:
+            Time to catalyst in days, or None if unknown
+        """
+        try:
+            # Simplified calculation - in practice this would use actual catalyst detection
+            # For now, use a placeholder based on trial phase and status
+            
+            if hasattr(trial, 'status') and trial.status:
+                status = trial.status.lower()
+                if 'recruiting' in status:
+                    return 90.0  # 3 months for recruiting trials
+                elif 'active' in status:
+                    return 180.0  # 6 months for active trials
+                elif 'completed' in status:
+                    return 30.0  # 1 month for completed trials (results soon)
+            
+            return 120.0  # Default 4 months
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate time to catalyst: {e}")
+            return None
+    
+    def _calculate_max_expected_utility(self, lit_state) -> float:
+        """
+        Calculate maximum expected utility for next document.
+        
+        Args:
+            lit_state: TrialLitState database model
+            
+        Returns:
+            Expected utility score (0.0 to 1.0)
+        """
+        try:
+            # Simplified utility calculation based on uncertainty and current scores
+            uncertainty = float(lit_state.uncertainty) if lit_state.uncertainty else 0.5
+            best_s = float(lit_state.best_S_Rge2) if lit_state.best_S_Rge2 else 0.0
+            
+            # Higher uncertainty and lower current scores suggest higher utility for next doc
+            utility = uncertainty * (1.0 - best_s) * 0.5  # Scale to reasonable range
+            
+            return min(max(utility, 0.0), 1.0)  # Clamp to [0, 1]
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate max expected utility: {e}")
+            return 0.1  # Default low utility
+    
+    def run_literature_second_pass(self) -> Dict[str, Any]:
+        """
+        Run the second pass of literature processing: pop trial from queue, 
+        fetch full text, and process study cards.
+        
+        Returns:
+            Dictionary with second pass execution results
+        """
+        try:
+            self.logger.info("Starting literature second pass execution")
+            
+            # Lease next OA task from queue
+            next_task = self.task_queue_service.lease_next(['PUBMED_OA'])
+            if not next_task:
+                self.logger.info("No OA tasks available in task queue")
+                return {
+                    'success': True,
+                    'trials_processed': 0,
+                    'message': 'No OA tasks available for processing'
+                }
+            
+            trial_id = next_task.get('trial_id')
+            task_id = next_task.get('id')
+            payload = next_task.get('payload', {})
+            nct_id = payload.get('nct_id')
+            self.logger.info(f"Processing OA task {task_id} for trial {trial_id}")
+            
+            # Run OA stage for this trial to fetch full text
+            try:
+                import asyncio
+                
+                async def run_oa_async():
+                    return await self.pubmed_pipeline.run_oa_for_trial(trial_id)
+                
+                # Execute OA stage
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        self.logger.warning("Cannot run OA stage synchronously from async context")
+                        oa_result = None
+                    else:
+                        oa_result = loop.run_until_complete(run_oa_async())
+                except RuntimeError:
+                    oa_result = asyncio.run(run_oa_async())
+                
+                if oa_result and oa_result.success:
+                    self.logger.info(f"OA stage completed for trial {trial_id}: {oa_result.documents_processed} documents processed")
+                else:
+                    self.logger.warning(f"OA stage failed for trial {trial_id}")
+                
+            except Exception as e:
+                self.logger.error(f"Failed to run OA stage for trial {trial_id}: {e}")
+                oa_result = None
+            
+            # Execute study card pipeline
+            try:
+                from ..study_card_pipeline import StudyCardPipeline
+                
+                # Create trial context for study card generation
+                trial_context = {
+                    'trial_id': trial_id,
+                    'nct_id': nct_id,
+                    'trial_name': f"Trial {nct_id}" if nct_id else f"Trial {trial_id}",
+                    'disease': payload.get('indication', payload.get('indication_terms', ['Unknown']))[0]
+                              if isinstance(payload.get('indication_terms'), list) else payload.get('indication', 'Unknown'),
+                    'intervention': payload.get('asset_name') or (
+                        payload.get('asset_aliases', ['Unknown'])[0] if isinstance(payload.get('asset_aliases'), list) else 'Unknown'
+                    ),
+                    'date_window': "2020-2024"
+                }
+                
+                # Initialize and run study card pipeline
+                study_card_config = self.config.get('study_card', {})
+                study_card_pipeline = StudyCardPipeline(study_card_config)
+                
+                study_card_result = study_card_pipeline.execute(trial_context)
+                
+                if study_card_result and study_card_result.get('success', False):
+                    self.logger.info(f"Study card generated successfully for trial {trial_id}")
+                    
+                    # Complete OA task and enqueue STUDY CARD task
+                    self.task_queue_service.complete_task(task_id)
+                    
+                    # Enqueue STUDY CARD task
+                    priority = self._calculate_studycard_priority(trial_id, payload)
+                    self.task_queue_service.enqueue_task(
+                        task_type='STUDYCARD',
+                        task_key=f'trial:{trial_id}:STUDYCARD',
+                        priority=priority,
+                        payload=payload,
+                        trial_id=trial_id
+                    )
+                    
+                    return {
+                        'success': True,
+                        'trials_processed': 1,
+                        'trial_id': trial_id,
+                        'nct_id': nct_id,
+                        'oa_documents_processed': oa_result.documents_processed if oa_result else 0,
+                        'study_card_generated': True,
+                        'study_card_result': study_card_result
+                    }
+                else:
+                    self.logger.warning(f"Study card generation failed for trial {trial_id}")
+                    
+                    # Fail OA task
+                    self.task_queue_service.fail_task(task_id, "Study card generation failed")
+                    
+                    return {
+                        'success': False,
+                        'trials_processed': 1,
+                        'trial_id': trial_id,
+                        'nct_id': nct_id,
+                        'oa_documents_processed': oa_result.documents_processed if oa_result else 0,
+                        'study_card_generated': False,
+                        'error': 'Study card generation failed'
+                    }
+                
+            except Exception as e:
+                self.logger.error(f"Failed to generate study card for trial {trial_id}: {e}")
+                
+                # Fail OA task
+                self.task_queue_service.fail_task(task_id, f"Study card generation error: {e}")
+                
+                return {
+                    'success': False,
+                    'trials_processed': 1,
+                    'trial_id': trial_id,
+                    'nct_id': nct_id,
+                    'oa_documents_processed': oa_result.documents_processed if oa_result else 0,
+                    'study_card_generated': False,
+                    'error': str(e)
+                }
+            
+        except Exception as e:
+            self.logger.error(f"Failed to run literature second pass: {e}")
+            return {
+                'success': False,
+                'trials_processed': 0,
+                'error': str(e)
+            }
     
     def get_execution_history(self, limit: Optional[int] = None) -> List[OrchestrationResult]:
         """Get execution history, optionally limited."""
