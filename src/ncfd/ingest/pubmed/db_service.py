@@ -1003,3 +1003,14 @@ class PubMedDBService:
         
         self.logger.info(f"Stored trial-doc candidates (discovery): {successful} successful, {failed} failed")
         return successful, failed
+
+
+# Module-level singleton instance
+_db_service_instance = None
+
+def get_db_service() -> PubMedDBService:
+    """Get the singleton database service instance."""
+    global _db_service_instance
+    if _db_service_instance is None:
+        _db_service_instance = PubMedDBService()
+    return _db_service_instance

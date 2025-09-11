@@ -37,12 +37,13 @@ class LLMProviderFactory:
         self._provider_instances: Dict[str, BaseLLMProvider] = {}
         self.logger = logging.getLogger(__name__)
     
-    def create_provider(self, provider_name: str) -> BaseLLMProvider:
+    def create_provider(self, provider_name: str, model_name: Optional[str] = None) -> BaseLLMProvider:
         """
         Create a provider instance.
         
         Args:
             provider_name: Name of the provider to create
+            model_name: Optional model name to use (defaults to provider's default)
             
         Returns:
             Provider instance
@@ -56,24 +57,32 @@ class LLMProviderFactory:
                 f"Provider '{provider_name}' not available. Available providers: {available}"
             )
         
-        # Check if already instantiated
-        if provider_name in self._provider_instances:
-            return self._provider_instances[provider_name]
-        
         # Get provider configuration
         try:
             provider_config = self.config.get_provider_config(provider_name)
         except LLMConfigurationError as e:
             raise LLMConfigurationError(f"Provider '{provider_name}' not configured: {e}")
         
-        # Create provider instance
+        # Use provided model name or default
+        if model_name is None:
+            model_name = provider_config.default_model
+        
+        # Check if already instantiated with this model
+        cache_key = f"{provider_name}_{model_name}"
+        if cache_key in self._provider_instances:
+            return self._provider_instances[cache_key]
+        
+        # Create provider instance with model name
+        provider_dict = provider_config.__dict__.copy()
+        provider_dict["model"] = model_name
+        
         provider_class = self._providers[provider_name]
-        provider_instance = provider_class(provider_config.__dict__)
+        provider_instance = provider_class(provider_dict)
         
         # Cache the instance
-        self._provider_instances[provider_name] = provider_instance
+        self._provider_instances[cache_key] = provider_instance
         
-        self.logger.info(f"Created {provider_name} provider instance")
+        self.logger.info(f"Created {provider_name} provider instance with model {model_name}")
         return provider_instance
     
     def create_for_worker(self, worker_name: str) -> BaseLLMProvider:
@@ -88,9 +97,24 @@ class LLMProviderFactory:
         """
         worker_config = self.config.get_worker_config(worker_name)
         provider_name = worker_config.get("provider", self.config.default_provider)
+        model_name = worker_config.get("model", self.config.providers[provider_name].default_model)
         
-        self.logger.debug(f"Creating provider '{provider_name}' for worker '{worker_name}'")
-        return self.create_provider(provider_name)
+        self.logger.debug(f"Creating provider '{provider_name}' for worker '{worker_name}' with model '{model_name}'")
+        
+        # Get provider configuration and add the model name
+        provider_config = self.config.get_provider_config(provider_name)
+        provider_dict = provider_config.__dict__.copy()
+        provider_dict["model"] = model_name
+        
+        # Create provider instance with model name
+        provider_class = self._providers[provider_name]
+        provider_instance = provider_class(provider_dict)
+        
+        # Cache the instance
+        self._provider_instances[f"{provider_name}_{model_name}"] = provider_instance
+        
+        self.logger.info(f"Created {provider_name} provider instance with model {model_name}")
+        return provider_instance
     
     def get_model_for_worker(self, worker_name: str) -> str:
         """

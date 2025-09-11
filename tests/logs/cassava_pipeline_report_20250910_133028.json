@@ -1,0 +1,300 @@
+{
+  "test_info": {
+    "test_name": "Full Cassava Pipeline Test",
+    "start_time": "2025-09-10T13:26:32.803288",
+    "end_time": "2025-09-10T13:30:28.785515",
+    "duration_seconds": 235.982227
+  },
+  "pipeline_result": {
+    "success": true,
+    "trials_processed": 1,
+    "trial_id": 1,
+    "nct_id": "NCT05515666",
+    "oa_documents_processed": 0,
+    "study_card_generated": true,
+    "study_card_result": "StudyCardPipelineResult(trial_id='1', success=True, start_time=datetime.datetime(2025, 9, 10, 20, 26, 36, 463021, tzinfo=datetime.timezone.utc), end_time=datetime.datetime(2025, 9, 10, 20, 30, 28, 756243, tzinfo=datetime.timezone.utc), processing_time_seconds=232.293222, document_cards=[DocumentCard(created_at=datetime.datetime(2025, 9, 10, 20, 26, 36, 469679), created_by=None, version=1, input_hash=None, parent_ids=[], provenance_span_ids=[], notes=[], id='1774e2de-8763-4aa8-a315-581a3b20ac31', status='draft', metadata={}, doc_id='ctgov:NCT05515666', doc_type='Paper', title=\"Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's Disease\", year=2023, venue='Literature', study_type='RCT', disease='A', intervention='simufilam', route=None, dose_units=None, region=None, url=None, source_id=None, fulltext_refs=[], concepts=[], abstract=None, authors=[], journal=None, doi=None, pmid=None), DocumentCard(created_at=datetime.datetime(2025, 9, 10, 20, 26, 36, 469697), created_by=None, version=1, input_hash=None, parent_ids=[], provenance_span_ids=[], notes=[], id='1b44834a-1926-4cdd-bf05-c7478dca59f6', status='draft', metadata={}, doc_id='ctgov:NCT05515666', doc_type='Paper', title=\"Study of Simufilam in Patients with Mild-to-Moderate Alzheimer's Disease\", year=2023, venue='Literature', study_type='RCT', disease='A', intervention='simufilam', route=None, dose_units=None, region=None, url=None, source_id=None, fulltext_refs=[], concepts=[], abstract=None, authors=[], journal=None, doi=None, pmid=None)], evidence_spans=[], claims=[], method_card=MethodCard(created_at=datetime.datetime(2025, 9, 10, 20, 29, 10, 402142), created_by=None, version=1, input_hash='c036c24f51a34fb6', parent_ids=[], provenance_span_ids=[], notes=[], id='e710e2e4-54d0-403c-b7e3-4a070e7ff51f', status='draft', metadata={}, doc_id='ctgov:NCT05515666', estimand=None, population_description=\"Alzheimer's disease (AD) models, including animal models\", primary_endpoint='Reversal of FLNA-receptor interactions', secondary_endpoints=['Neuroprotective effects', 'Improved cognitive function', 'Safety profile / adverse events'], intercurrent_events_policy=None, summary_measure=None, alpha_structure=None, alpha_level=None, is_one_sided=None, multiplicity_adjustment=None, gatekeeping_hierarchy=[], interim_looks=[], interim_timing=None, spending_function=None, sample_size_reassessment=None, stop_rules=[], gehan_two_stage=None, design_archetype='Preclinical study (in vitro and in vivo models)', analysis_set=None, stratification_factors=[], covariate_adjustment=[], missingness_assumption=None, missingness_pattern=None, imputation_method=None, tipping_point_analysis=None, endpoint_ascertainment='Assessed using both in vitro and in vivo approaches to evaluate efficacy and safety', assessment_interval=None, is_blinded=None, adjudication_committee=None, protocol_features=[], run_in_period=None, enrichment_strategy=None, crossover_design=None, rescue_medication=None, assay_thresholds=[], dose_exposure_rationale=None, target_engagement=None, pkpd_relationship=None, site_geography={}, number_of_sites=None, regions=[], dispersion_flag=None, design_risks=[], study_phase=None, randomization_ratio=None, blinding_level=None, treatment_duration=None, follow_up_duration=None, span_ids=[], provenance_anchors=[], field_span_map={}, warnings=[]), results_factsheet=ResultsFactsheet(created_at=datetime.datetime(2025, 9, 10, 20, 29, 36, 225967), created_by=None, version=1, input_hash='5ebca6b3d4ed4321', parent_ids=[], provenance_span_ids=[], notes=[], id='0d03b8bb-2525-40f4-8c3f-94b8b6fdacda', status='draft', metadata={}, doc_id='ctgov:NCT05515666', results=[{'metric': 'FLNA-receptor interaction reversal', 'value': 'significant reversal', 'population_slice': 'AD models', 'doc_id': 'TrialID_1'}, {'metric': 'Neuroprotective effects', 'value': 'demonstrated neuroprotective effects', 'population_slice': 'animal models', 'doc_id': 'TrialID_1'}, {'metric': 'Cognitive function', 'value': 'improved cognitive function', 'population_slice': 'animal models', 'doc_id': 'TrialID_1'}], span_ids=[], primary_endpoint_results=None, secondary_endpoint_results=[], safety_results=[{'metric': 'Serious adverse events', 'value': 'no serious adverse events reported', 'doc_id': 'TrialID_1'}, {'metric': 'Overall safety profile', 'value': 'acceptable', 'doc_id': 'TrialID_1'}], primary_analysis_set=None, secondary_analysis_sets=[], total_enrolled=None, completed_primary_endpoint=None, dropout_rate=None, follow_up_completion=None), gate_candidates=[], gate_specs=[], gate_assessments=[], decision_record=None, ambiguity_ledger={}, llm_artifacts={}, deterministic_artifacts={}, errors=['Quality gate: Insufficient quotes extracted: 0 < 3', 'Quality gate: Insufficient evidence spans: 0 < 3', 'Quality gate: Gates section missing - no gate assessments generated', 'Quality gate: Insufficient LLM artifacts: 0 < 1'], warnings=['Quality gate warning: Insufficient quotes extracted: 0 < 3', 'Quality gate warning: Insufficient evidence spans: 0 < 3', 'Quality gate warning: Gates section missing - no gate assessments generated', 'Quality gate warning: Insufficient LLM artifacts: 0 < 1'])"
+  },
+  "database_summary": {
+    "summary": {
+      "trials": 1,
+      "documents": 3,
+      "document_texts": 3,
+      "method_cards": 14,
+      "results_factsheets": 14,
+      "gates": 0,
+      "evidence_spans": 0,
+      "signals": 0
+    },
+    "trials": [
+      {
+        "trial_id": 1,
+        "nct_id": "NCT05515666",
+        "brief_title": "Study of Simufilam in Patients with Mild-to-Moderate Alzheimer's Disease",
+        "phase": "PHASE3",
+        "status": "RECRUITING",
+        "indication": "Alzheimer Disease",
+        "sponsor_text": "Cassava Sciences, Inc."
+      }
+    ],
+    "method_cards": [
+      {
+        "id": 14,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 20:29:10.408097+00:00",
+        "design_archetype": "Preclinical study (in vitro and in vivo models)",
+        "primary_endpoint": "Reversal of FLNA-receptor interactions",
+        "population_description": "Alzheimer's disease (AD) models, including animal models"
+      },
+      {
+        "id": 13,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 20:27:01.082563+00:00",
+        "design_archetype": "Preclinical study (in vitro and in vivo AD models)",
+        "primary_endpoint": "Effects of simufilam on FLNA-receptor interactions (reversal of aberrant FLNA-receptor interactions)",
+        "population_description": "Alzheimer's disease (AD) models, including in vitro systems and animal (in vivo) models"
+      },
+      {
+        "id": 12,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 20:10:35.364682+00:00",
+        "design_archetype": "Preclinical in vitro and in vivo study",
+        "primary_endpoint": "Reversal of filamin A (FLNA) \u2014 receptor interactions in AD models",
+        "population_description": "Alzheimer's disease (AD) models \u2014 both in vitro systems and in vivo (animal) models"
+      },
+      {
+        "id": 11,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 20:09:08.410337+00:00",
+        "design_archetype": "Preclinical in vitro and in vivo study",
+        "primary_endpoint": "Reversal of filamin A (FLNA)-receptor interactions",
+        "population_description": "Alzheimer's disease (AD) models; animal models"
+      },
+      {
+        "id": 10,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 20:06:24.382397+00:00",
+        "design_archetype": null,
+        "primary_endpoint": null,
+        "population_description": null
+      },
+      {
+        "id": 9,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 20:04:27.087806+00:00",
+        "design_archetype": "Preclinical study using in vitro and in vivo approaches",
+        "primary_endpoint": "Reversal of FLNA-receptor interactions in AD models",
+        "population_description": "Alzheimer's disease (AD) models, including animal models"
+      },
+      {
+        "id": 8,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 19:46:51.748557+00:00",
+        "design_archetype": "Preclinical in vitro and in vivo study (AD models, including animal models)",
+        "primary_endpoint": "Reversal of FLNA-receptor interactions in AD models",
+        "population_description": "Alzheimer's disease models (in vitro and in vivo / animal models)"
+      },
+      {
+        "id": 7,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 19:45:28.816624+00:00",
+        "design_archetype": "Preclinical study (in vitro and in vivo models)",
+        "primary_endpoint": "Effect of simufilam on FLNA-receptor interactions (reversal of aberrant FLNA-receptor interactions)",
+        "population_description": "Alzheimer's disease (AD) models (in vitro and in vivo)"
+      },
+      {
+        "id": 6,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 19:03:12.547587+00:00",
+        "design_archetype": "Preclinical study (in vitro and in vivo approaches)",
+        "primary_endpoint": "Reversal of aberrant FLNA-receptor interactions",
+        "population_description": "Alzheimer's disease (AD) models, including animal models"
+      },
+      {
+        "id": 5,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 19:01:06.931562+00:00",
+        "design_archetype": "Preclinical in vitro and in vivo study",
+        "primary_endpoint": "Reversal of FLNA-receptor interactions",
+        "population_description": "Alzheimer's disease (AD) models (in vitro and in vivo), including animal models"
+      },
+      {
+        "id": 4,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 18:54:57.432491+00:00",
+        "design_archetype": "In vitro and in vivo (preclinical) study",
+        "primary_endpoint": "Reversal of FLNA-receptor interactions",
+        "population_description": "Alzheimer's disease (AD) models; animal models"
+      },
+      {
+        "id": 3,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 18:53:32.672383+00:00",
+        "design_archetype": "Preclinical study (in vitro and in vivo models)",
+        "primary_endpoint": "Reversal of FLNA-receptor interactions",
+        "population_description": "Alzheimer's disease models; animal models"
+      },
+      {
+        "id": 2,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 18:38:46.920619+00:00",
+        "design_archetype": "Preclinical study using in vitro and in vivo approaches",
+        "primary_endpoint": "Effects of simufilam on FLNA-receptor interactions (reversal of aberrant FLNA-receptor interactions)",
+        "population_description": "Alzheimer's disease (AD) models (animal models)"
+      },
+      {
+        "id": 1,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 18:35:53.520018+00:00",
+        "design_archetype": "Preclinical study using both in vitro and in vivo models",
+        "primary_endpoint": "Reversal of FLNA-receptor interactions",
+        "population_description": "Alzheimer's disease (AD) models, including animal models"
+      }
+    ],
+    "results_factsheets": [
+      {
+        "id": 14,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 20:29:36.230163+00:00",
+        "total_enrolled": null,
+        "dropout_rate": null,
+        "follow_up_completion": null
+      },
+      {
+        "id": 13,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 20:27:26.313805+00:00",
+        "total_enrolled": null,
+        "dropout_rate": null,
+        "follow_up_completion": null
+      },
+      {
+        "id": 12,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 20:11:05.619298+00:00",
+        "total_enrolled": null,
+        "dropout_rate": null,
+        "follow_up_completion": null
+      },
+      {
+        "id": 11,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 20:09:36.892322+00:00",
+        "total_enrolled": null,
+        "dropout_rate": null,
+        "follow_up_completion": null
+      },
+      {
+        "id": 10,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 20:06:57.161494+00:00",
+        "total_enrolled": null,
+        "dropout_rate": null,
+        "follow_up_completion": null
+      },
+      {
+        "id": 9,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 20:05:01.204749+00:00",
+        "total_enrolled": null,
+        "dropout_rate": null,
+        "follow_up_completion": null
+      },
+      {
+        "id": 8,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 19:47:27.596216+00:00",
+        "total_enrolled": null,
+        "dropout_rate": null,
+        "follow_up_completion": null
+      },
+      {
+        "id": 7,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 19:45:47.842949+00:00",
+        "total_enrolled": null,
+        "dropout_rate": null,
+        "follow_up_completion": null
+      },
+      {
+        "id": 6,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 19:03:36.054443+00:00",
+        "total_enrolled": null,
+        "dropout_rate": null,
+        "follow_up_completion": null
+      },
+      {
+        "id": 5,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 19:01:34.646799+00:00",
+        "total_enrolled": null,
+        "dropout_rate": null,
+        "follow_up_completion": null
+      },
+      {
+        "id": 4,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 18:55:19.455957+00:00",
+        "total_enrolled": null,
+        "dropout_rate": null,
+        "follow_up_completion": null
+      },
+      {
+        "id": 3,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 18:54:08.802184+00:00",
+        "total_enrolled": null,
+        "dropout_rate": null,
+        "follow_up_completion": null
+      },
+      {
+        "id": 2,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 18:39:20.852291+00:00",
+        "total_enrolled": null,
+        "dropout_rate": null,
+        "follow_up_completion": null
+      },
+      {
+        "id": 1,
+        "doc_id": "ctgov:NCT05515666",
+        "created_at": "2025-09-10 18:36:41.139894+00:00",
+        "total_enrolled": null,
+        "dropout_rate": null,
+        "follow_up_completion": null
+      }
+    ],
+    "gates": [],
+    "evidence_spans": [],
+    "signals": [],
+    "documents": [
+      {
+        "doc_id": 12,
+        "title": "Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's Disease",
+        "pmid": "37762230",
+        "pmcid": "PMC1234567",
+        "doi": "10.1038/s41591-023-02545-8",
+        "nct_id": "NCT05515666",
+        "source_type": "Paper"
+      },
+      {
+        "doc_id": 13,
+        "title": "Study of Simufilam in Patients with Mild-to-Moderate Alzheimer's Disease",
+        "pmid": null,
+        "pmcid": null,
+        "doi": null,
+        "nct_id": "NCT05515666",
+        "source_type": "Paper"
+      },
+      {
+        "doc_id": 14,
+        "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients.",
+        "pmid": "32920628",
+        "pmcid": null,
+        "doi": null,
+        "nct_id": null,
+        "source_type": "Paper"
+      }
+    ]
+  }
+}

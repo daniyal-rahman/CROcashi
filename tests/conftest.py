@@ -24,6 +24,11 @@ def ensure_test_env():
     """Ensure test environment variables are set up for all tests."""
     # This fixture runs once per test session and ensures env vars are loaded
     setup_test_environment()
+    
+    # Reset the database engine to ensure it uses the test environment
+    from ncfd.db.session import reset_engine
+    reset_engine()
+    
     yield
     # Cleanup if needed
 
@@ -36,9 +41,18 @@ def test_env():
 
 @pytest.fixture
 def session():
-    import ncfd.db.session as dbs
-
-    engine = getattr(dbs, "engine", None) or dbs.get_engine()
+    from ncfd.db.session import get_engine, reset_engine
+    from ncfd.db.models import Base
+    
+    # Reset engine to ensure it uses current environment variables
+    reset_engine()
+    
+    # Get the engine from the database session module
+    engine = get_engine()
+    
+    # Create all tables if they don't exist
+    Base.metadata.create_all(engine)
+    
     conn = engine.connect()
     outer = conn.begin()  # one outer transaction per test
 

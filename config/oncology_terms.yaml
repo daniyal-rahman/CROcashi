@@ -1,0 +1,64 @@
+# Oncology Terms Configuration
+# Terms that trigger oncology detection and filtering
+
+oncology_indicators:
+  # Cancer types
+  - "carcinoma"
+  - "esophageal"
+  - "melanoma"
+  - "sarcoma"
+  - "lymphoma"
+  - "leukemia"
+  - "adenocarcinoma"
+  - "squamous cell"
+  
+  # Oncology treatments
+  - "chemoradiotherapy"
+  - "chemotherapy"
+  - "radiation"
+  - "radiotherapy"
+  - "immunotherapy"
+  - "targeted therapy"
+  
+  # General oncology terms
+  - "oncology"
+  - "cancer"
+  - "tumor"
+  - "neoplasm"
+  - "metastasis"
+  - "malignancy"
+  - "malignant"
+  
+  # Oncology procedures
+  - "biopsy"
+  - "resection"
+  - "surgery"
+  - "mastectomy"
+  - "prostatectomy"
+  
+  # Oncology biomarkers
+  - "HER2"
+  - "EGFR"
+  - "KRAS"
+  - "BRAF"
+  - "PD-L1"
+  - "MSI"
+  - "TMB"
+
+oncology_context_terms:
+  # Terms that provide context for oncology
+  - "stage"
+  - "grade"
+  - "progression"
+  - "recurrence"
+  - "survival"
+  - "response rate"
+  - "remission"
+
+exclusion_patterns:
+  # Patterns to exclude from oncology detection
+  - "non-cancer"
+  - "non-malignant"
+  - "benign"
+  - "pre-cancer"
+  - "pre-malignant"

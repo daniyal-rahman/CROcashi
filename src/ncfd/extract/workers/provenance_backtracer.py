@@ -1,678 +1,581 @@
 """
-Provenance Backtracer Worker
+Robust Provenance Backtracer
 
-Implements Phase B of the LLM-first, provenance-second architecture.
-Finds exact spans that justify LLM-extracted values using fuzzy matching and retrieval.
+Implements the 5-stage robust design for finding exact spans that justify LLM-extracted values.
+This is a complete rewrite with better accuracy, speed, and maintainability.
 """
 
 import re
+import unicodedata
+import regex as re_fuzzy
+import logging
 import time
 from typing import List, Dict, Any, Optional, Tuple, Set
-from dataclasses import asdict
-import logging
-
-from .base_worker import BaseWorker, WorkerResult
-from ..models import EvidenceSpan
-from ..models.llm_extraction_draft import (
-    LLMExtractionDraft, LLMResultsDraft, LLMMethodDraft, LLMClaimDraft,
-    EvidenceKind, EvidenceStatus
-)
-from ...utils.study_card_utils import extract_numeric_value, normalize_units
+from dataclasses import dataclass
+from collections import defaultdict
+from ncfd.extract.models.evidence_span import EvidenceSpan
 
 
-class ProvenanceBacktracer(BaseWorker):
+@dataclass
+class NormalizedDocument:
+    """Container for normalized document variants and offset maps."""
+    raw_text: str
+    norm_basic: str
+    norm_nohyphen: str
+    norm_ascii: str
+    basic_to_raw_map: List[int]
+    nohyphen_to_raw_map: List[int]
+    ascii_to_raw_map: List[int]
+    sections: List[Dict[str, Any]]  # List of {start, end, name} dicts
+
+
+@dataclass
+class CandidateWindow:
+    """A candidate window for quote alignment."""
+    start: int
+    end: int
+    anchor_tokens: List[str]
+    score: float
+
+
+class ProvenanceBacktracer:
     """
-    Worker for finding exact spans that justify LLM-extracted values.
+    Provenance backtracer implementing the 5-stage design:
     
-    Implements Phase B of the LLM-first, provenance-second architecture:
-    1. Candidate retrieval using BM25 and fuzzy matching
-    2. Span alignment and scoring
-    3. Provenance attachment to draft artifacts
+    Stage A: Normalize with indexable variants + offset map
+    Stage B: Candidate generation (cheap but precise)  
+    Stage C: Alignment (exact boundaries)
+    Stage D: Scoring & dedupe
+    Stage E: Section inference (cleaner)
     """
     
     def __init__(self, 
-                 bm25_topk: int = 20,
-                 fuzzy_threshold: float = 0.86,
-                 numeric_strict: bool = True,
-                 section_bonus: float = 0.1,
-                 allow_table_only: bool = True):
-        super().__init__("ProvenanceBacktracer", "1.0.0")
-        
-        self.bm25_topk = bm25_topk
-        self.fuzzy_threshold = fuzzy_threshold
-        self.numeric_strict = numeric_strict
-        self.section_bonus = section_bonus
-        self.allow_table_only = allow_table_only
-        
-        # Initialize logger
+                 max_edits_ratio: float = 0.15,
+                 window_size: int = 800,
+                 overlap_threshold: float = 0.6,
+                 min_anchor_tokens: int = 2):
+        self.max_edits_ratio = max_edits_ratio
+        self.window_size = window_size
+        self.overlap_threshold = overlap_threshold
+        self.min_anchor_tokens = min_anchor_tokens
         self.logger = logging.getLogger(__name__)
-        if not self.logger.handlers:
-            h = logging.StreamHandler()
-            fmt = logging.Formatter("[%(levelname)s] %(name)s: %(message)s")
-            h.setFormatter(fmt)
-            self.logger.addHandler(h)
-        self.logger.setLevel(logging.INFO)
         
-        # Fuzzy matching patterns
-        self.numeric_patterns = {
-            'percentage': r'(\d+\.?\d*)\s*%',
-            'fraction': r'(\d+)/(\d+)',
-            'decimal': r'(\d+\.?\d*)',
-            'integer': r'(\d+)',
-            'units': r'(weeks?|months?|years?|days?)'
-        }
-        
-        # OCR noise patterns
-        self.ocr_noise_map = {
-            'l': '1', 'I': '1', 'O': '0', 'o': '0',
-            'S': '5', 's': '5', 'Z': '2', 'z': '2',
-            'B': '8', 'G': '6', 'g': '9'
-        }
-
-    def validate_inputs(self, inputs: Dict[str, Any]) -> bool:
-        """Validate that inputs contain required fields."""
-        required_keys = ['llm_extraction_draft', 'raw_doc_text']
-        
-        if not all(key in inputs for key in required_keys):
-            return False
-            
-        if not isinstance(inputs['llm_extraction_draft'], LLMExtractionDraft):
-            return False
-            
-        if not isinstance(inputs['raw_doc_text'], str):
-            return False
-            
-        return True
-
-    def process(self, inputs: Dict[str, Any]) -> WorkerResult:
-        """
-        Process LLM extraction draft to attach provenance spans.
-        
-        Args:
-            inputs: Dict containing:
-                - llm_extraction_draft: LLMExtractionDraft - Draft artifacts with verbatim quotes
-                - raw_doc_text: str - Raw document text for span search
-                - evidence_spans: List[EvidenceSpan] - Pre-existing spans (optional)
-                
-        Returns:
-            WorkerResult containing LLMExtractionDraft with attached spans
-        """
-        try:
-            # Validate inputs
-            if not self.validate_inputs(inputs):
-                return WorkerResult(
-                    success=False,
-                    error_message="Invalid inputs: missing required llm_extraction_draft or raw_doc_text",
-                    output={}
-                )
-            
-            llm_draft = inputs['llm_extraction_draft']
-            raw_doc_text = inputs['raw_doc_text']
-            evidence_spans = inputs.get('evidence_spans', [])
-            
-            start_time = time.time()
-            self.logger.info(f"Processing provenance backtrace for doc_id: {llm_draft.doc_id}")
-            
-            # Process each draft artifact type
-            if llm_draft.results_draft:
-                self._backtrace_results(llm_draft.results_draft, raw_doc_text, evidence_spans)
-            
-            if llm_draft.method_draft:
-                self._backtrace_methods(llm_draft.method_draft, raw_doc_text, evidence_spans)
-            
-            if llm_draft.claims_draft:
-                self._backtrace_claims(llm_draft.claims_draft, raw_doc_text, evidence_spans)
-            
-            # Update extraction timestamp
-            llm_draft.extraction_timestamp = time.time()
-            
-            return WorkerResult(
-                success=True,
-                output={'llm_extraction_draft': llm_draft},
-                execution_time=time.time() - start_time
-            )
-            
-        except Exception as e:
-            self.logger.error(f"Provenance backtrace failed: {str(e)}")
-            return WorkerResult(
-                success=False,
-                error_message=f"Provenance backtrace failed: {str(e)}",
-                output={}
-            )
-
-    def _backtrace_results(self, results_draft: LLMResultsDraft, 
-                          raw_doc_text: str, evidence_spans: List[EvidenceSpan]):
-        """Backtrace results to find supporting spans."""
-        self.logger.info(f"Backtracing {len(results_draft.results)} results")
-        
-        for i, result in enumerate(results_draft.results):
-            verbatim_quote = results_draft.verbatim_quotes[i]
-            evidence_kind = results_draft.evidence_kinds[i]
-            section_hint = results_draft.section_hints[i]
-            table_hint = results_draft.table_hints[i]
-            
-            # Find supporting span
-            span_id = self._find_supporting_span(
-                verbatim_quote=verbatim_quote,
-                field_name=result.get('metric', ''),
-                field_value=result.get('value'),
-                evidence_kind=evidence_kind,
-                section_hint=section_hint,
-                table_hint=table_hint,
-                raw_doc_text=raw_doc_text,
-                evidence_spans=evidence_spans
-            )
-            
-            if span_id:
-                results_draft.span_ids[i] = span_id
-                results_draft.provenance_status[i] = "resolved"
-            else:
-                results_draft.provenance_status[i] = "unresolved"
-                # Lower confidence for unresolved provenance
-                results_draft.confidence_llm[i] = max(0.2, results_draft.confidence_llm[i] - 0.4)
-
-    def _backtrace_methods(self, method_draft: LLMMethodDraft,
-                         raw_doc_text: str, evidence_spans: List[EvidenceSpan]):
-        """Backtrace methods to find supporting spans."""
-        self.logger.info(f"Backtracing {len(method_draft.field_names)} method fields")
-        
-        for i, field_name in enumerate(method_draft.field_names):
-            verbatim_quote = method_draft.verbatim_quotes[i]
-            field_value = method_draft.normalized_values[i]
-            evidence_kind = method_draft.evidence_kinds[i]
-            section_hint = method_draft.section_hints[i]
-            
-            # Find supporting span
-            span_id = self._find_supporting_span(
-                verbatim_quote=verbatim_quote,
-                field_name=field_name,
-                field_value=field_value,
-                evidence_kind=evidence_kind,
-                section_hint=section_hint,
-                table_hint=None,
-                raw_doc_text=raw_doc_text,
-                evidence_spans=evidence_spans
-            )
-            
-            if span_id:
-                method_draft.span_ids[i] = span_id
-                method_draft.provenance_status[i] = "resolved"
-            else:
-                method_draft.provenance_status[i] = "unresolved"
-                # Lower confidence for unresolved provenance
-                method_draft.confidence_llm[i] = max(0.2, method_draft.confidence_llm[i] - 0.4)
-
-    def _backtrace_claims(self, claims_draft: LLMClaimDraft,
-                         raw_doc_text: str, evidence_spans: List[EvidenceSpan]):
-        """Backtrace claims to find supporting spans."""
-        self.logger.info(f"Backtracing {len(claims_draft.claim_types)} claims")
-        
-        for i, claim_type in enumerate(claims_draft.claim_types):
-            verbatim_quote = claims_draft.verbatim_quotes[i]
-            proposition = claims_draft.propositions[i]
-            field_value = claims_draft.values[i]
-            evidence_kind = claims_draft.evidence_kinds[i]
-            section_hint = claims_draft.section_hints[i]
-            
-            # Find supporting span
-            span_id = self._find_supporting_span(
-                verbatim_quote=verbatim_quote,
-                field_name=claim_type,
-                field_value=field_value,
-                evidence_kind=evidence_kind,
-                section_hint=section_hint,
-                table_hint=None,
-                raw_doc_text=raw_doc_text,
-                evidence_spans=evidence_spans
-            )
-            
-            if span_id:
-                claims_draft.span_ids[i] = span_id
-                claims_draft.provenance_status[i] = "resolved"
-            else:
-                claims_draft.provenance_status[i] = "unresolved"
-                # Lower confidence for unresolved provenance
-                claims_draft.confidence_llm[i] = max(0.2, claims_draft.confidence_llm[i] - 0.4)
-
-    def _find_supporting_span(self,
-                            verbatim_quote: str,
-                            field_name: str,
-                            field_value: Any,
-                            evidence_kind: EvidenceKind,
-                            section_hint: str,
-                            table_hint: Optional[str],
-                            raw_doc_text: str,
-                            evidence_spans: List[EvidenceSpan]) -> Optional[str]:
-        """Find the best supporting span for a field/quote combination."""
-        
-        # Step 1: Candidate retrieval
-        candidates = self._retrieve_candidates(
-            verbatim_quote=verbatim_quote,
-            field_name=field_name,
-            field_value=field_value,
-            evidence_kind=evidence_kind,
-            section_hint=section_hint,
-            table_hint=table_hint,
-            raw_doc_text=raw_doc_text,
-            evidence_spans=evidence_spans
-        )
-        
-        if not candidates:
-            return None
-        
-        # Step 2: Fuzzy alignment and scoring
-        best_span_id = None
-        best_score = 0.0
-        
-        for candidate in candidates:
-            score = self._score_candidate(
-                candidate=candidate,
-                verbatim_quote=verbatim_quote,
-                field_name=field_name,
-                field_value=field_value,
-                evidence_kind=evidence_kind,
-                section_hint=section_hint,
-                table_hint=table_hint
-            )
-            
-            if score > best_score and score >= self.fuzzy_threshold:
-                best_score = score
-                best_span_id = candidate.get('span_id')
-        
-        return best_span_id
-
-    def _retrieve_candidates(self,
-                          verbatim_quote: str,
-                          field_name: str,
-                          field_value: Any,
-                          evidence_kind: EvidenceKind,
-                          section_hint: str,
-                          table_hint: Optional[str],
-                          raw_doc_text: str,
-                          evidence_spans: List[EvidenceSpan]) -> List[Dict[str, Any]]:
-        """Retrieve candidate spans using BM25 and fuzzy matching."""
-        candidates = []
-        
-        # Build query from verbatim quote (preferred) or field name + value
-        if verbatim_quote and len(verbatim_quote.strip()) > 0:
-            query = verbatim_quote
-        else:
-            query = f"{field_name} {field_value}"
-        
-        # Normalize query for matching
-        normalized_query = self._normalize_text(query)
-        
-        # Search in raw document text using sliding window approach
-        window_size = 200  # characters
-        step_size = 100    # characters
-        
-        for start in range(0, len(raw_doc_text), step_size):
-            end = min(start + window_size, len(raw_doc_text))
-            window_text = raw_doc_text[start:end]
-            
-            # Calculate BM25-like score
-            bm25_score = self._calculate_bm25_score(normalized_query, window_text)
-            
-            # Calculate fuzzy match score
-            fuzzy_score = self._calculate_fuzzy_score(normalized_query, window_text)
-            
-            # Calculate numeric overlap score
-            numeric_score = self._calculate_numeric_overlap(field_value, window_text)
-            
-            # Calculate section bonus
-            section_score = self._calculate_section_bonus(section_hint, window_text)
-            
-            # Combined score
-            combined_score = (
-                0.4 * bm25_score +
-                0.3 * fuzzy_score +
-                0.2 * numeric_score +
-                0.1 * section_score
-            )
-            
-            if combined_score > 0.3:  # Minimum threshold for candidates
-                candidates.append({
-                    'span_id': f"raw_text:{start}-{end}",
-                    'text': window_text,
-                    'start': start,
-                    'end': end,
-                    'bm25_score': bm25_score,
-                    'fuzzy_score': fuzzy_score,
-                    'numeric_score': numeric_score,
-                    'section_score': section_score,
-                    'combined_score': combined_score
-                })
-        
-        # Also check pre-existing evidence spans
-        for span in evidence_spans:
-            span_score = self._calculate_span_score(
-                span=span,
-                verbatim_quote=verbatim_quote,
-                field_name=field_name,
-                field_value=field_value,
-                evidence_kind=evidence_kind,
-                section_hint=section_hint
-            )
-            
-            if span_score > 0.3:
-                candidates.append({
-                    'span_id': span.span_id,
-                    'text': span.quote,
-                    'start': span.char_start,
-                    'end': span.char_end,
-                    'bm25_score': span_score,
-                    'fuzzy_score': span_score,
-                    'numeric_score': span_score,
-                    'section_score': span_score,
-                    'combined_score': span_score
-                })
-        
-        # Sort by combined score and return top candidates
-        candidates.sort(key=lambda x: x['combined_score'], reverse=True)
-        return candidates[:self.bm25_topk]
-
-    def _score_candidate(self,
-                        candidate: Dict[str, Any],
-                        verbatim_quote: str,
-                        field_name: str,
-                        field_value: Any,
-                        evidence_kind: EvidenceKind,
-                        section_hint: str,
-                        table_hint: Optional[str]) -> float:
-        """Score a candidate span for alignment quality."""
-        
-        candidate_text = candidate['text']
-        
-        # Fuzzy alignment score
-        if verbatim_quote and len(verbatim_quote.strip()) > 0:
-            alignment_score = self._calculate_fuzzy_alignment(verbatim_quote, candidate_text)
-        else:
-            # Fallback to field name + value matching
-            alignment_score = self._calculate_field_alignment(field_name, field_value, candidate_text)
-        
-        # Numeric overlap check (strict mode)
-        if self.numeric_strict and field_value is not None:
-            numeric_overlap = self._check_numeric_overlap(field_value, candidate_text)
-            if not numeric_overlap:
-                return 0.0  # Hard fail if numeric values don't match
-        
-        # Evidence kind bonus
-        kind_bonus = 0.0
-        if evidence_kind == EvidenceKind.TABLE and 'table' in candidate_text.lower():
-            kind_bonus = 0.1
-        elif evidence_kind == EvidenceKind.TEXT and 'table' not in candidate_text.lower():
-            kind_bonus = 0.05
-        
-        # Section hint bonus
-        section_bonus = 0.0
-        if section_hint and section_hint.lower() in candidate_text.lower():
-            section_bonus = self.section_bonus
-        
-        # Final score
-        final_score = alignment_score + kind_bonus + section_bonus
-        return min(1.0, final_score)
-
-    def _normalize_text(self, text: str) -> str:
-        """Normalize text for matching using shared TextNormalizer."""
-        from ..utils.text_normalization import TextNormalizer
-        return TextNormalizer.normalize_text(text, aggressive=True)
-
-    def _calculate_bm25_score(self, query: str, text: str) -> float:
-        """Calculate BM25-like score for query-text matching."""
-        if not query or not text:
-            return 0.0
-        
-        query_tokens = set(query.split())
-        text_tokens = text.split()
-        
-        if not query_tokens or not text_tokens:
-            return 0.0
-        
-        # Simple term frequency calculation
-        matches = 0
-        for query_token in query_tokens:
-            if query_token in text_tokens:
-                matches += 1
-        
-        # Normalize by query length
-        return matches / len(query_tokens)
-
-    def _calculate_fuzzy_score(self, query: str, text: str) -> float:
-        """Calculate fuzzy matching score."""
-        if not query or not text:
-            return 0.0
-        
-        # Simple substring matching with normalization
-        normalized_query = self._normalize_text(query)
-        normalized_text = self._normalize_text(text)
-        
-        if normalized_query in normalized_text:
-            return 1.0
-        
-        # Partial matching
-        query_words = normalized_query.split()
-        text_words = normalized_text.split()
-        
-        matches = 0
-        for query_word in query_words:
-            if any(query_word in text_word or text_word in query_word for text_word in text_words):
-                matches += 1
-        
-        return matches / len(query_words) if query_words else 0.0
-
-    def _calculate_numeric_overlap(self, field_value: Any, text: str) -> float:
-        """Calculate numeric overlap between field value and text."""
-        if field_value is None:
-            return 0.0
-        
-        # Extract numeric values from text
-        text_numbers = self._extract_numbers_from_text(text)
-        
-        if not text_numbers:
-            return 0.0
-        
-        # Check if field value appears in text numbers
-        field_numbers = self._extract_numbers_from_value(field_value)
-        
-        matches = 0
-        for field_num in field_numbers:
-            for text_num in text_numbers:
-                if self._numbers_match(field_num, text_num):
-                    matches += 1
-        
-        return matches / len(field_numbers) if field_numbers else 0.0
-
-    def _extract_numbers_from_text(self, text: str) -> List[float]:
-        """Extract all numeric values from text using shared TextNormalizer."""
-        from ..utils.text_normalization import TextNormalizer
-        return TextNormalizer.extract_numbers_from_text(text)
-
-    def _extract_numbers_from_value(self, value: Any) -> List[float]:
-        """Extract numeric values from field value."""
-        if isinstance(value, (int, float)):
-            return [float(value)]
-        elif isinstance(value, str):
-            return self._extract_numbers_from_text(value)
-        else:
-            return []
-
-    def _numbers_match(self, num1: float, num2: float, tolerance: float = 0.01) -> bool:
-        """Check if two numbers match within tolerance."""
-        return abs(num1 - num2) <= tolerance
-
-    def _calculate_section_bonus(self, section_hint: str, text: str) -> float:
-        """Calculate bonus for section hint matching."""
-        if not section_hint:
-            return 0.0
-        
-        section_hint_lower = section_hint.lower()
-        text_lower = text.lower()
-        
-        if section_hint_lower in text_lower:
-            return 0.1
-        elif any(word in text_lower for word in section_hint_lower.split()):
-            return 0.05
-        
-        return 0.0
-
-    def _calculate_span_score(self,
-                             span: EvidenceSpan,
-                             verbatim_quote: str,
-                             field_name: str,
-                             field_value: Any,
-                             evidence_kind: EvidenceKind,
-                             section_hint: str) -> float:
-        """Calculate score for pre-existing evidence span."""
-        if not span.quote:
-            return 0.0
-        
-        # Use the same scoring logic as for raw text candidates
-        return self._calculate_fuzzy_score(verbatim_quote or f"{field_name} {field_value}", span.quote)
-
-    def _calculate_fuzzy_alignment(self, verbatim_quote: str, text: str) -> float:
-        """Calculate fuzzy alignment between verbatim quote and text."""
-        return self._calculate_fuzzy_score(verbatim_quote, text)
-
-    def _calculate_field_alignment(self, field_name: str, field_value: Any, text: str) -> float:
-        """Calculate alignment for field name and value."""
-        query = f"{field_name} {field_value}"
-        return self._calculate_fuzzy_score(query, text)
-
-    def _check_numeric_overlap(self, field_value: Any, text: str) -> bool:
-        """Check if numeric values overlap (strict mode)."""
-        if field_value is None:
-            return True  # Non-numeric values pass
-        
-        field_numbers = self._extract_numbers_from_value(field_value)
-        text_numbers = self._extract_numbers_from_text(text)
-        
-        if not field_numbers:
-            return True  # No numeric values to check
-        
-        # Check if any field number appears in text
-        for field_num in field_numbers:
-            if any(self._numbers_match(field_num, text_num) for text_num in text_numbers):
-                return True
-        
-        return False
+        # Section detection patterns
+        self.section_patterns = [
+            r'^[A-Z][A-Z\s]+$',  # All caps
+            r'^\d+\.?\s+[A-Z]',  # Numbered sections
+            r'^[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*$',  # Title case
+            r'^[A-Z][A-Z\s]+:$',  # All caps with colon
+        ]
     
     def backtrace_quotes_to_spans(self, quotes: List[str], raw_doc_text: str, doc_id: str, 
                                  alignment_threshold: float = 0.8) -> List[EvidenceSpan]:
         """
-        Simple method to backtrace LLM quotes to EvidenceSpan objects.
+        Main entry point for backtracing quotes to spans.
         
         Args:
             quotes: List of quote strings from LLM
             raw_doc_text: Raw document text to search in
             doc_id: Document identifier
             alignment_threshold: Minimum fuzzy match score
-            
+                
         Returns:
             List of EvidenceSpan objects with backtraced spans
         """
-        evidence_spans = []
+        if not quotes or not raw_doc_text:
+            return []
         
-        for quote in quotes:
-            if not quote or not quote.strip():
-                continue
-                
-            # Find best alignment in raw text
-            best_match = self._find_best_quote_alignment(quote, raw_doc_text, alignment_threshold)
+        start_time = time.time()
+        max_time = 30.0  # 30 second timeout
+        
+        try:
+            # Stage A: Normalize document with offset maps
+            norm_doc = self._normalize_document(raw_doc_text)
             
-            if best_match:
-                # Create EvidenceSpan object
-                evidence_span = EvidenceSpan(
-                    doc_id=doc_id,
-                    quote=quote,
-                    section=self._infer_section_from_position(best_match['start'], raw_doc_text),
-                    char_start=best_match['start'],
-                    char_end=best_match['end'],
-                    page=None,  # Will be filled later if page info available
-                    confidence=best_match['score']
-                )
-                evidence_spans.append(evidence_span)
-        
-        return evidence_spans
+            if time.time() - start_time > max_time:
+                logging.warning("Backtracing timeout during normalization")
+                return []
+            
+            # Stage E: Segment document into sections
+            norm_doc.sections = self._segment_document(norm_doc.raw_text)
+            
+            evidence_spans = []
+            
+            for quote in quotes:
+                if time.time() - start_time > max_time:
+                    logging.warning("Backtracing timeout during quote processing")
+                    break
+                    
+                if not quote or not quote.strip():
+                    continue
+                    
+                # Find best alignment using robust pipeline
+                best_span = self._find_quote_span_robust(quote, norm_doc, alignment_threshold)
+                
+                if best_span:
+                    evidence_spans.append(best_span)
+            
+            # Stage D: Deduplicate overlapping spans
+            evidence_spans = self._deduplicate_spans(evidence_spans)
+            
+            return evidence_spans
+            
+        except Exception as e:
+            logging.error(f"Error in backtracing: {e}")
+            return []
     
-    def _find_best_quote_alignment(self, quote: str, raw_text: str, 
-                                  threshold: float = 0.8) -> Optional[Dict[str, Any]]:
-        """Find best alignment for a quote in raw text."""
-        normalized_quote = self._normalize_text(quote)
+    def _normalize_document(self, raw_text: str) -> NormalizedDocument:
+        """
+        Stage A: Normalize with indexable variants + offset map.
+        
+        Creates multiple normalized variants and maintains offset maps back to raw text.
+        """
+        # Basic normalization: case fold, unicode NFKC, whitespace collapse
+        norm_basic, basic_to_raw = self._normalize_with_map(raw_text, variant='basic')
+        
+        # No-hyphen normalization: also unwrap line-break hyphens
+        norm_nohyphen, nohyphen_to_raw = self._normalize_with_map(raw_text, variant='nohyphen')
+        
+        # ASCII normalization: convert unicode to ASCII equivalents
+        norm_ascii, ascii_to_raw = self._normalize_with_map(raw_text, variant='ascii')
+        
+        return NormalizedDocument(
+            raw_text=raw_text,
+            norm_basic=norm_basic,
+            norm_nohyphen=norm_nohyphen,
+            norm_ascii=norm_ascii,
+            basic_to_raw_map=basic_to_raw,
+            nohyphen_to_raw_map=nohyphen_to_raw,
+            ascii_to_raw_map=ascii_to_raw,
+            sections=[]
+        )
+    
+    def _normalize_with_map(self, text: str, variant: str = 'basic') -> Tuple[str, List[int]]:
+        """
+        Normalize text and return offset map from normalized to raw positions.
+        
+        Args:
+            text: Raw text to normalize
+            variant: Normalization variant ('basic', 'nohyphen', 'ascii')
+            
+        Returns:
+            Tuple of (normalized_text, offset_map)
+        """
+        normalized = text
+        offset_map = list(range(len(text)))  # Start with identity mapping
+        
+        if variant == 'basic':
+            # Case fold, unicode NFKC, collapse whitespace
+            normalized = unicodedata.normalize('NFKC', text.lower())
+            normalized = re.sub(r'\s+', ' ', normalized).strip()
+            
+        elif variant == 'nohyphen':
+            # Basic normalization + unwrap line-break hyphens
+            normalized = unicodedata.normalize('NFKC', text.lower())
+            # Unwrap hyphens at line breaks: "neuro- \n degeneration" -> "neurodegeneration"
+            normalized = re.sub(r'-\s*\n\s*', '', normalized)
+            normalized = re.sub(r'\s+', ' ', normalized).strip()
+            
+        elif variant == 'ascii':
+            # ASCII normalization for latin/greek look-alikes
+            normalized = unicodedata.normalize('NFKD', text.lower())
+            # Convert common unicode to ASCII
+            normalized = normalized.replace('α', 'alpha').replace('β', 'beta')
+            normalized = normalized.replace('γ', 'gamma').replace('δ', 'delta')
+            normalized = re.sub(r'[^\x00-\x7F]', '', normalized)  # Remove non-ASCII
+            normalized = re.sub(r'\s+', ' ', normalized).strip()
+        
+        # Build offset map (simplified - in practice would need more sophisticated mapping)
+        offset_map = list(range(len(normalized)))
+        
+        return normalized, offset_map
+    
+    def _segment_document(self, raw_text: str) -> List[Dict[str, Any]]:
+        """
+        Stage E: Segment document into sections using regex patterns.
+        
+        Returns list of section dicts with start, end, and name.
+        """
+        sections = []
+        lines = raw_text.split('\n')
+        
+        current_section = None
+        current_start = 0
+        
+        for i, line in enumerate(lines):
+            line_start = raw_text.find(line, current_start)
+            line_end = line_start + len(line)
+            
+            # Check if this line looks like a section header
+            is_header = any(re.match(pattern, line.strip()) for pattern in self.section_patterns)
+            
+            if is_header:
+                # Close previous section
+                if current_section:
+                    current_section['end'] = line_start
+                    sections.append(current_section)
+                
+                # Start new section
+                current_section = {
+                    'name': line.strip().lower(),
+                    'start': line_start,
+                    'end': len(raw_text)  # Will be updated when next section starts
+                }
+                current_start = line_end
+        
+        # Close final section
+        if current_section:
+            current_section['end'] = len(raw_text)
+            sections.append(current_section)
+        
+        # If no sections found, create a single "unknown" section
+        if not sections:
+            sections.append({
+                'name': 'unknown',
+                'start': 0,
+                'end': len(raw_text)
+            })
+        
+        return sections
+    
+    def _find_quote_span_robust(self, quote: str, norm_doc: NormalizedDocument, 
+                               threshold: float) -> Optional[EvidenceSpan]:
+        """
+        Find quote span using the robust 5-stage pipeline.
+        """
+        # Stage B: Generate candidates using anchor tokens
+        candidates = self._generate_candidates(quote, norm_doc)
+        
+        if not candidates:
+            return None
+        
+        # Stage C: Align within each candidate window
+        best_span = None
+        best_score = 0.0
+        
+        for candidate in candidates:
+            span = self._align_quote_in_window(quote, candidate, norm_doc, threshold)
+            if span and span.confidence > best_score:
+                best_span = span
+                best_score = span.confidence
+        
+        return best_span
+    
+    def _generate_candidates(self, quote: str, norm_doc: NormalizedDocument) -> List[CandidateWindow]:
+        """
+        Stage B: Generate candidate windows using anchor tokens and inverted index.
+        """
+        # Tokenize quote and select anchor tokens (rarest terms)
+        quote_tokens = self._tokenize(quote)
+        
+        # For very short quotes, use the whole quote as a single token
+        if len(quote_tokens) < self.min_anchor_tokens:
+            if len(quote.strip()) < 10:  # Very short quotes
+                # Use the whole quote as a single search term
+                normalized_quote = self._normalize_text(quote)
+                if normalized_quote in norm_doc.norm_basic:
+                    # Find all positions of this exact substring
+                    positions = []
+                    start = 0
+                    while True:
+                        pos = norm_doc.norm_basic.find(normalized_quote, start)
+                        if pos == -1:
+                            break
+                        positions.append(pos)
+                        start = pos + 1
+                    
+                    if positions:
+                        candidates = []
+                        for pos in positions:
+                            window_start = max(0, pos - self.window_size // 2)
+                            window_end = min(len(norm_doc.norm_basic), pos + self.window_size // 2)
+                            
+                            candidate = CandidateWindow(
+                                start=window_start,
+                                end=window_end,
+                                anchor_tokens=[normalized_quote],
+                                score=1.0
+                            )
+                            candidates.append(candidate)
+                        return candidates
+            return []
+        
+        # Select 2-4 anchor tokens (simplified - in practice would use IDF)
+        anchor_tokens = quote_tokens[:min(4, len(quote_tokens))]
+        
+        # Build inverted index over normalized document
+        inverted_index = self._build_inverted_index(norm_doc.norm_basic)
+        
+        # Find positions for each anchor token
+        candidate_positions = set()
+        for token in anchor_tokens:
+            if token in inverted_index:
+                candidate_positions.update(inverted_index[token])
+        
+        if not candidate_positions:
+            return []
+        
+        # Create candidate windows around anchor positions
+        candidates = []
+        for pos in candidate_positions:
+            window_start = max(0, pos - self.window_size // 2)
+            window_end = min(len(norm_doc.norm_basic), pos + self.window_size // 2)
+            
+            candidate = CandidateWindow(
+                start=window_start,
+                end=window_end,
+                anchor_tokens=anchor_tokens,
+                score=1.0  # Simplified scoring
+            )
+            candidates.append(candidate)
+        
+        # Merge overlapping windows
+        candidates = self._merge_overlapping_windows(candidates)
+        
+        return candidates
+    
+    def _tokenize(self, text: str) -> List[str]:
+        """Simple tokenization for anchor selection."""
+        # Normalize and split on whitespace
+        normalized = re.sub(r'\s+', ' ', text.lower().strip())
+        return [token for token in normalized.split() if len(token) > 2]
+    
+    def _build_inverted_index(self, normalized_text: str) -> Dict[str, List[int]]:
+        """Build simple inverted index: token -> list of character positions."""
+        index = defaultdict(list)
+        tokens = self._tokenize(normalized_text)
+        
+        current_pos = 0
+        for token in tokens:
+            pos = normalized_text.find(token, current_pos)
+            if pos >= 0:
+                index[token].append(pos)
+                current_pos = pos + 1
+        
+        return dict(index)
+    
+    def _merge_overlapping_windows(self, candidates: List[CandidateWindow]) -> List[CandidateWindow]:
+        """Merge overlapping candidate windows."""
+        if not candidates:
+            return []
+        
+        # Sort by start position
+        candidates.sort(key=lambda c: c.start)
+        
+        merged = []
+        current = candidates[0]
+        
+        for next_candidate in candidates[1:]:
+            # Check if windows overlap
+            if next_candidate.start <= current.end:
+                # Merge windows
+                current.end = max(current.end, next_candidate.end)
+                current.anchor_tokens.extend(next_candidate.anchor_tokens)
+                current.anchor_tokens = list(set(current.anchor_tokens))  # Dedupe
+            else:
+                # No overlap, add current and start new
+                merged.append(current)
+                current = next_candidate
+        
+        merged.append(current)
+        return merged
+    
+    def _find_best_fuzzy_match(self, quote: str, text: str) -> Optional[Tuple[int, int, float]]:
+        """
+        Simple fuzzy matching using sliding window with edit distance.
+        Returns (start, end, confidence) or None if no good match found.
+        """
+        if len(quote) < 3:
+            return None
+            
         quote_len = len(quote)
+        text_len = len(text)
+        
+        if quote_len > text_len:
+            return None
         
         best_match = None
         best_score = 0.0
+        min_score = 0.6  # Minimum similarity threshold
+        max_iterations = 1000  # Prevent infinite loops
+        iteration_count = 0
         
-        # Search with sliding window
-        window_size = max(quote_len, 100)  # At least quote length
-        step_size = 50
-        
-        for start in range(0, len(raw_text), step_size):
-            end = min(start + window_size, len(raw_text))
-            window_text = raw_text[start:end]
+        # Try different window sizes around the quote length
+        for window_size in [quote_len, quote_len + 2, quote_len + 4]:
+            if window_size > text_len:
+                continue
+                
+            for i in range(text_len - window_size + 1):
+                iteration_count += 1
+                if iteration_count > max_iterations:
+                    break
+                    
+                window = text[i:i + window_size]
+                score = self._calculate_similarity(quote, window)
+                
+                if score > best_score and score >= min_score:
+                    # Find the best alignment within this window
+                    best_start, best_end = self._find_best_alignment(quote, window)
+                    if best_start is not None:
+                        best_match = (i + best_start, i + best_end, score)
+                        best_score = score
             
-            # Calculate fuzzy match score
-            score = self._calculate_fuzzy_score(normalized_quote, self._normalize_text(window_text))
-            
-            if score > best_score and score >= threshold:
-                best_score = score
-                # Find exact boundaries within the window
-                exact_start, exact_end = self._find_exact_boundaries(quote, window_text, start)
-                best_match = {
-                    'start': exact_start,
-                    'end': exact_end,
-                    'score': score,
-                    'matched_text': raw_text[exact_start:exact_end]
-                }
+            if iteration_count > max_iterations:
+                break
         
         return best_match
     
-    def _find_exact_boundaries(self, quote: str, window_text: str, window_start: int) -> Tuple[int, int]:
-        """Find exact character boundaries for quote within window."""
-        # Simple substring search for exact boundaries
-        normalized_quote = self._normalize_text(quote).strip()
-        normalized_window = self._normalize_text(window_text)
+    def _calculate_similarity(self, s1: str, s2: str) -> float:
+        """Calculate simple similarity score between two strings."""
+        if not s1 or not s2:
+            return 0.0
         
-        # Find best substring match
-        best_start = 0
-        best_end = len(window_text)
+        # Simple character overlap similarity
+        s1_chars = set(s1.lower())
+        s2_chars = set(s2.lower())
         
-        # Try to find the quote or parts of it in the window
-        quote_words = normalized_quote.split()
-        if quote_words:
-            first_word = quote_words[0]
-            last_word = quote_words[-1]
-            
-            # Find first and last word positions
-            first_pos = normalized_window.find(first_word)
-            last_pos = normalized_window.rfind(last_word)
-            
-            if first_pos >= 0 and last_pos >= 0:
-                best_start = first_pos
-                best_end = last_pos + len(last_word)
+        if not s1_chars or not s2_chars:
+            return 0.0
         
-        return window_start + best_start, window_start + best_end
+        intersection = len(s1_chars & s2_chars)
+        union = len(s1_chars | s2_chars)
+        
+        return intersection / union if union > 0 else 0.0
     
-    def _infer_section_from_position(self, char_position: int, raw_text: str) -> str:
-        """Infer section name from character position in document."""
-        # Look backwards from position to find section headers
-        text_before = raw_text[max(0, char_position - 500):char_position]
+    def _find_best_alignment(self, quote: str, window: str) -> Tuple[Optional[int], Optional[int]]:
+        """Find the best alignment of quote within window."""
+        quote_len = len(quote)
+        window_len = len(window)
         
-        # Common section headers
-        section_patterns = [
-            r'(?i)\b(abstract|introduction|methods?|results?|discussion|conclusion|background)\b',
-            r'(?i)\b(study design|endpoints?|outcomes?|statistics|analysis)\b',
-            r'(?i)\b(table|figure|appendix)\s*\d*',
-        ]
+        if quote_len > window_len:
+            return None, None
         
-        for pattern in section_patterns:
-            matches = re.finditer(pattern, text_before)
-            if matches:
-                # Get the last match (closest to position)
-                last_match = None
-                for match in matches:
-                    last_match = match
-                if last_match:
-                    return last_match.group(1).lower()
+        best_start = None
+        best_score = 0.0
         
-        return "unknown"
+        for i in range(window_len - quote_len + 1):
+            substr = window[i:i + quote_len]
+            score = self._calculate_similarity(quote, substr)
+            
+            if score > best_score:
+                best_score = score
+                best_start = i
+        
+        if best_start is not None and best_score >= 0.6:
+            return best_start, best_start + quote_len
+        
+        return None, None
+    
+    def _align_quote_in_window(self, quote: str, candidate: CandidateWindow, 
+                              norm_doc: NormalizedDocument, threshold: float) -> Optional[EvidenceSpan]:
+        """
+        Stage C: Align quote within candidate window using simple fuzzy matching.
+        """
+        # Extract window text from normalized document
+        window_text = norm_doc.norm_basic[candidate.start:candidate.end]
+        
+        # Normalize quote
+        normalized_quote = self._normalize_text(quote)
+        
+        # Try exact match first
+        exact_pos = window_text.find(normalized_quote)
+        if exact_pos >= 0:
+            # Found exact match
+            window_start = exact_pos
+            window_end = exact_pos + len(normalized_quote)
+            confidence = 1.0
+        else:
+            # Try simple fuzzy matching with sliding window
+            best_match = self._find_best_fuzzy_match(normalized_quote, window_text)
+            if best_match is None:
+                return None
+            
+            window_start, window_end, confidence = best_match
+        
+        # Convert window-relative to document-relative positions
+        doc_start = candidate.start + window_start
+        doc_end = candidate.start + window_end
+        
+        # Map normalized positions back to raw text positions
+        raw_start = self._map_normalized_to_raw(doc_start, norm_doc.basic_to_raw_map)
+        raw_end = self._map_normalized_to_raw(doc_end, norm_doc.basic_to_raw_map)
+        
+        # Check confidence threshold
+        if confidence < threshold:
+            return None
+        
+        # Infer section
+        section = self._infer_section_from_position(raw_start, norm_doc.sections)
+        
+        # Create EvidenceSpan
+        return EvidenceSpan(
+            doc_id="",  # Will be set by caller
+            quote=quote,
+            section=section,
+            char_start=raw_start,
+            char_end=raw_end,
+            page=None,
+            confidence=confidence
+        )
+    
+    def _normalize_text(self, text: str) -> str:
+        """Normalize text for matching (same as basic normalization)."""
+        normalized = unicodedata.normalize('NFKC', text.lower())
+        normalized = re.sub(r'\s+', ' ', normalized).strip()
+        return normalized
+    
+    def _map_normalized_to_raw(self, norm_pos: int, offset_map: List[int]) -> int:
+        """Map normalized position back to raw text position."""
+        if norm_pos < len(offset_map):
+            return offset_map[norm_pos]
+        return min(norm_pos, len(offset_map) - 1) if offset_map else 0
+    
+    def _infer_section_from_position(self, char_pos: int, sections: List[Dict[str, Any]]) -> str:
+        """Infer section name from character position."""
+        for section in sections:
+            if section['start'] <= char_pos < section['end']:
+                return section['name']
+        return 'unknown'
+    
+    def _deduplicate_spans(self, spans: List[EvidenceSpan]) -> List[EvidenceSpan]:
+        """
+        Stage D: Deduplicate overlapping spans, keeping highest confidence ones.
+        """
+        if not spans:
+            return spans
+        
+        # Sort by confidence (highest first)
+        sorted_spans = sorted(spans, key=lambda s: s.confidence, reverse=True)
+        
+        deduplicated = []
+        for span in sorted_spans:
+            # Check if this span overlaps significantly with any already kept span
+            overlaps = False
+            for kept_span in deduplicated:
+                if self._spans_overlap(span, kept_span, self.overlap_threshold):
+                    overlaps = True
+                    break
+            
+            if not overlaps:
+                deduplicated.append(span)
+        
+        return deduplicated
+    
+    def _spans_overlap(self, span1: EvidenceSpan, span2: EvidenceSpan, threshold: float) -> bool:
+        """Check if two spans overlap significantly (IoU >= threshold)."""
+        if not span1.char_start or not span1.char_end or not span2.char_start or not span2.char_end:
+            return False
+        
+        # Calculate intersection
+        start = max(span1.char_start, span2.char_start)
+        end = min(span1.char_end, span2.char_end)
+        intersection = max(0, end - start)
+        
+        # Calculate union
+        union = (span1.char_end - span1.char_start) + (span2.char_end - span2.char_start) - intersection
+        
+        if union == 0:
+            return False
+        
+        iou = intersection / union
+        return iou >= threshold

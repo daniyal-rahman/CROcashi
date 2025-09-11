@@ -23,6 +23,11 @@ from .sec_pipeline import SecPipeline
 from ..ingest.pubmed.pipeline import PubMedPipeline
 from ..ingest.pubmed.db_service import PubMedDBService
 from ..ingest.pubmed.queue_service import TaskQueueService
+from ..ingest.pubmed.policy_engine import RetrievalPolicy, PolicyConfig
+from ..ingest.pubmed.multi_tier_query_builder import MultiTierQueryBuilder
+from ..ingest.pubmed.advanced_scorer import AdvancedDocumentScorer, ScoringConfig
+from ..ingest.pubmed.guardrails import GuardrailsSystem, GuardrailConfig
+from ..ingest.pubmed.ctgov_integration import CTgovIntegration, CTgovConfig
 from ..db.session import session_scope
 from ..db.models import Trial, Company
 from datetime import datetime, timezone
@@ -139,31 +144,64 @@ class UnifiedPipelineOrchestrator:
         self.sec_pipeline = SecPipeline(config.get('sec', {}))
         self.pubmed_pipeline = PubMedPipeline(config.get('pubmed', {}))
         
+        # Initialize new retrieval system components
+        self._initialize_retrieval_components(config.get('pubmed', {}))
+        
         # Initialize task queue service for trial prioritization
         self.task_queue_service = TaskQueueService(
             worker_id=config.get('worker_id', 'orchestrator')
         )
+    
+    def _initialize_retrieval_components(self, pubmed_config: Dict[str, Any]):
+        """Initialize the new retrieval system components."""
+        try:
+            # Initialize policy engine
+            policy_config = PolicyConfig()
+            self.retrieval_policy = RetrievalPolicy(policy_config)
+            
+            # Initialize multi-tier query builder
+            self.multi_tier_query_builder = MultiTierQueryBuilder()
+            
+            # Initialize advanced scorer
+            scoring_config = ScoringConfig()
+            self.advanced_scorer = AdvancedDocumentScorer(scoring_config)
+            
+            # Initialize guardrails system
+            guardrail_config = GuardrailConfig()
+            self.guardrails_system = GuardrailsSystem(guardrail_config)
+            
+            # Initialize CT.gov integration
+            ctgov_config = CTgovConfig()
+            self.ctgov_integration = CTgovIntegration(ctgov_config)
+            
+            self.logger.info("Successfully initialized new retrieval system components")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize new retrieval components: {e}")
+            # Set components to None for graceful fallback
+            self.retrieval_policy = None
+            self.multi_tier_query_builder = None
+            self.advanced_scorer = None
+            self.guardrails_system = None
+            self.ctgov_integration = None
         
         # Initialize database service for accessing trial literature state
         self.pubmed_db_service = PubMedDBService()
+    
+    def inject_retrieval_components_into_pipeline(self):
+        """Inject the new retrieval components into the PubMed pipeline."""
+        # The PubMed pipeline initializes its own retrieval components
+        # so we don't need to inject them here - they're already set up
+        self.logger.info("Retrieval components are already initialized in PubMed pipeline")
         
-        # Orchestration state
-        self.state_file = Path(config.get('state_file', '.state/unified_orchestrator.json'))
-        self.state_file.parent.mkdir(parents=True, exist_ok=True)
-        self.orchestration_state = self._load_orchestration_state()
-        
-        # Execution tracking
-        self.execution_history: List[OrchestrationResult] = []
-        self.current_execution: Optional[OrchestrationResult] = None
-        
-        # Configuration
-        self.execution_order = config.get('execution_order', ['ctgov', 'pubmed', 'sec'])
-        self.parallel_execution = config.get('parallel_execution', False)
-        self.dependency_checking = config.get('dependency_checking', True)
-        
-        # Error handling
-        self.max_retries = config.get('max_retries', 3)
-        self.retry_delay_seconds = config.get('retry_delay_seconds', 300)
+        # Also inject into reranker if available
+        if hasattr(self.pubmed_pipeline, 'reranker') and self.pubmed_pipeline.reranker:
+            self.pubmed_pipeline.reranker.inject_retrieval_components(
+                self.retrieval_policy,
+                self.advanced_scorer,
+                self.guardrails_system
+            )
+            self.logger.info("Injected new retrieval components into reranker")
     
     def inject_ctgov_trial_for_test(
         self,
@@ -434,6 +472,9 @@ class UnifiedPipelineOrchestrator:
         self.logger.info("Executing PubMed pipeline")
         
         try:
+            # Inject new retrieval components into pipeline
+            self.inject_retrieval_components_into_pipeline()
+            
             # Execute PubMed pipeline with proper trial configuration
             # For now, use a simple configuration - this could be made configurable
             trial_configs = [
@@ -450,7 +491,7 @@ class UnifiedPipelineOrchestrator:
                 'asset_names': trial_configs[0]['asset_names'],
                 'indications': trial_configs[0]['indications'],
                 'max_results': trial_configs[0]['max_results'],
-                'enable_stages': ['U0', 'U1'],  # Skip OA for daily ingestion
+                'enable_stages': ['U1'],  # Skip OA for daily ingestion
                 'retry_config': {
                     'max_retries': 3,
                     'retry_delay': 1.0
@@ -1045,7 +1086,7 @@ class UnifiedPipelineOrchestrator:
             self.logger.warning(f"Failed to calculate max expected utility: {e}")
             return 0.1  # Default low utility
     
-    def run_literature_second_pass(self) -> Dict[str, Any]:
+    async def run_literature_second_pass(self) -> Dict[str, Any]:
         """
         Run the second pass of literature processing: pop trial from queue, 
         fetch full text, and process study cards.
@@ -1072,7 +1113,38 @@ class UnifiedPipelineOrchestrator:
             nct_id = payload.get('nct_id')
             self.logger.info(f"Processing OA task {task_id} for trial {trial_id}")
             
-            # Run OA stage for this trial to fetch full text
+            # First run U1 stage to search PubMed and get abstracts
+            try:
+                self.logger.info(f"Running U1 stage for trial {trial_id}")
+                
+                # Get trial context for U1 stage
+                trial_context = {
+                    'trial_id': trial_id,
+                    'nct_id': nct_id,
+                    'asset_names': [payload.get('asset_name', 'simufilam')],
+                    'indications': [payload.get('indication', 'Alzheimer Disease')],
+                    'max_results': 100
+                }
+                
+                # Run U1 stage to search PubMed and get abstracts
+                u1_results = await self.pubmed_pipeline.execute_pipeline(
+                    asset_names=trial_context['asset_names'],
+                    indications=trial_context['indications'],
+                    max_results=trial_context['max_results'],
+                    enable_stages=['U1']  # Run U1 stage (PubMed search + abstract processing)
+                )
+                
+                if u1_results and u1_results[0].success:
+                    self.logger.info(f"U1 stage completed for trial {trial_id}: {u1_results[0].documents_processed} abstracts processed")
+                else:
+                    self.logger.warning(f"U1 stage failed for trial {trial_id}")
+                    u1_results = None
+                
+            except Exception as e:
+                self.logger.error(f"Failed to run U1 stage for trial {trial_id}: {e}")
+                u1_results = None
+            
+            # Then run OA stage for this trial to fetch full text
             try:
                 import asyncio
                 
@@ -1081,14 +1153,10 @@ class UnifiedPipelineOrchestrator:
                 
                 # Execute OA stage
                 try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        self.logger.warning("Cannot run OA stage synchronously from async context")
-                        oa_result = None
-                    else:
-                        oa_result = loop.run_until_complete(run_oa_async())
-                except RuntimeError:
-                    oa_result = asyncio.run(run_oa_async())
+                    oa_result = await run_oa_async()
+                except Exception as e:
+                    self.logger.warning(f"OA stage failed for trial {trial_id}: {e}")
+                    oa_result = None
                 
                 if oa_result and oa_result.success:
                     self.logger.info(f"OA stage completed for trial {trial_id}: {oa_result.documents_processed} documents processed")
@@ -1101,7 +1169,7 @@ class UnifiedPipelineOrchestrator:
             
             # Execute study card pipeline
             try:
-                from ..study_card_pipeline import StudyCardPipeline
+                from ncfd.pipeline.study_card_pipeline import StudyCardPipeline
                 
                 # Create trial context for study card generation
                 trial_context = {
@@ -1120,9 +1188,9 @@ class UnifiedPipelineOrchestrator:
                 study_card_config = self.config.get('study_card', {})
                 study_card_pipeline = StudyCardPipeline(study_card_config)
                 
-                study_card_result = study_card_pipeline.execute(trial_context)
+                study_card_result = await study_card_pipeline.execute(str(trial_id), trial_context)
                 
-                if study_card_result and study_card_result.get('success', False):
+                if study_card_result and study_card_result.success:
                     self.logger.info(f"Study card generated successfully for trial {trial_id}")
                     
                     # Complete OA task and enqueue STUDY CARD task

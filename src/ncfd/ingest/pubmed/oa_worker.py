@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 
 from .client import PubMedClient
-from .db_service import PubMedDBService
+from .db_service import PubMedDBService, get_db_service
 from .queue_service import TaskQueueService
 from ...db.session import session_scope
 from ...db.models import Document, DocumentText
@@ -58,7 +58,7 @@ class OAWorker:
         self.config = config or {}
         
         # Initialize database service
-        self.db_service = PubMedDBService()
+        self.db_service = get_db_service()
         
         # OA settings
         self.batch_size = self.config.get('batch_size', 5)
@@ -247,8 +247,18 @@ class OAWorker:
             if not pmcid:
                 return {'success': False, 'stored': False}
             
-            # Fetch full text from PMC using the correct method
-            full_text = await self.client.get_pmc_full_text(pmcid)
+            # Fetch full text from PMC using JATS XML for comprehensive content
+            full_text = await self.client.get_pmc_full_text_jats(
+                pmcid, 
+                include_refs=True, 
+                include_captions=True
+            )
+            
+            # Fallback to plain text if JATS fails
+            if not full_text:
+                self.logger.warning(f"JATS fetch failed for {pmcid}, trying plain text fallback")
+                full_text = await self.client.get_pmc_full_text(pmcid)
+                
             if not full_text:
                 return {'success': False, 'stored': False}
             
@@ -439,15 +449,20 @@ class OAWorker:
                 ).first()
                 
                 if doc_text:
-                    doc_text.fulltext_text = full_text
-                    doc_text.char_count_fulltext = len(full_text)
+                    # Normalize text for consistent character counting
+                    normalized_text = self._normalize_text(full_text)
+                    doc_text.fulltext_text = normalized_text
+                    doc_text.char_count_fulltext = len(normalized_text)
                     doc_text.fulltext_ttl_date = None  # PMC/Unpaywall don't expire
+                    self.logger.info(f"Stored fulltext for PMID {pmid}: {len(normalized_text)} characters (normalized from {len(full_text)})")
                 else:
                     # Create new document_text record
+                    # Normalize text for consistent character counting
+                    normalized_text = self._normalize_text(full_text)
                     doc_text = DocumentText(
                         doc_id=document.doc_id,
-                        fulltext_text=full_text,
-                        char_count_fulltext=len(full_text),
+                        fulltext_text=normalized_text,
+                        char_count_fulltext=len(normalized_text),
                         fulltext_ttl_date=None,
                         abstract_text=None,
                         char_count_abstract=None
@@ -586,3 +601,19 @@ class OAWorker:
                 await asyncio.sleep(5)
         
         self.logger.info(f"OA worker stopped after processing {tasks_processed} tasks")
+
+    def _normalize_text(self, text: str) -> str:
+        """
+        Normalize text by unescaping HTML entities and collapsing whitespace.
+        
+        Args:
+            text: Raw text to normalize
+            
+        Returns:
+            Normalized text
+        """
+        import html
+        # Unescape HTML entities
+        text = html.unescape(text)
+        # Collapse whitespace
+        return ' '.join(text.split())

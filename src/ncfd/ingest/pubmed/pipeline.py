@@ -2,6 +2,7 @@
 PubMed literature processing pipeline.
 
 Implements the three-stage pipeline (U0, U1, OA) for processing clinical trial literature.
+Enhanced with entity pack support for canonical data model.
 """
 
 import asyncio
@@ -12,9 +13,15 @@ from dataclasses import dataclass
 import re
 
 from .client import PubMedClient, PubMedBatchProcessor
-from .query_builder import PubMedQueryBuilder
+from .multi_tier_query_builder import MultiTierQueryBuilder
+from .policy_engine import RetrievalPolicy, PolicyConfig
+from .advanced_scorer import AdvancedDocumentScorer, ScoringConfig
+from .guardrails import GuardrailsSystem, GuardrailConfig
+from .ctgov_integration import CTgovIntegration, CTgovConfig
 from .mapper import PubMedMapper
-from .db_service import PubMedDBService
+from .db_service import PubMedDBService, get_db_service
+from ...entities.loader import EntityPackLoader
+from ...entities.rule_builder import RuleBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -79,21 +86,64 @@ class PubMedPipeline:
             tool=client_config.get('tool', 'NCFD')
         )
         self.mapper = PubMedMapper(self.config.get('mapper_config', {}))
-        self.query_builder = PubMedQueryBuilder(self.config.get('query_config', {}))
         self.batch_processor = PubMedBatchProcessor(self.client, self.config.get('max_concurrent_requests', 5))
-        self.db_service = PubMedDBService()
+        self.db_service = get_db_service()
+        
+        # Initialize new retrieval system components
+        self.multi_tier_query_builder = None
+        self.retrieval_policy = None
+        self.advanced_scorer = None
+        self.guardrails_system = None
+        self.ctgov_integration = None
+        
+        # Initialize new components
+        self._initialize_retrieval_components()
+        
         
         # Pipeline configuration
         self.asset_names = self.config.get('asset_names', [])
         self.indications = self.config.get('indications', [])
         self.max_results = self.config.get('max_results', 100)
-        self.enable_stages = self.config.get('enable_stages', ['U0', 'U1', 'OA'])
+        self.enable_stages = self.config.get('enable_stages', ['U1', 'OA'])
         
         # Pipeline state
         self.stage_results: List[PipelineResult] = []
         self.current_stage: Optional[str] = None
         
         logger.info(f"PubMed Pipeline initialized with {len(self.asset_names)} assets, {len(self.indications)} indications")
+    
+    def _initialize_retrieval_components(self):
+        """Initialize new retrieval system components."""
+        try:
+            # Initialize policy engine
+            policy_config = PolicyConfig()
+            self.retrieval_policy = RetrievalPolicy(policy_config)
+            
+            # Initialize multi-tier query builder
+            self.multi_tier_query_builder = MultiTierQueryBuilder(self.config)
+            
+            # Initialize advanced scorer
+            scoring_config = ScoringConfig()
+            self.advanced_scorer = AdvancedDocumentScorer(scoring_config)
+            
+            # Initialize guardrails system
+            guardrail_config = GuardrailConfig()
+            self.guardrails_system = GuardrailsSystem(guardrail_config)
+            
+            # Initialize CT.gov integration
+            ctgov_config = CTgovConfig()
+            self.ctgov_integration = CTgovIntegration(ctgov_config)
+            
+            logger.info("Initialized new retrieval system components in PubMed pipeline")
+            
+        except Exception as e:
+            logger.error(f"Error initializing retrieval components: {e}")
+            # Set to None to disable new features
+            self.retrieval_policy = None
+            self.multi_tier_query_builder = None
+            self.advanced_scorer = None
+            self.guardrails_system = None
+            self.ctgov_integration = None
     
     def _validate_config(self) -> None:
         """
@@ -139,8 +189,8 @@ class PubMedPipeline:
             warnings.append("max_results > 10000 may cause performance issues")
         
         # Validate enable_stages
-        enable_stages = self.config.get('enable_stages', ['U0', 'U1', 'OA'])
-        valid_stages = ['U0', 'U1', 'OA']
+        enable_stages = self.config.get('enable_stages', ['U1', 'OA'])
+        valid_stages = ['U1', 'OA']
         if not isinstance(enable_stages, list):
             errors.append("enable_stages must be a list")
         else:
@@ -232,54 +282,68 @@ class PubMedPipeline:
     
     async def execute_pipeline(
         self,
-        asset_names: List[str],
-        indications: List[str],
+        asset_names: Optional[List[str]] = None,
+        indications: Optional[List[str]] = None,
         trial_phases: Optional[List[str]] = None,
         date_range: Optional[Tuple[str, str]] = None,
         max_results: int = 1000,
-        enable_stages: Optional[List[str]] = None
+        enable_stages: Optional[List[str]] = None,
+        entity_id: Optional[str] = None
     ) -> List[PipelineResult]:
         """
         Execute the complete PubMed literature processing pipeline.
         
         Args:
-            asset_names: List of drug/compound names
-            indications: List of disease/indication terms
+            asset_names: List of drug/compound names (legacy mode)
+            indications: List of disease/indication terms (legacy mode)
             trial_phases: List of trial phases to include
             date_range: Tuple of (start_date, end_date) in YYYY/MM/DD format
             max_results: Maximum number of results to process
-            enable_stages: List of stages to enable (U0, U1, OA)
+            enable_stages: List of stages to enable (U1, OA)
+            entity_id: Entity ID for enhanced mode (entity pack)
             
         Returns:
             List of pipeline results for each stage
         """
         if enable_stages is None:
-            enable_stages = ['U0', 'U1', 'OA']
+            enable_stages = ['U1', 'OA']
         
+        # Load entity pack if entity_id is provided
+        entity_pack = None
+        if entity_id:
+            try:
+                entity_loader = EntityPackLoader()
+                entity_pack = entity_loader.load_pack(entity_id)
+                logger.info(f"Loaded entity pack: {entity_pack.entity_id}")
+                # Use entity pack terms if not provided
+                if asset_names is None:
+                    asset_names = entity_pack.get_all_asset_terms()
+                if indications is None:
+                    indications = entity_pack.get_all_indication_terms()
+            except Exception as e:
+                logger.warning(f"Failed to load entity pack {entity_id}: {e}")
+                entity_pack = None
+        
+        # Fallback to legacy pipeline
+        if asset_names is None:
+            asset_names = self.asset_names
+        if indications is None:
+            indications = self.indications
+            
         logger.info(f"Starting PubMed pipeline for {len(asset_names)} assets, {len(indications)} indications")
         
-        # Stage U1+: Unified discovery and abstract processing
+        # Literature Discovery: Unified PubMed search and abstract processing
         if 'U1' in enable_stages:
-            u1_result = await self._execute_stage_u1_plus(
-                asset_names, indications, trial_phases, date_range, max_results
+            discovery_result = await self._execute_literature_discovery(
+                asset_names, indications, trial_phases, date_range, max_results, entity_pack
             )
-            self.stage_results.append(u1_result)
+            self.stage_results.append(discovery_result)
             
-            if not u1_result.success:
-                logger.error(f"Stage U1+ failed: {u1_result.error_message}")
+            if not discovery_result.success:
+                logger.error(f"Literature discovery failed: {discovery_result.error_message}")
                 return self.stage_results
         
-        # Legacy U0 stage (deprecated - use U1+ instead)
-        if 'U0' in enable_stages:
-            logger.warning("U0 stage is deprecated. Use U1+ stage instead for unified discovery and processing.")
-            u0_result = await self._execute_stage_u0(
-                asset_names, indications, trial_phases, date_range, max_results
-            )
-            self.stage_results.append(u0_result)
-            
-            if not u0_result.success:
-                logger.error(f"Stage U0 failed: {u0_result.error_message}")
-                return self.stage_results
+        # U0 stage has been removed - use U1+ stage for unified discovery and processing
         
         # Stage OA: Full text retrieval and analysis
         if 'OA' in enable_stages and self.stage_results[-1].success:
@@ -289,45 +353,48 @@ class PubMedPipeline:
         logger.info("PubMed pipeline completed")
         return self.stage_results
     
-    async def _execute_stage_u1_plus(
+    
+    async def _execute_literature_discovery(
         self,
         asset_names: List[str],
         indications: List[str],
         trial_phases: Optional[List[str]] = None,
         date_range: Optional[Tuple[str, str]] = None,
-        max_results: int = 1000
+        max_results: int = 1000,
+        entity_pack: Optional[Any] = None
     ) -> PipelineResult:
         """
-        Execute Stage U1+: Unified discovery and abstract processing.
+        Execute Literature Discovery: Unified PubMed search and abstract processing.
         
-        This stage performs both document discovery (U0 functionality) and
-        abstract processing (U1 functionality) in a single unified stage.
+        This stage performs both document discovery (PubMed search) and
+        abstract processing (entity extraction, R/S scoring) in a single unified stage.
         """
         start_time = datetime.now()
-        self.current_stage = 'U1+'
+        self.current_stage = 'LITERATURE_DISCOVERY'
         
         try:
-            logger.info("Starting Stage U1+: Unified discovery and abstract processing")
+            logger.info("Starting Literature Discovery: PubMed search and abstract processing")
             
-            # Import the U1+ stage processor
+            # Import the literature discovery processor
             from .stage_u1 import StageU1Processor, StageU1Result
             from ...extract.abstract_features import AbstractFeatureExtractor
-            from ...score.simple_rs_scorer import SimpleRSScorer
             
-            # Initialize U1+ processor with proper components
+            # Initialize literature discovery processor with new retrieval system
             feature_extractor = AbstractFeatureExtractor()
-            rs_scorer = SimpleRSScorer()
             
             u1_processor = StageU1Processor(
                 client=self.client,
                 mapper=self.mapper,
                 feature_extractor=feature_extractor,
-                rs_scorer=rs_scorer,
-                query_builder=self.query_builder,
+                multi_tier_query_builder=self.multi_tier_query_builder,
+                retrieval_policy=self.retrieval_policy,
+                advanced_scorer=self.advanced_scorer,
+                guardrails_system=self.guardrails_system,
+                ctgov_integration=self.ctgov_integration,
                 config=self.config
             )
             
-            # Execute U1+ stage in discovery+process mode
+            # Execute literature discovery in discovery+process mode
             u1_result = await u1_processor.execute_stage_u1(
                 trial_id=1,  # Use a default integer trial ID for testing
                 trial_asset=asset_names[0] if asset_names else 'Unknown',
@@ -339,22 +406,23 @@ class PubMedPipeline:
                 trial_phase=trial_phases[0] if trial_phases else None,
                 trial_design=None,
                 catalyst_date=None,
-                max_results=max_results
+                max_results=max_results,
+                entity_pack=entity_pack
             )
             
             if not u1_result.success:
-                raise Exception(f"Stage U1+ processor failed: {u1_result.error_message}")
+                raise Exception(f"Literature discovery processor failed: {u1_result.error_message}")
             
-            # Extract processed documents from U1+ result
+            # Extract processed documents from literature discovery result
             processed_docs = u1_result.processed_documents or []
             
             execution_time = (datetime.now() - start_time).total_seconds()
             
-            logger.info(f"Stage U1+ completed: {u1_result.documents_discovered} discovered, "
+            logger.info(f"Literature discovery completed: {u1_result.documents_discovered} discovered, "
                        f"{u1_result.documents_processed} processed, {u1_result.documents_selected} selected")
             
             return PipelineResult(
-                stage='U1+',
+                stage='LITERATURE_DISCOVERY',
                 success=True,
                 documents_processed=u1_result.documents_processed,
                 documents_failed=u1_result.documents_dropped,
@@ -381,11 +449,11 @@ class PubMedPipeline:
             
         except Exception as e:
             execution_time = (datetime.now() - start_time).total_seconds()
-            error_msg = f"Stage U1+ failed: {str(e)}"
+            error_msg = f"Literature discovery failed: {str(e)}"
             logger.error(error_msg, exc_info=True)
             
             return PipelineResult(
-                stage='U1+',
+                stage='LITERATURE_DISCOVERY',
                 success=False,
                 documents_processed=0,
                 documents_failed=0,
@@ -393,99 +461,6 @@ class PubMedPipeline:
                 error_message=error_msg
             )
     
-    async def _execute_stage_u0(
-        self,
-        asset_names: List[str],
-        indications: List[str],
-        trial_phases: Optional[List[str]] = None,
-        date_range: Optional[Tuple[str, str]] = None,
-        max_results: int = 1000
-    ) -> PipelineResult:
-        """
-        Execute Stage U0: Metadata discovery and initial filtering.
-        
-        This stage performs the initial PubMed search to discover relevant
-        documents and extract basic metadata.
-        """
-        start_time = datetime.now()
-        self.current_stage = 'U0'
-        
-        # Retry configuration
-        max_retries = self.config.get('max_retries', 3)
-        retry_delay = self.config.get('retry_delay', 1.0)
-        
-        for attempt in range(max_retries):
-            try:
-                logger.info(f"Starting Stage U0: Metadata discovery (attempt {attempt + 1}/{max_retries})")
-                
-                # Build search query
-                query = self.query_builder.build_trial_query(
-                    asset_names=self.asset_names,
-                    indications=self.indications
-                )
-                
-                # Execute search with retry logic
-                pmids = await self._execute_search_with_retry(query, max_retries=2)
-                
-                if not pmids:
-                    logger.warning("No PMIDs found in search")
-                    return PipelineResult(
-                        stage='U0',
-                        success=True,
-                        documents_processed=0,
-                        documents_failed=0,
-                        metadata={'search_query': query, 'pmids_found': 0}
-                    )
-                
-                # Map PMIDs to documents
-                mapping_stats = await self._map_pmids_with_retry(pmids, max_retries=2)
-                valid_docs = mapping_stats.get('valid_documents', [])
-                
-                # Persist document metadata to database
-                if valid_docs:
-                    successful, failed = self.db_service.store_documents_metadata(valid_docs)
-                    logger.info(f"Persisted {successful} documents to database, {failed} failed")
-                    mapping_stats['documents_persisted'] = successful
-                    mapping_stats['persistence_failed'] = failed
-                
-                execution_time = (datetime.now() - start_time).total_seconds()
-                
-                logger.info(f"Stage U0 completed: {len(pmids)} PMIDs found, {len(valid_docs)} valid documents")
-                
-                return PipelineResult(
-                    stage='U0',
-                    success=True,
-                    documents_processed=len(valid_docs),
-                    documents_failed=len(pmids) - len(valid_docs),
-                    execution_time=execution_time,
-                    metadata={
-                        'search_query': query,
-                        'pmids_found': len(pmids),
-                        'mapping_stats': mapping_stats,
-                        'valid_documents': valid_docs
-                    }
-                )
-                
-            except Exception as e:
-                execution_time = (datetime.now() - start_time).total_seconds()
-                error_msg = f"Stage U0 failed (attempt {attempt + 1}/{max_retries}): {str(e)}"
-                logger.error(error_msg, exc_info=True)
-                
-                # If this is the last attempt, return error
-                if attempt == max_retries - 1:
-                    return PipelineResult(
-                        stage='U0',
-                        success=False,
-                        documents_processed=0,
-                        documents_failed=0,
-                        error_message=error_msg,
-                        execution_time=execution_time
-                    )
-                
-                # Otherwise, wait and retry
-                logger.info(f"Retrying Stage U0 in {retry_delay} seconds...")
-                await asyncio.sleep(retry_delay)
-                retry_delay *= 2  # Exponential backoff
     
     async def _execute_search_with_retry(self, query: str, max_retries: int = 3) -> List[str]:
         """
@@ -550,102 +525,6 @@ class PubMedPipeline:
                     raise
                 await asyncio.sleep(1.0)  # Simple retry delay
     
-    async def _execute_stage_u1(self) -> PipelineResult:
-        """
-        Execute Stage U1: Abstract evaluation and scoring.
-        
-        This stage processes the abstracts from Stage U0 to extract entities,
-        perform initial scoring, and identify candidates for full text retrieval.
-        """
-        start_time = datetime.now()
-        self.current_stage = 'U1'
-        
-        try:
-            logger.info("Starting Stage U1: Abstract evaluation")
-            
-            # Get documents from previous stage
-            u0_result = next((r for r in self.stage_results if r.stage == 'U0'), None)
-            if not u0_result or not u0_result.success:
-                raise Exception("Stage U0 must complete successfully before U1")
-            
-            documents = u0_result.metadata.get('valid_documents', [])
-            if not documents:
-                logger.warning("No documents available for Stage U1")
-                return PipelineResult(
-                    stage='U1',
-                    success=True,
-                    documents_processed=0,
-                    documents_failed=0,
-                    metadata={'documents_processed': 0}
-                )
-            
-            # Import the proper U1+ stage processor
-            from .stage_u1 import StageU1Processor, StageU1Result
-            from ...extract.abstract_features import AbstractFeatureExtractor
-            from ...score.simple_rs_scorer import SimpleRSScorer
-            
-            # Initialize U1+ processor with proper components
-            feature_extractor = AbstractFeatureExtractor()
-            rs_scorer = SimpleRSScorer()
-            
-            u1_processor = StageU1Processor(
-                client=self.client,
-                mapper=self.mapper,
-                feature_extractor=feature_extractor,
-                rs_scorer=rs_scorer,
-                query_builder=self.query_builder,  # Add query builder for discovery mode
-                config=self.config
-            )
-            
-            # Execute U1+ stage (process-only mode since we have documents from U0)
-            u1_result = await u1_processor.execute_stage_u1(
-                trial_id=1,  # Use a default integer trial ID for testing
-                trial_asset=documents[0].get('title', 'Unknown')[:50] if documents else 'Unknown',
-                trial_indication="Clinical Trial",
-                trial_nct=None,
-                u0_documents=documents  # Process-only mode
-            )
-            
-            if not u1_result.success:
-                raise Exception(f"Stage U1 processor failed: {u1_result.error_message}")
-            
-            # Extract processed documents from U1 result
-            processed_docs = u1_result.processed_documents or documents
-            
-            execution_time = (datetime.now() - start_time).total_seconds()
-            
-            logger.info(f"Stage U1 completed: {len(processed_docs)} processed, {u1_result.documents_selected} selected")
-            
-            return PipelineResult(
-                stage='U1',
-                success=True,
-                documents_processed=len(processed_docs),
-                documents_failed=u1_result.documents_dropped,
-                execution_time=execution_time,
-                metadata={
-                    'documents_processed': len(processed_docs),
-                    'fulltext_candidates': u1_result.documents_selected,
-                    'processed_documents': processed_docs,
-                    'fulltext_candidate_pmids': [doc.get('pmid') for doc in processed_docs],
-                    'abstracts_fetched': u1_result.abstracts_fetched,
-                    'entities_extracted': u1_result.entities_extracted,
-                    'documents_scored': u1_result.documents_scored
-                }
-            )
-            
-        except Exception as e:
-            execution_time = (datetime.now() - start_time).total_seconds()
-            error_msg = f"Stage U1 failed: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            
-            return PipelineResult(
-                stage='U1',
-                success=False,
-                documents_processed=0,
-                documents_failed=0,
-                error_message=error_msg,
-                execution_time=execution_time
-            )
     
     async def _execute_stage_oa(self, trial_id: Optional[int] = None) -> PipelineResult:
         """
@@ -705,8 +584,18 @@ class PubMedPipeline:
                 try:
                     pmcid = pmcid_mapping.get(pmid)
                     if pmcid and oa_status.get(pmcid, {}).get('full_text_available', False):
-                        # Fetch full text
-                        fulltext_content = await self.client.get_pmc_full_text(pmcid)
+                        # Fetch full text using JATS XML for comprehensive content
+                        fulltext_content = await self.client.get_pmc_full_text_jats(
+                            pmcid, 
+                            include_refs=True, 
+                            include_captions=True
+                        )
+                        
+                        # Fallback to plain text if JATS fails
+                        if not fulltext_content:
+                            self.logger.warning(f"JATS fetch failed for {pmcid}, trying plain text fallback")
+                            fulltext_content = await self.client.get_pmc_full_text(pmcid)
+                            
                         if fulltext_content:
                             # Find document by PMID and store fulltext in database
                             doc = self._find_document_by_pmid(pmid)
@@ -1084,17 +973,14 @@ class PubMedPipeline:
         }
         
         # Customize strategy based on stage and error type
-        if stage_result.stage == 'U0':
-            # U0 failures are critical - be more aggressive with retries
+        if stage_result.stage == 'U1':
+            # U1 failures are critical - be more aggressive with retries
             base_strategy['max_retries'] = 5
             base_strategy['retry_delay'] = 0.5
-        elif stage_result.stage == 'U1':
-            # U1 failures can be more lenient
-            base_strategy['max_retries'] = 3
-            base_strategy['retry_delay'] = 2.0
         elif stage_result.stage == 'OA':
             # OA failures are least critical
             base_strategy['max_retries'] = 2
+            base_strategy['retry_delay'] = 2.0
             base_strategy['graceful_degradation'] = True
         
         return base_strategy

@@ -1132,3 +1132,80 @@ class Task(Base):
             name="ck_tasks_status_valid",
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Entity Pack System Models
+# ---------------------------------------------------------------------------
+
+class EntityPack(Base):
+    """Entity packs for canonical data model."""
+    __tablename__ = "entity_packs"
+
+    entity_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    pack_data: Mapped[Dict[str, Any]] = mapped_column(JSONB(astext_type=Text), nullable=False)
+    version: Mapped[str] = mapped_column(Text, nullable=False, server_default='1.0.0')
+    domain: Mapped[str] = mapped_column(Text, nullable=False, server_default='general')
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default='true')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "domain IN ('general','oncology','neurology','cardiology')",
+            name="ck_entity_packs_domain_valid",
+        ),
+    )
+
+
+class EntityAlias(Base):
+    """Entity aliases for search and linking."""
+    __tablename__ = "entity_aliases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entity_id: Mapped[str] = mapped_column(Text, nullable=False)
+    alias_type: Mapped[str] = mapped_column(Text, nullable=False)  # 'asset', 'company', 'indication', 'mechanism'
+    alias_value: Mapped[str] = mapped_column(Text, nullable=False)
+    alias_norm: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, server_default='1.0')
+    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default='false')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_entity_aliases_entity_id", "entity_id"),
+        Index("ix_entity_aliases_alias_type", "alias_type"),
+        Index("ix_entity_aliases_alias_value", "alias_value"),
+        Index("ix_entity_aliases_alias_norm", "alias_norm"),
+        ForeignKeyConstraint(['entity_id'], ['entity_packs.entity_id'], ondelete='CASCADE'),
+        CheckConstraint(
+            "alias_type IN ('asset','company','indication','mechanism','nct_id')",
+            name="ck_entity_aliases_alias_type_valid",
+        ),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_entity_aliases_confidence_range"),
+    )
+
+
+class EntitySearchResult(Base):
+    """Search results for entity-based queries."""
+    __tablename__ = "entity_search_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entity_id: Mapped[str] = mapped_column(Text, nullable=False)
+    query_variant: Mapped[str] = mapped_column(Text, nullable=False)  # 'A', 'B', 'C', 'D', 'E'
+    pmid: Mapped[str] = mapped_column(Text, nullable=False)
+    rerank_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    must_hits: Mapped[int] = mapped_column(Integer, nullable=False, server_default='0')
+    should_hits: Mapped[int] = mapped_column(Integer, nullable=False, server_default='0')
+    cannot_hits: Mapped[int] = mapped_column(Integer, nullable=False, server_default='0')
+    is_trial_pub: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default='false')
+    has_nct_si: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default='false')
+    is_recent: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default='false')
+    search_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_entity_search_results_entity_id", "entity_id"),
+        Index("ix_entity_search_results_pmid", "pmid"),
+        Index("ix_entity_search_results_rerank_score", "rerank_score"),
+        ForeignKeyConstraint(['entity_id'], ['entity_packs.entity_id'], ondelete='CASCADE'),
+        UniqueConstraint("entity_id", "query_variant", "pmid", name="uq_entity_search_results_entity_query_pmid"),
+    )

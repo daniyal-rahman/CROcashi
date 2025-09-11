@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 
-from .db_service import PubMedDBService
+from .db_service import PubMedDBService, get_db_service
 from .queue_service import TaskQueueService
 from ...db.session import session_scope
 from ...db.models import Document, DocumentText, TrialDocCandidate, Trial, Company
@@ -55,7 +55,7 @@ class StudyCardWorker:
         self.config = config or {}
         
         # Initialize database service
-        self.db_service = PubMedDBService()
+        self.db_service = get_db_service()
         
         # Initialize the direct study card pipeline
         pipeline_config = config.get('study_card', {})

@@ -115,9 +115,15 @@ class BaseLLMWorker(BaseWorker):
                 request.tool_choice = tool_choice
             
             # Make the call
-            response = await self.llm_provider.complete(request)
+            model_name = getattr(self.llm_provider, 'model_name', 'unknown')
+            self.logger.info(f"🚀 Starting LLM call - Worker: {self.__class__.__name__}, Provider: {self.llm_provider.provider_name}, Model: {model_name}")
+            self.logger.debug(f"LLM request details - Messages: {len(request.messages)}, Tools: {len(request.tools) if request.tools else 0}")
             
-            self.logger.debug(f"LLM call completed: {response.usage.total_tokens} tokens, {response.response_time:.2f}s")
+            self.logger.debug(f"🔄 Calling llm_provider.complete()...")
+            response = await self.llm_provider.complete(request)
+            self.logger.debug(f"✅ llm_provider.complete() returned")
+            
+            self.logger.info(f"✅ LLM call completed - Worker: {self.__class__.__name__}, Tokens: {response.usage.total_tokens}, Time: {response.response_time:.2f}s")
             return response
             
         except Exception as e:

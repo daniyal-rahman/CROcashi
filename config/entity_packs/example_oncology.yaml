@@ -1,0 +1,25 @@
+# Example Oncology Entity Pack
+# Template for oncology drug entities
+
+entity_id: example_oncology
+company:
+  canonical: "Example Pharma"
+  aliases: ["Example Pharmaceuticals", "Example Corp"]
+asset:
+  canonical: "example_drug"
+  aliases: ["EX-123", "Example-123"]
+mechanism:
+  targets: ["EGFR", "epidermal growth factor receptor"]
+indications:
+  primary: ["Non-Small Cell Lung Cancer", "NSCLC"]
+  synonyms: ["lung cancer", "lung carcinoma", "pulmonary cancer", "adenocarcinoma"]
+registries:
+  nct_ids: ["NCT01234567", "NCT09876543"]
+  cas_rn: "123456-78-9"
+  uspto_ids: ["US12345678"]
+publishers:
+  sponsor_strings: ["Example Pharma", "Example Pharmaceuticals", "Example Corp"]
+date_ranges:
+  active_since: 2020
+  active_until: null
+notes: "Example oncology drug targeting EGFR for NSCLC treatment."

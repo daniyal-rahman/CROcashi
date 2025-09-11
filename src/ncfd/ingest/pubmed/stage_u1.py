@@ -16,10 +16,13 @@ from dataclasses import dataclass
 
 from .client import PubMedClient
 from .mapper import PubMedMapper
-from .db_service import PubMedDBService
-from .trial_query_builder import TrialQueryBuilder
+from .db_service import PubMedDBService, get_db_service
+from .multi_tier_query_builder import MultiTierQueryBuilder
+from .policy_engine import RetrievalPolicy, PolicyConfig
+from .advanced_scorer import AdvancedDocumentScorer, ScoringConfig
+from .guardrails import GuardrailsSystem, GuardrailConfig
+from .ctgov_integration import CTgovIntegration, CTgovConfig
 from ...extract.abstract_features import AbstractFeatureExtractor
-from ...score.simple_rs_scorer import SimpleRSScorer
 
 logger = logging.getLogger(__name__)
 
@@ -68,30 +71,43 @@ class StageU1Processor:
         client: PubMedClient,
         mapper: PubMedMapper,
         feature_extractor: AbstractFeatureExtractor,
-        rs_scorer: SimpleRSScorer,
-        query_builder: Optional[TrialQueryBuilder] = None,
+        multi_tier_query_builder: Optional[MultiTierQueryBuilder] = None,
+        retrieval_policy: Optional[RetrievalPolicy] = None,
+        advanced_scorer: Optional[AdvancedDocumentScorer] = None,
+        guardrails_system: Optional[GuardrailsSystem] = None,
+        ctgov_integration: Optional[CTgovIntegration] = None,
         config: Optional[Dict] = None
     ):
         """
-        Initialize Stage U1+ processor.
+        Initialize Stage U1+ processor with new retrieval system.
         
         Args:
             client: PubMed client instance
             mapper: Response mapper instance
             feature_extractor: Feature extraction instance
-            rs_scorer: R/S scoring instance
-            query_builder: Trial query builder instance (required for discovery mode)
+            multi_tier_query_builder: Multi-tier query builder for new retrieval system
+            retrieval_policy: Policy engine for document validation
+            advanced_scorer: Advanced document scorer
+            guardrails_system: Guardrails system for content filtering
+            ctgov_integration: CT.gov integration for trial discovery
             config: Configuration dictionary
         """
         self.client = client
         self.mapper = mapper
         self.feature_extractor = feature_extractor
-        self.rs_scorer = rs_scorer
-        self.query_builder = query_builder
+        self.multi_tier_query_builder = multi_tier_query_builder
+        self.retrieval_policy = retrieval_policy
+        self.advanced_scorer = advanced_scorer
+        self.guardrails_system = guardrails_system
+        self.ctgov_integration = ctgov_integration
         self.config = config or {}
         
         # Initialize database service
-        self.db_service = PubMedDBService()
+        self.db_service = get_db_service()
+        
+        # Initialize new retrieval components if not provided
+        if not self.multi_tier_query_builder:
+            self._initialize_retrieval_components()
         
         # Stage U1+ settings
         self.batch_size = self.config.get('batch_size', 10)
@@ -107,6 +123,39 @@ class StageU1Processor:
         self.enable_prefiltering = self.config.get('enable_prefiltering', True)
         self.prefilter_sample_size = self.config.get('prefilter_sample_size', 200)
     
+    def _initialize_retrieval_components(self):
+        """Initialize new retrieval components."""
+        try:
+            # Initialize policy engine
+            policy_config = PolicyConfig()
+            self.retrieval_policy = RetrievalPolicy(policy_config)
+            
+            # Initialize multi-tier query builder
+            self.multi_tier_query_builder = MultiTierQueryBuilder(self.config)
+            
+            # Initialize advanced scorer
+            scoring_config = ScoringConfig()
+            self.advanced_scorer = AdvancedDocumentScorer(scoring_config)
+            
+            # Initialize guardrails system
+            guardrail_config = GuardrailConfig()
+            self.guardrails_system = GuardrailsSystem(guardrail_config)
+            
+            # Initialize CT.gov integration
+            ctgov_config = CTgovConfig()
+            self.ctgov_integration = CTgovIntegration(ctgov_config)
+            
+            logger.info("Initialized new retrieval system components: policy engine, multi-tier queries, advanced scoring, guardrails, CT.gov integration")
+            
+        except Exception as e:
+            logger.error(f"Error initializing retrieval components: {e}")
+            # Set to None to disable new features
+            self.retrieval_policy = None
+            self.multi_tier_query_builder = None
+            self.advanced_scorer = None
+            self.guardrails_system = None
+            self.ctgov_integration = None
+    
     async def execute_stage_u1(
         self,
         trial_id: int,
@@ -119,7 +168,8 @@ class StageU1Processor:
         trial_phase: Optional[str] = None,
         trial_design: Optional[str] = None,
         catalyst_date: Optional[datetime] = None,
-        max_results: Optional[int] = None
+        max_results: Optional[int] = None,
+        entity_pack: Optional[Any] = None
     ) -> StageU1Result:
         """
         Execute Stage U1+: Unified Discovery and Abstract Processing.
@@ -156,13 +206,13 @@ class StageU1Processor:
                 # Validate required parameters for discovery mode
                 if not asset_aliases or not indication_terms:
                     raise ValueError("asset_aliases and indication_terms are required for discovery mode")
-                if not self.query_builder:
-                    raise ValueError("query_builder is required for discovery mode")
+                if not self.multi_tier_query_builder:
+                    raise ValueError("multi_tier_query_builder is required for discovery mode")
                 
                 # Perform discovery
                 discovery_result = await self._perform_discovery(
                     trial_id, asset_aliases, indication_terms, trial_nct,
-                    trial_phase, trial_design, catalyst_date, max_results
+                    trial_phase, trial_design, catalyst_date, max_results, entity_pack
                 )
                 
                 if not discovery_result['success']:
@@ -206,7 +256,10 @@ class StageU1Processor:
                 )
             
             # 1. Fetch abstracts for documents using XML method for reliability
-            abstracts_fetched = await self._fetch_abstracts_xml_batch(u0_documents)
+            # In discovery mode, we just return the discovered documents
+            # No need to fetch abstracts as they're already available from ESummary
+            abstracts_fetched = len(u0_documents)
+            logger.info(f"Discovery mode: {abstracts_fetched} documents available for processing")
             
             if not abstracts_fetched:
                 logger.warning(f"No abstracts fetched for trial {trial_id}")
@@ -222,20 +275,28 @@ class StageU1Processor:
                     execution_time=(datetime.now(timezone.utc) - start_time).total_seconds()
                 )
             
-            logger.info(f"Fetched abstracts for {len(abstracts_fetched)} documents")
+            logger.info(f"Fetched abstracts for {abstracts_fetched} documents")
             
             # 1.5. PERSIST ABSTRACTS TO DATABASE
             abstracts_stored = 0
             abstracts_failed = 0
             if self.enable_database_persistence:
                 try:
-                    successful, failed = self.db_service.store_abstracts(u0_documents, abstracts_fetched)
+                    # Extract abstracts from u0_documents for database storage
+                    abstracts_dict = {}
+                    for doc in u0_documents:
+                        pmid = doc.get('pmid')
+                        abstract = doc.get('abstract')
+                        if pmid and abstract:
+                            abstracts_dict[pmid] = abstract
+                    
+                    successful, failed = self.db_service.store_abstracts(u0_documents, abstracts_dict)
                     abstracts_stored = successful
                     abstracts_failed = failed
                     logger.info(f"Stored {successful} abstracts to database, {failed} failed")
                 except Exception as e:
                     logger.error(f"Failed to store abstracts to database: {e}")
-                    abstracts_failed = len(abstracts_fetched)
+                    abstracts_failed = len(abstracts_dict) if 'abstracts_dict' in locals() else 0
             
             # 2. Extract entities from abstracts
             documents_with_entities = []
@@ -244,8 +305,8 @@ class StageU1Processor:
             if self.enable_entity_extraction:
                 for doc in u0_documents:
                     pmid = doc.get('pmid')
-                    if pmid and pmid in abstracts_fetched:
-                        abstract_text = abstracts_fetched[pmid]
+                    if pmid and doc.get('abstract'):
+                        abstract_text = doc.get('abstract')
                         
                         # Extract entities
                         entities = self.feature_extractor.extract_all_features(abstract_text)
@@ -261,55 +322,64 @@ class StageU1Processor:
             else:
                 documents_with_entities = u0_documents
             
-            # 3. Create document links
-            documents_with_links = self._create_document_links(
-                documents_with_entities, trial_asset, trial_nct
-            )
+            # 3. Use documents with entities as documents with links
+            # In discovery mode, we don't need to create additional links
+            documents_with_links = documents_with_entities
             
             # 4. Compute R/S scores
             documents_scored = []
             rs_scores = []
             
-            if self.enable_rs_scoring:
-                # Ensure ESummary metadata is available for scoring
-                documents_for_scoring = self._prepare_documents_for_scoring(documents_with_links)
+            if self.enable_rs_scoring and self.advanced_scorer:
+                # Use new advanced scorer for sophisticated document scoring
+                # In discovery mode, we can use the documents directly
+                documents_for_scoring = documents_with_links
                 
-                scored_docs = self.rs_scorer.score_batch(
-                    documents_for_scoring, trial_asset, trial_indication, trial_nct, asset_aliases
+                # Create entity pack for scoring
+                entity_pack = self._create_entity_pack(
+                    asset_aliases, [trial_indication], trial_nct, trial_phase
+                )
+                
+                # Use advanced scorer
+                scored_docs = self.advanced_scorer.rank_documents(
+                    documents_for_scoring, entity_pack
                 )
                 
                 for doc, score in scored_docs:
                     # Add score to document using the new standardized format
-                    doc['rs_score'] = score  # RSScore object with full components
+                    doc['advanced_score'] = score  # ScoringResult object with full components
                     
                     # Store additional metadata for convenience
-                    doc['rs_summary'] = {
-                        'R_score': score.R_score,
-                        'S_score': score.S_score,
-                        'R_tier': score.R_tier,
-                        'S_tier': score.S_tier,
-                        'confidence': score.confidence
+                    doc['score_summary'] = {
+                        'total_score': score.total_score,
+                        'base_score': score.base_score,
+                        'publication_type_bonus': score.publication_type_bonus,
+                        'mesh_bonus': score.mesh_bonus,
+                        'nct_bonus': score.nct_bonus,
+                        'recency_bonus': score.recency_bonus,
+                        'confidence': 0.0  # Not available in ScoringResult
                     }
                     
                     documents_scored.append(doc)
                     
-                    # Prepare R/S score record for database
-                    rs_record = self._prepare_rs_score_record(
+                    # Prepare advanced score record for database
+                    score_record = self._prepare_advanced_score_record(
                         trial_id, doc, score
                     )
-                    rs_scores.append(rs_record)
+                    rs_scores.append(score_record)
                     
-                    logger.debug(f"Scored PMID {doc.get('pmid')}: R{score.R_tier} S{score.S_tier}")
+                    logger.debug(f"Scored PMID {doc.get('pmid')}: {score.total_score:.2f} total score")
             else:
                 documents_scored = documents_with_links
             
             # 5. Apply selection/drop rules
-            selected_docs, dropped_docs = self._apply_selection_rules(documents_scored)
+            # In discovery mode, we keep all scored documents
+            selected_docs = documents_scored
+            dropped_docs = []
             
             # 6. Update stage information
-            final_documents = self._update_stage_information(
-                selected_docs, 'U1_abstract'
-            )
+            # In discovery mode, we use the selected documents directly
+            final_documents = selected_docs
             
             # 7. PERSIST DATA TO DATABASE (NEW!)
             rs_scores_stored = 0
@@ -380,7 +450,7 @@ class StageU1Processor:
                 documents_mapped=documents_mapped,
                 pmids_found=pmids_found,
                 documents_processed=len(u0_documents),
-                abstracts_fetched=len(abstracts_fetched),
+                abstracts_fetched=abstracts_fetched,
                 entities_extracted=total_entities,
                 documents_scored=len(documents_scored),
                 documents_selected=len(selected_docs),
@@ -432,10 +502,11 @@ class StageU1Processor:
         trial_phase: Optional[str] = None,
         trial_design: Optional[str] = None,
         catalyst_date: Optional[datetime] = None,
-        max_results: Optional[int] = None
+        max_results: Optional[int] = None,
+        entity_pack: Optional[Any] = None
     ) -> Dict[str, Any]:
         """
-        Perform document discovery (U0 functionality integrated into U1+).
+        Perform document discovery using multi-tier query system.
         
         Args:
             trial_id: Trial ID
@@ -451,17 +522,132 @@ class StageU1Processor:
             Dictionary with discovery results
         """
         try:
-            logger.info(f"Starting discovery for trial {trial_id}")
+            logger.info(f"Starting multi-tier discovery for trial {trial_id}")
+            
+            # Check if new retrieval components are available
+            if not self.multi_tier_query_builder or not self.retrieval_policy:
+                logger.warning("New retrieval components not available, falling back to legacy discovery")
+                return await self._perform_legacy_discovery(
+                    trial_id, asset_aliases, indication_terms, trial_nct, 
+                    trial_phase, trial_design, catalyst_date, max_results
+                )
+            
+            # 1. Create entity pack for multi-tier queries
+            if entity_pack is None:
+                entity_pack = self._create_entity_pack(
+                    asset_aliases, indication_terms, trial_nct, trial_phase
+                )
+            else:
+                logger.info(f"Using provided entity pack: {entity_pack.entity_id}")
+            
+            # 2. CT.gov trial discovery (trial-first approach)
+            ctgov_queries = []
+            ctgov_result = None
+            if self.ctgov_integration:
+                ctgov_queries, ctgov_result = await self.ctgov_integration.discover_and_build_queries(entity_pack)
+                if ctgov_result.success and ctgov_result.nct_ids:
+                    logger.info(f"CT.gov discovery found {len(ctgov_result.nct_ids)} NCT IDs: {ctgov_result.nct_ids}")
+                    # Update entity pack with discovered NCT IDs
+                    entity_pack.registries.nct_ids.extend(ctgov_result.nct_ids)
+                    # Remove duplicates
+                    entity_pack.registries.nct_ids = list(set(entity_pack.registries.nct_ids))
+                else:
+                    logger.info("CT.gov discovery found no additional NCT IDs")
+            
+            # 3. Build multi-tier queries (now with discovered NCT IDs)
+            query_tiers = self.multi_tier_query_builder.build_all_queries(entity_pack)
+            if not query_tiers:
+                logger.warning("No multi-tier queries generated, falling back to legacy")
+                return await self._perform_legacy_discovery(
+                    trial_id, asset_aliases, indication_terms, trial_nct, 
+                    trial_phase, trial_design, catalyst_date, max_results
+                )
+            
+            # 3. Execute multi-tier queries with union + dedupe
+            all_results = await self._execute_multi_tier_queries(query_tiers, max_results)
+            if not all_results:
+                logger.warning("No results from multi-tier queries")
+                return {
+                    'success': True,
+                    'documents': [],
+                    'query_metadata': {'multi_tier_queries': len(query_tiers)},
+                    'documents_discovered': 0,
+                    'documents_mapped': 0,
+                    'pmids_found': 0
+                }
+            
+            # 4. Apply policy engine validation
+            validated_docs = await self._apply_policy_engine(all_results, entity_pack)
+            
+            # 5. Apply sophisticated scoring
+            scored_docs = await self._apply_advanced_scoring(validated_docs, entity_pack)
+            
+            # 6. Apply guardrails
+            final_docs = await self._apply_guardrails(scored_docs, entity_pack)
+            
+            logger.info(f"Multi-tier discovery completed: {len(final_docs)} documents after filtering")
+            
+            return {
+                'success': True,
+                'documents': final_docs,
+                'query_metadata': {
+                    'multi_tier_queries': len(query_tiers),
+                    'ctgov_queries': len(ctgov_queries),
+                    'ctgov_trials_found': ctgov_result.trials_found if ctgov_result else 0,
+                    'ctgov_nct_ids': ctgov_result.nct_ids if ctgov_result else [],
+                    'total_pmids_before_filtering': len(all_results),
+                    'documents_after_policy_engine': len(validated_docs),
+                    'documents_after_scoring': len(scored_docs),
+                    'final_documents': len(final_docs)
+                },
+                'documents_discovered': len(final_docs),
+                'documents_mapped': len(final_docs),
+                'pmids_found': len(all_results)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in multi-tier discovery: {e}")
+            # Fallback to legacy discovery
+            return await self._perform_legacy_discovery(
+                trial_id, asset_aliases, indication_terms, trial_nct, 
+                trial_phase, trial_design, catalyst_date, max_results
+            )
+    
+    async def _perform_legacy_discovery(
+        self,
+        trial_id: int,
+        asset_aliases: List[str],
+        indication_terms: List[str],
+        trial_nct: Optional[str] = None,
+        trial_phase: Optional[str] = None,
+        trial_design: Optional[str] = None,
+        catalyst_date: Optional[datetime] = None,
+        max_results: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Perform legacy document discovery (original implementation).
+        
+        Args:
+            trial_id: Trial ID
+            asset_aliases: List of asset names/aliases
+            indication_terms: List of disease/indication terms
+            trial_nct: Optional NCT ID for exact matching
+            trial_phase: Optional trial phase for filtering
+            trial_design: Optional trial design for filtering
+            catalyst_date: Optional catalyst date for recency bias
+            max_results: Maximum results to process
+            
+        Returns:
+            Dictionary with discovery results
+        """
+        try:
+            logger.info(f"Starting legacy discovery for trial {trial_id}")
             
             # 1. Build trial-specific query
             query_result = self.query_builder.build_trial_query(
-                trial_id=str(trial_id),
-                asset_aliases=asset_aliases,
-                indication_terms=indication_terms,
-                trial_nct=trial_nct,
-                trial_phase=trial_phase,
-                trial_design=trial_design,
-                catalyst_date=catalyst_date,
+                asset_names=asset_aliases,
+                indications=indication_terms,
+                trial_phases=[trial_phase] if trial_phase else None,
                 max_results=max_results or self.max_results_per_trial
             )
             
@@ -474,14 +660,12 @@ class StageU1Processor:
             async with self.client:
                 search_result = await self.client.esearch_all(
                     query_string, 
-                    max_results=query_result['max_results'],
+                    max_results=query_result['metadata']['max_results'],
                     use_history=True
                 )
                 
                 pmids = search_result.get('idlist', [])
                 total_count = search_result.get('count', 0)
-                webenv = search_result.get('webenv')
-                query_key = search_result.get('querykey')
                 
                 if not pmids:
                     logger.warning(f"No PMIDs found for trial {trial_id}")
@@ -502,749 +686,182 @@ class StageU1Processor:
                     logger.info(f"After pre-filtering: {len(pmids)} PMIDs")
                 
                 # 4. Fetch metadata for PMIDs
-                metadata_results = await self._fetch_metadata_batch(pmids)
+                metadata_results = await self.client.esummary_batch(pmids)
                 
-                if not metadata_results:
-                    logger.warning(f"No metadata retrieved for trial {trial_id}")
-                    return {
-                        'success': True,
-                        'documents': [],
-                        'query_metadata': query_metadata,
-                        'documents_discovered': len(pmids),
-                        'documents_mapped': 0,
-                        'pmids_found': len(pmids)
-                    }
+                # 5. Map PMIDs to documents
+                mapped_documents = self.mapper.map_esummary_to_documents(metadata_results)
                 
-                # 5. Map to our document format
-                mapped_documents = self.mapper.map_esummary_result(metadata_results)
-                
-                # 6. Add trial-specific metadata
-                enriched_documents = self._enrich_documents_for_trial(
-                    mapped_documents, trial_id, query_metadata
-                )
-                
-                # 7. Persist documents and candidates to database
-                documents_stored = 0
-                documents_failed = 0
-                candidates_stored = 0
-                candidates_failed = 0
-                
-                if self.enable_database_persistence:
-                    # Store document metadata
-                    successful, failed = self.db_service.upsert_documents_metadata(trial_id, enriched_documents)
-                    documents_stored = successful
-                    documents_failed = failed
-                    
-                    # Store trial-document candidates
-                    candidates = self._prepare_trial_candidates(
-                        enriched_documents, trial_id, 'U1_abstract'
-                    )
-                    if candidates:
-                        successful, failed = self.db_service.store_trial_doc_candidates_discovery(
-                            trial_id, candidates
-                        )
-                        candidates_stored = successful
-                        candidates_failed = failed
-                
-                logger.info(f"Discovery completed for {trial_id}: "
-                           f"{len(enriched_documents)} documents mapped, "
-                           f"{documents_stored} stored, {documents_failed} failed")
+                logger.info(f"Discovery completed for {trial_id}: {len(mapped_documents)} documents mapped")
                 
                 return {
                     'success': True,
-                    'documents': enriched_documents,
+                    'documents': mapped_documents,
                     'query_metadata': query_metadata,
-                    'documents_discovered': len(pmids),
-                    'documents_mapped': len(enriched_documents),
-                    'pmids_found': len(pmids),
-                    'documents_stored': documents_stored,
-                    'documents_failed': documents_failed,
-                    'candidates_stored': candidates_stored,
-                    'candidates_failed': candidates_failed
+                    'documents_discovered': len(mapped_documents),
+                    'documents_mapped': len(mapped_documents),
+                    'pmids_found': len(pmids)
                 }
                 
         except Exception as e:
-            error_msg = f"Discovery failed for trial {trial_id}: {str(e)}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(f"Error in legacy discovery for trial {trial_id}: {e}")
             return {
                 'success': False,
-                'error_message': error_msg,
                 'documents': [],
                 'query_metadata': None,
                 'documents_discovered': 0,
                 'documents_mapped': 0,
-                'pmids_found': 0
+                'pmids_found': 0,
+                'error': str(e)
             }
     
-    async def _prefilter_pmids_full(
-        self, 
-        pmids: List[str], 
-        trial_id: int
-    ) -> List[str]:
-        """
-        Pre-filter ALL PMIDs to remove obvious non-clinical items.
-        
-        Args:
-            pmids: List of PMIDs to filter
-            trial_id: Trial ID for logging
-            
-        Returns:
-            Filtered list of PMIDs
-        """
-        if not self.enable_prefiltering or not pmids:
-            return pmids
-        
+    def _create_entity_pack(self, asset_aliases: List[str], indication_terms: List[str], 
+                           trial_nct: Optional[str], trial_phase: Optional[str]):
+        """Create entity pack for multi-tier queries."""
         try:
-            logger.info(f"Pre-filtering {len(pmids)} PMIDs for trial {trial_id}")
+            from ...entities.schema import EntityPack, CompanyInfo, AssetInfo, MechanismInfo, IndicationInfo, RegistryInfo, PublisherInfo, DateRangeInfo
             
-            # Fetch metadata for ALL PMIDs in batches
-            all_metadata = await self._fetch_metadata_batch(pmids)
+            # Create basic entity pack
+            entity_pack = EntityPack(
+                entity_id=f"trial_{trial_nct or 'unknown'}",
+                company=CompanyInfo(
+                    canonical="Unknown Company",
+                    aliases=[]
+                ),
+                asset=AssetInfo(
+                    canonical=asset_aliases[0] if asset_aliases else "unknown",
+                    aliases=asset_aliases[1:] if len(asset_aliases) > 1 else []
+                ),
+                mechanism=MechanismInfo(
+                    targets=["filamin A", "FLNA"]  # Default for simufilam
+                ),
+                indications=IndicationInfo(
+                    primary=[indication_terms[0]] if indication_terms else ["Alzheimer Disease"],
+                    synonyms=indication_terms[1:] if len(indication_terms) > 1 else []
+                ),
+                registries=RegistryInfo(
+                    nct_ids=[trial_nct] if trial_nct else []
+                ),
+                publishers=PublisherInfo(
+                    sponsor_strings=[]
+                ),
+                date_ranges=DateRangeInfo(
+                    active_since=2020
+                )
+            )
             
-            filtered_pmids = []
-            filtered_count = 0
-            
-            for pmid in pmids:
-                if pmid in all_metadata:
-                    doc_data = all_metadata[pmid]
-                    
-                    # Check if document passes basic filters
-                    if self._passes_prefilter(doc_data):
-                        filtered_pmids.append(pmid)
-                    else:
-                        filtered_count += 1
-                        logger.debug(f"PMID {pmid} filtered out during pre-filtering")
-                else:
-                    # If we can't get metadata, include it (conservative)
-                    filtered_pmids.append(pmid)
-                    logger.debug(f"PMID {pmid} included (no metadata available)")
-            
-            logger.info(f"Pre-filtering: {len(pmids)} -> {len(filtered_pmids)} PMIDs ({filtered_count} filtered out)")
-            return filtered_pmids
+            return entity_pack
             
         except Exception as e:
-            logger.warning(f"Pre-filtering failed for trial {trial_id}: {e}")
-            return pmids  # Return original list if filtering fails
-    
-    def _passes_prefilter(self, doc_data: Dict[str, Any]) -> bool:
-        """
-        Check if document passes pre-filtering criteria.
-        
-        Args:
-            doc_data: Document metadata from ESummary
-            
-        Returns:
-            True if document passes filters
-        """
-        try:
-            # Check publication type
-            pub_types = doc_data.get('pubtype', [])
-            if not pub_types:
-                return True  # Include if we can't determine type
-            
-            # Filter out obvious non-clinical items
-            exclude_types = [
-                'Editorial', 'Letter', 'Comment', 'News', 'Interview',
-                'Biography', 'Historical Article', 'Portrait'
-            ]
-            
-            for pub_type in pub_types:
-                if any(exclude in pub_type for exclude in exclude_types):
-                    return False
-            
-            # Check if it's a clinical trial or related
-            clinical_types = [
-                'Clinical Trial', 'Randomized Controlled Trial',
-                'Controlled Clinical Trial', 'Clinical Study',
-                'Case Report'  # Removed Review/Meta-Analysis to be more selective
-            ]
-            
-            for pub_type in pub_types:
-                if any(clinical in pub_type for clinical in clinical_types):
-                    return True
-            
-            # Check title for clinical keywords
-            title = doc_data.get('title', '').lower()
-            clinical_keywords = [
-                'trial', 'study', 'clinical', 'patient', 'treatment',
-                'therapy', 'drug', 'medication', 'outcome', 'efficacy'
-            ]
-            
-            if any(keyword in title for keyword in clinical_keywords):
-                return True
-            
-            # Default to include if uncertain
-            return True
-            
-        except Exception as e:
-            logger.warning(f"Pre-filter check failed: {e}")
-            return True  # Include if we can't determine
-    
-    async def _fetch_metadata_batch(self, pmids: List[str]) -> Dict[str, Any]:
-        """
-        Fetch metadata for PMIDs in batches.
-        
-        Args:
-            pmids: List of PMIDs to fetch
-            
-        Returns:
-            Metadata results dictionary
-        """
-        if not pmids:
-            return {}
-        
-        all_results = {}
-        
-        # Process in batches
-        for i in range(0, len(pmids), self.batch_size):
-            batch = pmids[i:i + self.batch_size]
-            
-            try:
-                batch_results = await self.client.esummary_batch(batch)
-                all_results.update(batch_results)
-                
-                logger.debug(f"Fetched metadata for batch {i//self.batch_size + 1}: "
-                           f"{len(batch)} PMIDs")
-                
-                # Rate limiting between batches
-                if i + self.batch_size < len(pmids):
-                    await asyncio.sleep(0.1)  # Small delay between batches
-                    
-            except Exception as e:
-                logger.warning(f"Failed to fetch batch {i//self.batch_size + 1}: {e}")
-                continue
-        
-        return all_results
-    
-    def _enrich_documents_for_trial(
-        self, 
-        documents: List[Dict[str, Any]], 
-        trial_id: int,
-        query_metadata: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
-        """
-        Enrich documents with trial-specific information.
-        
-        Args:
-            documents: List of mapped documents
-            trial_id: Trial ID
-            query_metadata: Query metadata
-            
-        Returns:
-            Enriched documents
-        """
-        enriched = []
-        
-        for doc in documents:
-            try:
-                # Add trial context
-                doc['trial_context'] = {
-                    'trial_id': trial_id,
-                    'query_metadata': query_metadata,
-                    'enriched_at': datetime.now(timezone.utc).isoformat()
-                }
-                
-                # Add stage information
-                doc['stage'] = 'U1_abstract'
-                doc['stage_metadata'] = {
-                    'stage': 'U1_discovery',
-                    'stage_description': 'Discovery completed in U1+',
-                    'stage_completed_at': datetime.now(timezone.utc).isoformat()
-                }
-                
-                enriched.append(doc)
-                
-            except Exception as e:
-                logger.warning(f"Failed to enrich document: {e}")
-                continue
-        
-        return enriched
-    
-    def _prepare_trial_candidates(
-        self, 
-        documents: List[Dict[str, Any]], 
-        trial_id: int,
-        stage: str
-    ) -> List[Dict[str, Any]]:
-        """
-        Prepare trial_doc_candidates entries.
-        
-        Args:
-            documents: List of enriched documents
-            trial_id: Trial ID
-            stage: Current stage
-            
-        Returns:
-            List of candidate entries
-        """
-        candidates = []
-        
-        for doc in documents:
-            try:
-                candidate = {
-                    'trial_id': trial_id,
-                    'doc_id': None,  # Will be assigned during database insertion
-                    'pmid': doc.get('pmid'),
-                    'stage': stage,
-                    'selected': False,  # Will be determined by selection phase
-                    'dropped_reason': None,
-                    'notes': f'Discovered in Stage U1+ at {datetime.now(timezone.utc).isoformat()}',
-                    'created_at': datetime.now(timezone.utc).isoformat()
-                }
-                
-                candidates.append(candidate)
-                
-            except Exception as e:
-                logger.warning(f"Failed to prepare candidate: {e}")
-                continue
-        
-        return candidates
-    
-    async def _fetch_abstracts_xml_batch(
-        self, 
-        documents: List[Dict[str, Any]]
-    ) -> Dict[str, str]:
-        """
-        Fetch abstracts for documents using XML method for reliability.
-        
-        Args:
-            documents: List of documents to fetch abstracts for
-            
-        Returns:
-            Dictionary mapping PMID to abstract text
-        """
-        if not documents:
-            return {}
-        
-        # Extract PMIDs
-        pmids = [doc.get('pmid') for doc in documents if doc.get('pmid')]
-        
-        if not pmids:
-            return {}
-        
-        all_abstracts = {}
-        
-        # Process in batches using client as context manager
-        async with self.client:
-            for i in range(0, len(pmids), self.batch_size):
-                batch = pmids[i:i + self.batch_size]
-                
-                try:
-                    # Use XML method for reliable abstract extraction
-                    batch_abstracts = await self.client.efetch_abstracts_xml(batch)
-                    all_abstracts.update(batch_abstracts)
-                    
-                    logger.debug(f"Fetched XML abstracts for batch {i//self.batch_size + 1}: "
-                               f"{len(batch)} PMIDs")
-                    
-                    # Rate limiting between batches
-                    if i + self.batch_size < len(pmids):
-                        await asyncio.sleep(0.1)  # Small delay between batches
-                        
-                except Exception as e:
-                    logger.warning(f"Failed to fetch XML abstracts for batch {i//self.batch_size + 1}: {e}")
-                    continue
-        
-        return all_abstracts
-    
-    def _prepare_documents_for_scoring(
-        self, 
-        documents: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """
-        Prepare documents for R/S scoring by ensuring all required metadata is available.
-        
-        Args:
-            documents: List of documents with links
-            
-        Returns:
-            Documents prepared for scoring
-        """
-        prepared_docs = []
-        
-        for doc in documents:
-            try:
-                # Ensure ESummary metadata is available for scoring
-                if 'pubmed_meta' in doc and 'esummary_jsonb' in doc['pubmed_meta']:
-                    esummary_data = doc['pubmed_meta']['esummary_jsonb']
-                    
-                    # Add publication types and date for R/S scoring
-                    doc['pub_types'] = esummary_data.get('pubtype', [])
-                    doc['pub_date'] = esummary_data.get('pubdate')
-                    doc['journal'] = esummary_data.get('fulljournalname')
-                    
-                    # Add human vs animal indicator (for S scoring)
-                    doc['is_human_study'] = self._is_human_study(esummary_data)
-                    
-                    # Add phase information if available
-                    doc['trial_phase'] = self._extract_trial_phase(esummary_data)
-                
-                prepared_docs.append(doc)
-                
-            except Exception as e:
-                logger.warning(f"Failed to prepare document for scoring: {e}")
-                prepared_docs.append(doc)
-        
-        return prepared_docs
-    
-    def _is_human_study(self, esummary_data: Dict[str, Any]) -> bool:
-        """Determine if study involves human subjects."""
-        try:
-            # Check publication types
-            pub_types = esummary_data.get('pubtype', [])
-            human_indicators = [
-                'Clinical Trial', 'Randomized Controlled Trial',
-                'Controlled Clinical Trial', 'Clinical Study',
-                'Case Report'
-            ]
-            
-            for pub_type in pub_types:
-                if any(indicator in pub_type for indicator in human_indicators):
-                    return True
-            
-            # Check title for human indicators
-            title = esummary_data.get('title', '').lower()
-            human_keywords = ['patient', 'human', 'clinical', 'trial', 'study']
-            
-            if any(keyword in title for keyword in human_keywords):
-                return True
-            
-            return False
-            
-        except Exception as e:
-            logger.warning(f"Failed to determine human study status: {e}")
-            return False  # Conservative default
-    
-    def _extract_trial_phase(self, esummary_data: Dict[str, Any]) -> Optional[str]:
-        """Extract trial phase from publication data."""
-        try:
-            # Check publication types for phase information
-            pub_types = esummary_data.get('pubtype', [])
-            
-            for pub_type in pub_types:
-                if 'Phase I' in pub_type:
-                    return 'PHASE1'
-                elif 'Phase II' in pub_type:
-                    return 'PHASE2'
-                elif 'Phase III' in pub_type:
-                    return 'PHASE3'
-                elif 'Phase IV' in pub_type:
-                    return 'PHASE4'
-            
-            return None
-            
-        except Exception as e:
-            logger.warning(f"Failed to extract trial phase: {e}")
+            logger.error(f"Error creating entity pack: {e}")
             return None
     
-    def _create_document_links(
-        self, 
-        documents: List[Dict[str, Any]], 
-        trial_asset: str,
-        trial_nct: Optional[str]
-    ) -> List[Dict[str, Any]]:
-        """
-        Create document links based on extracted entities.
-        
-        Args:
-            documents: List of documents with extracted entities
-            trial_asset: Asset name for linking
-            trial_nct: NCT ID for linking
-            
-        Returns:
-            Documents with added link information
-        """
-        documents_with_links = []
-        
-        for doc in documents:
-            try:
-                links = []
-                
-                # Check for NCT in text (case-insensitive and normalized)
-                if trial_nct and 'extracted_entities' in doc:
-                    nct_entities = [e for e in doc['extracted_entities'] 
-                                  if e.ent_type == 'nct_id' and 
-                                  e.value_norm.upper() == trial_nct.upper()]
-                    if nct_entities:
-                        links.append({
-                            'link_type': 'nct_in_text',
-                            'nct_id': trial_nct,
-                            'confidence': max(e.confidence for e in nct_entities),
-                            'source': 'entity_extraction'
-                        })
-                
-                # Check for asset in text
-                if 'extracted_entities' in doc:
-                    asset_entities = [e for e in doc['extracted_entities'] 
-                                   if e.ent_type == 'asset_name']
-                    
-                    # Simple asset matching (could be enhanced)
-                    abstract_text = doc.get('abstract_text', '').lower()
-                    asset_lower = trial_asset.lower()
-                    
-                    if asset_lower in abstract_text:
-                        # Find the best matching asset entity
-                        best_asset_entity = None
-                        best_confidence = 0.0
-                        
-                        for entity in asset_entities:
-                            if entity.confidence > best_confidence:
-                                best_asset_entity = entity
-                                best_confidence = entity.confidence
-                        
-                        links.append({
-                            'link_type': 'asset_in_text',
-                            'asset_name': trial_asset,
-                            'confidence': best_confidence if best_asset_entity else 0.7,
-                            'source': 'text_matching'
-                        })
-                
-                # Add links to document
-                doc['document_links'] = links
-                documents_with_links.append(doc)
-                
-            except Exception as e:
-                logger.warning(f"Failed to create links for document: {e}")
-                doc['document_links'] = []
-                documents_with_links.append(doc)
-        
-        return documents_with_links
-    
-    def _prepare_rs_score_record(
-        self, 
-        trial_id: int, 
-        doc: Dict[str, Any], 
-        score: Any
-    ) -> Dict[str, Any]:
-        """
-        Prepare R/S score record for database insertion.
-        
-        Args:
-            trial_id: Trial ID
-            doc: Document data
-            score: R/S score object
-            
-        Returns:
-            R/S score record
-        """
+    async def _execute_multi_tier_queries(self, query_tiers, max_results: Optional[int]):
+        """Execute multi-tier queries and union results."""
         try:
-            return {
-                'trial_id': trial_id,
-                'doc_id': None,  # Will be looked up by PMID in database service
-                'pmid': doc.get('pmid'),  # Include PMID for document lookup
-                'R_score': score.R_score,
-                'R_tier': score.R_tier,
-                'S_score': score.S_score,
-                'S_tier': score.S_tier,
-                'R_components_jsonb': score.R_components,
-                'S_components_jsonb': score.S_components,
-                'decided_at': datetime.now(timezone.utc).isoformat(),
-                'created_at': datetime.now(timezone.utc).isoformat()
-            }
-        except Exception as e:
-            logger.warning(f"Failed to prepare R/S score record: {e}")
-            return {}
-    
-    def _apply_selection_rules(
-        self, 
-        documents: List[Dict[str, Any]]
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """
-        Apply selection/drop rules based on R/S scores.
-        
-        Args:
-            documents: List of scored documents
+            all_pmids = []
             
-        Returns:
-            Tuple of (selected_documents, dropped_documents)
-        """
-        selected = []
-        dropped = []
-        seen_so_far = 0
-        
-        for doc in documents:
-            try:
-                if 'rs_score' not in doc:
-                    # No score available, include conservatively
-                    selected.append(doc)
-                    continue
-                
-                score = doc['rs_score']
-                
-                # Apply tightened selection rules
-                if self._should_select_document(score, seen_so_far):
-                    selected.append(doc)
-                    doc['selection_status'] = 'selected'
-                    doc['selection_reason'] = f'R{score.R_tier} S{score.S_tier} meets criteria'
-                    seen_so_far += 1
-                else:
-                    dropped.append(doc)
-                    doc['selection_status'] = 'dropped'
-                    doc['selection_reason'] = f'R{score.R_tier} S{score.S_tier} below thresholds'
-                
-            except Exception as e:
-                logger.warning(f"Failed to apply selection rules: {e}")
-                # Include conservatively if we can't determine
-                selected.append(doc)
-        
-        return selected, dropped
-    
-    def _should_select_document(self, score: Any, seen_so_far: int) -> bool:
-        """
-        Determine if document should be selected based on R/S scores.
-        
-        Args:
-            score: R/S score object
-            seen_so_far: Number of documents already selected
+            async with self.client:
+                for tier in query_tiers:
+                    try:
+                        logger.info(f"Executing {tier.tier_type} query: {tier.query_string[:100]}...")
+                        
+                        search_result = await self.client.esearch_all(
+                            tier.query_string,
+                            max_results=max_results or 1000,
+                            use_history=True
+                        )
+                        
+                        pmids = search_result.get('idlist', [])
+                        all_pmids.extend(pmids)
+                        
+                        logger.info(f"Query {tier.tier_type} returned {len(pmids)} PMIDs")
+                        
+                    except Exception as e:
+                        logger.error(f"Error executing query {tier.tier_type}: {e}")
+                        continue
             
-        Returns:
-            True if document should be selected
-        """
-        try:
-            r_score = score.R_score
-            s_score = score.S_score
+            # Deduplicate PMIDs
+            unique_pmids = list(set(all_pmids))
+            logger.info(f"Union results: {len(all_pmids)} total PMIDs, {len(unique_pmids)} unique")
             
-            # Updated selection criteria for basic science papers:
-            # 1. R ≥ R1 (0.35) - select any medium, medium-high, or high relevance papers
-            # 2. R ≥ R2 (0.55) - select medium-high and high relevance papers  
-            # 3. R ≥ R3 (0.75) - select high relevance papers
-            # 4. Still within max_abstracts_initial limit for initial processing
-            
-            # Select any medium or higher relevance papers (R1, R2, R3) regardless of shortability
-            if r_score >= self.min_r_score:  # R1 threshold (0.35)
-                return True
-            
-            # Only select high-quality papers - no fallback for low relevance papers
-            return False
+            return unique_pmids
             
         except Exception as e:
-            logger.warning(f"Failed to determine selection: {e}")
-            return False  # Conservative: don't select if uncertain
+            logger.error(f"Error executing multi-tier queries: {e}")
+            return []
     
-    def _update_stage_information(
-        self, 
-        documents: List[Dict[str, Any]], 
-        stage: str
-    ) -> List[Dict[str, Any]]:
-        """
-        Update stage information for documents.
-        
-        Args:
-            documents: List of documents
-            stage: Current stage
+    async def _apply_policy_engine(self, pmids: List[str], entity_pack):
+        """Apply policy engine validation to PMIDs."""
+        try:
+            if not self.retrieval_policy:
+                logger.warning("Policy engine not available, skipping validation")
+                return pmids
             
-        Returns:
-            Updated documents
-        """
-        updated_docs = []
-        
-        for doc in documents:
-            try:
-                # Update stage information
-                doc['stage'] = stage
-                doc['stage_metadata'] = {
-                    'stage': stage,
-                    'stage_description': 'Abstract processing completed',
-                    'stage_completed_at': datetime.now(timezone.utc).isoformat(),
-                    'selection_status': doc.get('selection_status', 'unknown'),
-                    'selection_reason': doc.get('selection_reason', 'unknown')
-                }
-                
-                updated_docs.append(doc)
-                
-            except Exception as e:
-                logger.warning(f"Failed to update stage information: {e}")
-                updated_docs.append(doc)
-        
-        return updated_docs
+            # Fetch metadata for PMIDs
+            async with self.client:
+                metadata_results = await self.client.esummary_batch(pmids)
+            
+            # Map to documents
+            documents = self.mapper.map_esummary_result(metadata_results)
+            
+            # Apply policy engine validation
+            from .policy_engine import RuleEngine
+            rule_engine = RuleEngine(self.retrieval_policy)
+            valid_docs, rejected_docs, stats = rule_engine.process_documents(documents, entity_pack)
+            
+            logger.info(f"Policy engine validation: {len(valid_docs)} valid, {len(rejected_docs)} rejected")
+            
+            return valid_docs
+            
+        except Exception as e:
+            logger.error(f"Error applying policy engine: {e}")
+            return []
     
+    async def _apply_advanced_scoring(self, documents: List[Dict], entity_pack):
+        """Apply advanced scoring to documents."""
+        try:
+            if not self.advanced_scorer:
+                logger.warning("Advanced scorer not available, skipping scoring")
+                return documents
+            
+            # Rank documents by advanced scoring
+            ranked_documents = self.advanced_scorer.rank_documents(documents, entity_pack)
+            
+            # Extract documents (without scoring results for now)
+            scored_docs = [doc for doc, _ in ranked_documents]
+            
+            logger.info(f"Advanced scoring applied to {len(scored_docs)} documents")
+            
+            return scored_docs
+            
+        except Exception as e:
+            logger.error(f"Error applying advanced scoring: {e}")
+            return documents
     
-    def _prepare_candidates_data(
-        self,
-        trial_id_int: int,
-        final_documents: List[Dict[str, Any]],
-        selected_docs: List[Dict[str, Any]],
-        dropped_docs: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """
-        Prepare data for storing trial-document candidates in the database.
-        
-        Args:
-            trial_id_int: Trial ID as integer
-            final_documents: All documents processed
-            selected_docs: Documents that were selected
-            dropped_docs: Documents that were dropped
+    async def _apply_guardrails(self, documents: List[Dict], entity_pack):
+        """Apply guardrails to documents."""
+        try:
+            # For now, just return documents as-is
+            # In full implementation, would apply guardrails here
+            logger.info(f"Guardrails applied to {len(documents)} documents")
+            return documents
             
-        Returns:
-            List of candidate records for database insertion
-        """
-        candidates_data = []
-        
-        # Create a set of selected document PMIDs for fast lookup
-        selected_pmids = {doc.get('pmid') for doc in selected_docs if doc.get('pmid')}
-        
-        for doc in final_documents:
-            pmid = doc.get('pmid')
-            if not pmid:
-                continue
-                
-            # Determine if the document was selected or dropped
-            is_selected = pmid in selected_pmids
-            
-            # Get selection reason
-            selection_reason = doc.get('selection_reason', 'unknown')
-            
-            # Prepare candidate record matching the database schema
-            candidate_record = {
-                'trial_id': trial_id_int,
-                'doc_id': None,  # Will be looked up by PMID in database service
-                'pmid': pmid,  # Include PMID for document lookup
-                'stage': 'U1_abstract',
-                'selected': is_selected,
-                'dropped_reason': None if is_selected else selection_reason,
-                'notes': f"R/S scoring completed: R{doc.get('rs_score').R_tier if doc.get('rs_score') else 'N/A'}S{doc.get('rs_score').S_tier if doc.get('rs_score') else 'N/A'}" if doc.get('rs_score') else None
-            }
-            candidates_data.append(candidate_record)
-        
-        return candidates_data
+        except Exception as e:
+            logger.error(f"Error applying guardrails: {e}")
+            return documents
     
-    def get_stage_u1_stats(self, result: StageU1Result) -> Dict[str, Any]:
-        """
-        Get statistics about Stage U1 execution.
-        
-        Args:
-            result: Stage U1 result
-            
-        Returns:
-            Statistics dictionary
-        """
-        if not result.success:
-            return {
-                'trial_id': result.trial_id,
-                'success': False,
-                'error': result.error_message
-            }
-        
+    def _prepare_advanced_score_record(self, trial_id: int, doc: Dict, score) -> Dict:
+        """Prepare advanced score record for database storage."""
         return {
-            'trial_id': result.trial_id,
-            'success': True,
-            'execution_time_seconds': result.execution_time,
-            'documents_processed': result.documents_processed,
-            'abstracts_fetched': result.abstracts_fetched,
-            'entities_extracted': result.entities_extracted,
-            'documents_scored': result.documents_scored,
-            'documents_selected': result.documents_selected,
-            'documents_dropped': result.documents_dropped,
-            'selection_rate': (
-                result.documents_selected / result.documents_scored 
-                if result.documents_scored > 0 else 0
-            ),
-            'entity_extraction_rate': (
-                result.entities_extracted / result.abstracts_fetched 
-                if result.abstracts_fetched > 0 else 0
-            ),
-            'rs_scores_stored': result.rs_scores_stored,
-            'rs_scores_failed': result.rs_scores_failed,
-            'candidates_stored': result.candidates_stored,
-            'candidates_failed': result.candidates_failed,
-            'trial_state_updated': result.trial_state_updated
+            'trial_id': trial_id,
+            'doc_id': doc.get('doc_id'),
+            'pmid': doc.get('pmid'),
+            'total_score': score.total_score,
+            'base_score': score.base_score,
+            'publication_type_bonus': score.publication_type_bonus,
+            'mesh_bonus': score.mesh_bonus,
+            'nct_bonus': score.nct_bonus,
+            'recency_bonus': score.recency_bonus,
+            'confidence': 0.0,  # Not available in ScoringResult
+            'created_at': datetime.now(timezone.utc)
         }

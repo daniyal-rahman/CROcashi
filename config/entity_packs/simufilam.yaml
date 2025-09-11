@@ -1,0 +1,28 @@
+# Simufilam Entity Pack
+# Cassava Sciences' Alzheimer's drug (formerly PTI-125)
+
+entity_id: simufilam
+company:
+  canonical: "Cassava Sciences"
+  aliases: ["Pain Therapeutics", "Pain Therapeutics Inc"]
+asset:
+  canonical: "simufilam"
+  aliases: ["PTI-125", "PTI 125"]
+mechanism:
+  targets: ["filamin A", "FLNA", "mTOR", "amyloid"]
+indications:
+  primary: ["Alzheimer Disease"]
+  synonyms: ["Alzheimer's", "AD", "dementia", "cognitive decline", "mild cognitive impairment", "MCI", "amyloid", "cerebrospinal", "biomarkers"]
+registries:
+  nct_ids: ["NCT05515666", "NCT04388254"]
+  cas_rn: null
+  uspto_ids: []
+publishers:
+  sponsor_strings: ["Cassava Sciences", "Pain Therapeutics", "Pain Therapeutics Inc"]
+authors:
+  primary: ["Wang HY", "Huaibin Wang"]
+  aliases: ["Wang H", "Wang H.Y.", "Wang Huaibin"]
+date_ranges:
+  active_since: 2017
+  active_until: null
+notes: "Rebranded from Pain Therapeutics; mechanism targets filamin A (FLNA) for Alzheimer's disease treatment."

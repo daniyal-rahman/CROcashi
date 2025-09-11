@@ -260,12 +260,12 @@ class PriorityService:
         """
         try:
             from .queue_service import TaskQueueService
-            from .db_service import PubMedDBService
+            from .db_service import PubMedDBService, get_db_service
             from ...db.session import session_scope
             from ...db.models import TrialLitState, Trial
             
             queue_service = TaskQueueService()
-            db_service = PubMedDBService()
+            db_service = get_db_service()
             
             updated_count = 0
             

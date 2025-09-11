@@ -59,7 +59,7 @@ def extract_study_card_from_document(document_path):
     except Exception as e:
         raise ValueError(f"Failed to extract study card from {document_path}: {e}")
 from ..signals import evaluate_all_gates
-from ..scoring import ScoringEngine
+from ..score import ScoringEngine
 
 
 @dataclass

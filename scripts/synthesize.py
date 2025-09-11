@@ -3,16 +3,17 @@
 Run synthesis on extracted data.
 """
 
+import argparse
 import json
 import sys
 from pathlib import Path
 
-from ncfd.synthesis.evidence_constrained_synthesis import EvidenceConstrainedSynthesis
+from ncfd.synthesis.evidence_constrained_synthesis import EvidenceConstrainedSynthesizer
 from ncfd.config import get_config
-from ncfd.db.session import get_db_session
+from ncfd.db.session import get_session
 from ncfd.db.models import Trial, Study, Signal, Gate, Score
-from ncfd.signals.gates import get_gate_results
-from ncfd.signals.scoring import compute_score
+from ncfd.signals.gates import evaluate_all_gates
+from ncfd.signals.scoring import score_trial
 
 
 def load_trial_data(trial_id: str, session) -> tuple[Trial, list[Study], dict, dict]:
@@ -74,7 +75,7 @@ def main():
         synthesizer = EvidenceConstrainedSynthesizer(config_path=args.config)
         
         # Get database session
-        with get_db_session() as session:
+        with get_session() as session:
             # Load trial data
             trial, study_cards, signals, gates = load_trial_data(args.trial_id, session)
             
@@ -99,7 +100,7 @@ def main():
                     }
                 else:
                     # Compute score if not in database
-                    score = compute_score(trial.trial_id, signals, gates)
+                    score = score_trial(trial.trial_id, signals, gates)
                     
             except Exception as e:
                 raise ValueError(f"Failed to load/compute score for trial {trial.trial_id}: {e}")

@@ -27,6 +27,9 @@ class OpenAIProvider(BaseLLMProvider):
     def __init__(self, config: Dict[str, Any]):
         super().__init__("openai", config)
         
+        # Set model name from config (this will be used by the base class)
+        self.model_name = config.get("model", config.get("default_model", "gpt-5-mini"))
+        
         # Get API credentials
         self.api_key = os.getenv(config.get("api_key_env", "OPENAI_API_KEY"))
         if not self.api_key:
@@ -86,53 +89,82 @@ class OpenAIProvider(BaseLLMProvider):
         self.logger.info(f"OpenAI provider initialized with base_url={base_url}")
     
     async def complete(self, request: LLMRequest) -> LLMResponse:
-        """Complete an LLM request using OpenAI."""
-        self._check_rate_limit()
+        """Complete an LLM request using OpenAI with retry logic and concurrency control."""
+        self.logger.debug(f"🔄 OpenAI.complete() called for model {request.model}")
         
-        # Validate request
+        # Note: Concurrency control is handled by the concurrency manager at a higher level
+        # No need to acquire semaphore here as it's already acquired by execute_with_concurrency_control
+        
+        self.logger.debug(f"🔄 Checking rate limit...")
+        await self._check_rate_limit()
+        self.logger.debug(f"✅ Rate limit check passed")
+        
+        self.logger.debug(f"🔄 Validating request...")
         self.validate_request(request)
+        self.logger.debug(f"✅ Request validation passed")
         
+        self.logger.debug(f"🔄 Calling _retry_with_backoff...")
+        # Use retry wrapper for the actual API call
+        result = await self._retry_with_backoff(self._make_api_call, request)
+        self.logger.debug(f"✅ _retry_with_backoff completed")
+        return result
+    
+    async def _make_api_call(self, request: LLMRequest) -> LLMResponse:
+        """Make the actual OpenAI API call."""
         start_time = time.time()
+        
+        self.logger.debug(f"🔄 Making OpenAI API call for model {request.model}")
         
         try:
             # Transform request to OpenAI format
             openai_request = self._transform_request(request)
+            self.logger.debug(f"🔄 Transformed request, making API call...")
             
             # Make API call
             if self._should_use_responses_api(request.model):
+                self.logger.debug(f"🔄 Using responses API for model {request.model}")
                 response = await self._call_responses_api(openai_request, request)
             else:
+                self.logger.debug(f"🔄 Using chat completions API for model {request.model}")
                 response = await self.async_client.chat.completions.create(**openai_request)
             
+            call_duration = time.time() - start_time
+            self.logger.debug(f"✅ API call completed in {call_duration:.2f}s")
+            
             # Transform response
-            llm_response = self._transform_response(response, request, time.time() - start_time)
+            llm_response = self._transform_response(response, request, call_duration)
             
             # Track metrics
             self._track_request(request, llm_response)
             
+            self.logger.debug(f"✅ Response transformed successfully")
             return llm_response
             
         except Exception as e:
+            call_duration = time.time() - start_time
+            self.logger.error(f"❌ API call failed after {call_duration:.2f}s: {e}")
             self._track_request(request, error=e)
             raise LLMProviderError(f"OpenAI API call failed: {e}", provider="openai", original_error=e)
     
     async def stream_complete(self, request: LLMRequest) -> AsyncIterator[str]:
-        """Stream completion using OpenAI."""
-        self._check_rate_limit()
-        self.validate_request(request)
-        
-        try:
-            openai_request = self._transform_request(request)
-            openai_request["stream"] = True
+        """Stream completion using OpenAI with concurrency control."""
+        # Acquire semaphore for concurrency control
+        async with self._concurrency_semaphore:
+            await self._check_rate_limit()
+            self.validate_request(request)
             
-            async with self.async_client.chat.completions.create(**openai_request) as stream:
-                async for chunk in stream:
-                    if chunk.choices and chunk.choices[0].delta.content:
-                        yield chunk.choices[0].delta.content
-                        
-        except Exception as e:
-            self._track_request(request, error=e)
-            raise LLMProviderError(f"OpenAI streaming failed: {e}", provider="openai", original_error=e)
+            try:
+                openai_request = self._transform_request(request)
+                openai_request["stream"] = True
+                
+                async with self.async_client.chat.completions.create(**openai_request) as stream:
+                    async for chunk in stream:
+                        if chunk.choices and chunk.choices[0].delta.content:
+                            yield chunk.choices[0].delta.content
+                            
+            except Exception as e:
+                self._track_request(request, error=e)
+                raise LLMProviderError(f"OpenAI streaming failed: {e}", provider="openai", original_error=e)
     
     def validate_request(self, request: LLMRequest) -> bool:
         """Validate request for OpenAI."""

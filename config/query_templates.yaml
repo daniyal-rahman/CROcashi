@@ -1,0 +1,78 @@
+# Query Templates Configuration
+# Templates for multi-tier PubMed queries
+
+query_templates:
+  # Query A: High-precision (drug/company + disease)
+  query_a: |
+    (
+      {drug_company_tiab}
+    ) AND (
+      {disease_mesh} OR {disease_tiab}
+    )
+  
+  # Query B: Trial-type focus
+  query_b: |
+    (
+      {drug_tiab}
+    ) AND (
+      randomized controlled trial[pt] OR clinical trial[pt] OR trial[tiab] OR placebo[tiab]
+    ) AND (
+      {disease_mesh} OR {disease_tiab}
+    )
+  
+  # Query C: Mechanism-aware but guarded
+  query_c: |
+    (
+      {mechanism_tiab}
+    ) AND (
+      {drug_company_tiab}
+    ) AND (
+      {disease_mesh} OR {disease_tiab}
+    )
+  
+  # Query D: NCT-linked backfill
+  query_d: |
+    {nct_ids_si}
+  
+  # Query E: Sponsor affiliation backfill
+  query_e: |
+    (
+      {company_ad}
+    ) AND (
+      {drug_tiab}
+    )
+
+field_specifiers:
+  # PubMed field specifiers
+  tiab: "[tiab]"  # Title and Abstract
+  mesh: "[mh]"    # MeSH terms
+  pt: "[pt]"      # Publication type
+  si: "[si]"      # Secondary source ID
+  ad: "[ad]"      # Affiliation
+  dp: "[dp]"      # Publication date
+
+term_variants:
+  # Handle hyphen/space variants
+  hyphen_space_mapping:
+    "PTI-125": "PTI 125"
+    "PTI 125": "PTI-125"
+  
+  # Common misspellings
+  misspellings:
+    "simufilam": ["simufilam", "simufliam"]
+    "alzheimer": ["alzheimer", "alzheimers", "alzheimer's"]
+
+query_optimization:
+  # Query length limits
+  max_query_length: 2000
+  max_terms_per_query: 50
+  
+  # Query simplification rules
+  simplify_on_length_exceeded: true
+  keep_essential_parts_only: true
+  
+  # Fallback strategies
+  fallback_strategies:
+    - "broad_asset_search"
+    - "indication_expansion"
+    - "temporal_focus"

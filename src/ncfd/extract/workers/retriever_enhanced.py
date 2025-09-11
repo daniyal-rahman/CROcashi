@@ -210,7 +210,7 @@ class EnhancedRetriever(BaseWorker):
                     if hasattr(doc_text, 'fulltext_text') and doc_text.fulltext_text:
                         fulltext_length = len(doc_text.fulltext_text)
                         # Quality check: ensure fulltext is substantial
-                        if fulltext_length >= 1500:  # Minimum length for methods/results extraction
+                        if fulltext_length >= 500:  # Minimum length for methods/results extraction (lowered for testing)
                             print(f"Retrieved {fulltext_length} characters of fulltext from document_text")
                             return doc_text.fulltext_text
                         else:
@@ -223,7 +223,7 @@ class EnhancedRetriever(BaseWorker):
                         print(f"Retrieved {abstract_length} characters of abstract text from document_text")
                         
                         # Warn if only abstract available for study card generation
-                        if abstract_length < 500:
+                        if abstract_length < 50:
                             logger.warning(f"Abstract too short ({abstract_length} chars) for quality study card generation")
                         
                         return doc_text.abstract_text

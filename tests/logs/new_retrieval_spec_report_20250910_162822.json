@@ -1,0 +1,21 @@
+{
+  "test_info": {
+    "test_name": "New Retrieval Specification Test",
+    "start_time": "2025-09-10T16:28:22.729552",
+    "description": "Standalone test of new retrieval specification components"
+  },
+  "test_results": {
+    "ctgov": null,
+    "multi_tier": null,
+    "policy": null,
+    "scorer": null,
+    "integration": null
+  },
+  "summary": {
+    "ctgov_integration": "\u274c FAILED",
+    "multi_tier_queries": "\u274c FAILED",
+    "policy_engine": "\u274c FAILED",
+    "advanced_scorer": "\u274c FAILED",
+    "integration": "\u274c FAILED"
+  }
+}

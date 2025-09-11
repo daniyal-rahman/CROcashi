@@ -1,0 +1,102 @@
+# Retrieval Policy Configuration
+# Implements must/should/cannot rules for PubMed retrieval
+
+policy_engine:
+  # Scoring weights
+  must_link_weight: 3.0
+  should_link_weight: 1.0
+  cannot_link_penalty: 2.0
+  max_should_link_bonus: 3.0
+  
+  # Validation requirements
+  require_must_link_for_oncology: true
+  require_indication_signal: true
+  require_field_coverage: true
+
+scoring:
+  # Advanced scoring configuration
+  base_score_weight: 1.0
+  publication_type_bonus: 1.5
+  mesh_bonus: 0.5
+  nct_bonus: 1.0
+  recency_bonus: 0.3
+  max_recency_bonus: 1.0
+  recency_window_months: 18
+
+guardrails:
+  # Quality gates
+  enable_mechanism_drift_guard: true
+  enable_indication_gate: true
+  enable_field_coverage_guard: true
+  
+  # Minimum thresholds
+  min_must_link_count: 1
+  min_indication_terms: 1
+  min_field_coverage: 1
+
+multi_tier_queries:
+  # Query execution settings
+  enable_union_results: true
+  enable_deduplication: true
+  max_query_length: 2000
+  
+  # Query priorities
+  query_priorities:
+    A: 1  # High-precision
+    B: 2  # Trial-type focus
+    C: 3  # Mechanism-aware
+    D: 4  # NCT-linked backfill
+    E: 5  # Sponsor affiliation
+
+ctgov_integration:
+  # CT.gov discovery settings
+  enable_ctgov_discovery: true
+  discover_trials_first: true
+  enable_nct_backfill: true
+  
+  # CT.gov API settings
+  api_base_url: "https://clinicaltrials.gov/api/v2"
+  max_trials_per_search: 100
+  timeout_seconds: 30
+  
+  # Trial filtering
+  min_phase: "PHASE1"
+  max_phase: "PHASE4"
+  include_completed: true
+  include_recruiting: true
+  include_active: true
+
+oncology_filtering:
+  # Oncology detection settings
+  enable_oncology_detection: true
+  oncology_terms_file: "oncology_terms.yaml"
+  
+  # Oncology filtering rules
+  reject_oncology_without_must_link: true
+  downrank_oncology_with_must_link: false
+  oncology_penalty_weight: 2.0
+
+performance:
+  # Performance settings
+  max_concurrent_queries: 5
+  query_timeout_seconds: 30
+  max_results_per_query: 1000
+  
+  # Caching
+  enable_query_caching: true
+  cache_ttl_hours: 24
+  
+  # Rate limiting
+  rate_limit_per_second: 8
+  rate_limit_burst: 20
+
+logging:
+  # Logging configuration
+  log_level: "INFO"
+  log_policy_decisions: true
+  log_scoring_breakdown: true
+  log_query_execution: true
+  
+  # Audit settings
+  enable_audit_logging: true
+  audit_retention_days: 30

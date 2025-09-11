@@ -1,6 +1,19 @@
 # PubMed Client Configuration
 # This file contains configuration for the PubMed API client
 
+# Entity Pack Configuration
+entity_packs:
+  enabled: true
+  packs_dir: "config/entity_packs"
+  default_domain: "general"
+  fallback_to_legacy: true
+
+# Feature Flags
+features:
+  use_entity_packs: true
+  fallback_to_legacy: true
+  migration_mode: "gradual"  # or "immediate"
+
 # NCBI API Configuration
 api:
   # Your NCBI API key (optional but recommended for higher rate limits)
@@ -48,3 +61,39 @@ fetch:
 logging:
   level: "INFO"  # DEBUG, INFO, WARNING, ERROR
   include_request_details: false  # Set to true for debugging
+
+# Policy Engine Configuration
+policy_engine:
+  enabled: true
+  config_file: "retrieval_policy.yaml"
+  
+# Multi-Tier Query System
+multi_tier_queries:
+  enabled: true
+  union_results: true
+  dedupe_results: true
+  max_concurrent_queries: 5
+  
+# CT.gov Integration
+ctgov_integration:
+  enabled: true
+  discover_first: true
+  nct_backfill: true
+  api_base_url: "https://clinicaltrials.gov/api/v2"
+  max_trials_per_search: 100
+  
+# Advanced Scoring System
+advanced_scoring:
+  enabled: true
+  config_file: "retrieval_policy.yaml"
+  
+# Guardrails System
+guardrails:
+  enabled: true
+  config_file: "retrieval_policy.yaml"
+  
+# Oncology Filtering
+oncology_filtering:
+  enabled: true
+  terms_file: "oncology_terms.yaml"
+  reject_without_must_link: true

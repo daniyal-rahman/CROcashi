@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 
 from .client import PubMedClient
-from .trial_query_builder import TrialQueryBuilder
+from .query_builder import PubMedQueryBuilder
 from .mapper import PubMedMapper
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ class StageU0Processor:
     def __init__(
         self,
         client: PubMedClient,
-        query_builder: TrialQueryBuilder,
+        query_builder: PubMedQueryBuilder,
         mapper: PubMedMapper,
         config: Optional[Dict] = None
     ):

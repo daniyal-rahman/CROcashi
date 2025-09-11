@@ -49,11 +49,34 @@ sec:
 
 # PubMed pipeline configuration - focused on Cassava/simufilam literature
 pubmed:
+  # Enhanced pipeline with entity pack support
+  entity_id: "simufilam"  # References entity pack instead of hardcoded aliases
+  domain: "neurology"  # Use neurology domain profile
+  
   client_config:
     rate_limit_requests_per_minute: 60
     batch_size: 20
     timeout_seconds: 30
     max_retries: 3
+  
+  # Reranking configuration
+  rerank_config:
+    feat_weights:
+      bm25: 1.0
+      has_must: 3.0
+      should_hits_capped: 1.0
+      cannot_without_must: -2.0
+      pubtype_trial: 1.5
+      mesh_primary: 0.5
+      nct_si: 1.0
+      recency: 0.3
+    require_any: ["drug_tiab", "company_tiab", "nct_si"]
+    mechanism_requires_must: true
+    drop_if_cannot_without_must: true
+    min_score_threshold: 0.0
+    max_results: 100
+  
+  # Legacy configuration (fallback)
   retrieval:
     backend: bm25  # Use BM25 to avoid Java dependencies
     max_docs_per_trial: 100  # Increased for comprehensive literature review

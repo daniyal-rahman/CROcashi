@@ -160,14 +160,12 @@ class PubMedClient:
                     
                 async with self.session.get(url, params=params) as response:
                     if response.status == 429:  # Too Many Requests
-                        retry_after = response.headers.get('Retry-After', 60)
-                        logger.warning(f"Rate limited, waiting {retry_after} seconds")
-                        await asyncio.sleep(int(retry_after))
-                        raise aiohttp.ClientResponseError(
-                            response.request_info,
-                            response.history,
-                            status=429
-                        )
+                        retry_after_s = response.headers.get('Retry-After')
+                        sleep_s = self._parse_retry_after(retry_after_s) if retry_after_s else 60
+                        logger.warning(f"429 received; sleeping {sleep_s}s")
+                        await asyncio.sleep(sleep_s)
+                        # Continue loop without extra backoff for this attempt
+                        continue
                     
                     response.raise_for_status()
                     text = await response.text()
@@ -188,6 +186,7 @@ class PubMedClient:
                         
             except aiohttp.ClientResponseError as e:
                 if e.status == 429:
+                    # 429 handling is now done above in the response check
                     self._record_failure()
                     if attempt < self.max_retries - 1:
                         wait_time = self.backoff_base ** attempt
@@ -315,7 +314,8 @@ class PubMedClient:
             'idlist': ids[:max_results],
             'webenv': webenv,
             'querykey': query_key,
-            'count': len(ids[:max_results])
+            'count': len(ids[:max_results]),
+            'total_count': total_count
         }
     
     async def esummary_batch(self, pmids: List[str]) -> Dict[str, Any]:
@@ -448,45 +448,15 @@ class PubMedClient:
         Returns:
             Dictionary mapping PMID to abstract text
         """
-        content_map = {}
+        # Prefill output with empty strings for all requested PMIDs (O(1) lookup)
+        pmid_set = set(pmids)
+        content_map = {pmid: "" for pmid in pmids}
         
         try:
-            # Parse XML
-            root = ET.fromstring(xml_text)
+            # Use stream parsing for memory efficiency
+            self._parse_xml_stream(xml_text, pmid_set, content_map)
             
-            # Find all PubmedArticle elements
-            for article in root.findall('.//PubmedArticle'):
-                # Extract PMID
-                pmid_elem = article.find('.//PMID')
-                if pmid_elem is not None:
-                    pmid = pmid_elem.text
-                    if pmid in pmids:
-                        # Extract abstract
-                        abstract_elem = article.find('.//Abstract/AbstractText')
-                        if abstract_elem is not None:
-                            # Handle multiple AbstractText elements (some abstracts have sections)
-                            abstract_parts = []
-                            for text_elem in article.findall('.//Abstract/AbstractText'):
-                                if text_elem.text:
-                                    abstract_parts.append(text_elem.text)
-                                # Also check for nested text in sub-elements
-                                for sub_elem in text_elem:
-                                    if sub_elem.text:
-                                        abstract_parts.append(sub_elem.text)
-                            
-                            if abstract_parts:
-                                abstract_text = ' '.join(abstract_parts).strip()
-                                content_map[pmid] = abstract_text
-                            else:
-                                # Fallback: just get the text content
-                                abstract_text = abstract_elem.text or ''
-                                if abstract_text:
-                                    content_map[pmid] = abstract_text.strip()
-                        else:
-                            # No abstract found
-                            content_map[pmid] = ""
-            
-            logger.info(f"Parsed XML response: {len(content_map)}/{len(pmids)} PMIDs extracted")
+            logger.info(f"Parsed XML response: {len([k for k, v in content_map.items() if v])}/{len(pmids)} PMIDs with abstracts")
             
         except ET.ParseError as e:
             logger.error(f"Failed to parse XML response: {e}")
@@ -495,6 +465,209 @@ class PubMedClient:
             logger.error(f"Unexpected error parsing XML: {e}")
         
         return content_map
+    
+    def _parse_xml_stream(self, xml_text: str, pmid_set: set, content_map: Dict[str, str]) -> None:
+        """
+        Parse XML using stream parsing for memory efficiency.
+        
+        Args:
+            xml_text: Raw XML response
+            pmid_set: Set of PMIDs to look for
+            content_map: Dictionary to populate with results
+        """
+        import io
+        
+        # Use iterparse for memory-efficient streaming
+        context = ET.iterparse(io.StringIO(xml_text), events=('start', 'end'))
+        context = iter(context)
+        event, root = next(context)  # Get root element
+        
+        current_article = None
+        current_pmid = None
+        
+        for event, elem in context:
+            if event == 'start':
+                if elem.tag == 'PubmedArticle':
+                    current_article = elem
+                    current_pmid = None
+            elif event == 'end':
+                if elem.tag == 'PMID' and current_article is not None:
+                    # Found PMID within current article
+                    pmid = elem.text
+                    if pmid in pmid_set:
+                        current_pmid = pmid
+                        # Extract abstract for this PMID
+                        abstract_text = self._extract_full_abstract(current_article)
+                        if abstract_text:
+                            content_map[pmid] = abstract_text
+                        # else: already set to "" in prefill
+                
+                elif elem.tag == 'PubmedArticle':
+                    # Finished processing this article, clear references
+                    current_article = None
+                    current_pmid = None
+                
+                # Clear element to free memory
+                elem.clear()
+    
+    def _extract_full_abstract(self, article) -> str:
+        """
+        Extract full abstract text from article, handling multiple sections, nested tags,
+        and preferring English abstracts.
+        
+        Args:
+            article: XML element representing a PubmedArticle
+            
+        Returns:
+            Complete abstract text with section labels preserved
+        """
+        # First, try to find English abstracts
+        english_abstract = self._extract_abstract_by_language(article, 'eng')
+        if english_abstract:
+            return english_abstract
+        
+        # If no English abstract, try OtherAbstract elements
+        other_english_abstract = self._extract_other_abstract_by_language(article, 'eng')
+        if other_english_abstract:
+            return other_english_abstract
+        
+        # Fallback to any available abstract
+        fallback_abstract = self._extract_abstract_by_language(article, None)
+        if fallback_abstract:
+            return fallback_abstract
+        
+        # Last resort: try any OtherAbstract
+        return self._extract_other_abstract_by_language(article, None)
+    
+    def _extract_abstract_by_language(self, article, language: Optional[str]) -> str:
+        """
+        Extract abstract from Abstract/AbstractText elements, optionally filtering by language.
+        
+        Args:
+            article: XML element representing a PubmedArticle
+            language: Language code to filter by (e.g., 'eng'), or None for any language
+            
+        Returns:
+            Abstract text or empty string if not found
+        """
+        abstract_parts = []
+        
+        # Find all AbstractText elements
+        abstract_texts = article.findall('.//Abstract/AbstractText')
+        
+        if not abstract_texts:
+            return ""
+        
+        for abstract_text_elem in abstract_texts:
+            # Check language if specified
+            if language:
+                elem_language = abstract_text_elem.get('Language', '')
+                if elem_language != language:
+                    continue
+            
+            # Get section label if present
+            label = abstract_text_elem.get('Label', '')
+            nlm_category = abstract_text_elem.get('NlmCategory', '')
+            
+            # Extract text content using itertext() to preserve nested tags
+            text_content = ''.join(abstract_text_elem.itertext()).strip()
+            
+            if text_content:
+                # Add section label if present
+                if label:
+                    abstract_parts.append(f"{label}: {text_content}")
+                elif nlm_category:
+                    abstract_parts.append(f"{nlm_category}: {text_content}")
+                else:
+                    abstract_parts.append(text_content)
+        
+        # Join all sections with double newlines for readability
+        abstract_text = '\n\n'.join(abstract_parts) if abstract_parts else ""
+        
+        # Normalize text for consistent downstream processing
+        return self._normalize_text(abstract_text)
+    
+    def _extract_other_abstract_by_language(self, article, language: Optional[str]) -> str:
+        """
+        Extract abstract from OtherAbstract elements, optionally filtering by language.
+        
+        Args:
+            article: XML element representing a PubmedArticle
+            language: Language code to filter by (e.g., 'eng'), or None for any language
+            
+        Returns:
+            Abstract text or empty string if not found
+        """
+        abstract_parts = []
+        
+        # Find all OtherAbstract elements
+        other_abstracts = article.findall('.//OtherAbstract')
+        
+        if not other_abstracts:
+            return ""
+        
+        for other_abstract in other_abstracts:
+            # Check language if specified
+            if language:
+                elem_language = other_abstract.get('Language', '')
+                if elem_language != language:
+                    continue
+            
+            # Find AbstractText within this OtherAbstract
+            abstract_texts = other_abstract.findall('.//AbstractText')
+            
+            for abstract_text_elem in abstract_texts:
+                # Get section label if present
+                label = abstract_text_elem.get('Label', '')
+                nlm_category = abstract_text_elem.get('NlmCategory', '')
+                
+                # Extract text content using itertext() to preserve nested tags
+                text_content = ''.join(abstract_text_elem.itertext()).strip()
+                
+                if text_content:
+                    # Add section label if present
+                    if label:
+                        abstract_parts.append(f"{label}: {text_content}")
+                    elif nlm_category:
+                        abstract_parts.append(f"{nlm_category}: {text_content}")
+                    else:
+                        abstract_parts.append(text_content)
+        
+        # Join all sections with double newlines for readability
+        abstract_text = '\n\n'.join(abstract_parts) if abstract_parts else ""
+        
+        # Normalize text for consistent downstream processing
+        return self._normalize_text(abstract_text)
+    
+    def _normalize_text(self, text: str) -> str:
+        """
+        Normalize text for consistent downstream processing.
+        
+        Args:
+            text: Raw text to normalize
+            
+        Returns:
+            Normalized text
+        """
+        if not text:
+            return ""
+        
+        # Normalize whitespace
+        text = re.sub(r'\s+', ' ', text)
+        
+        # Normalize Unicode characters
+        text = text.replace('\u2019', "'")  # Right single quotation mark
+        text = text.replace('\u2018', "'")  # Left single quotation mark
+        text = text.replace('\u201c', '"')  # Left double quotation mark
+        text = text.replace('\u201d', '"')  # Right double quotation mark
+        text = text.replace('\u2013', '-')  # En dash
+        text = text.replace('\u2014', '-')  # Em dash
+        text = text.replace('\u00a0', ' ')  # Non-breaking space
+        
+        # Remove any remaining control characters
+        text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+        
+        return text.strip()
     
     def _parse_efetch_response(self, response_text: str, pmids: List[str], rettype: str) -> Dict[str, str]:
         """
@@ -532,7 +705,7 @@ class PubMedClient:
     
     def _parse_medline_response(self, response_text: str, pmids: List[str]) -> Dict[str, str]:
         """
-        Parse MEDLINE format response.
+        Parse MEDLINE format response with proper continuation line handling.
         
         Args:
             response_text: Raw MEDLINE response text
@@ -541,30 +714,65 @@ class PubMedClient:
         Returns:
             Dictionary mapping PMID to abstract text
         """
+        import re
+        
+        FIELD_RE = re.compile(r'^[A-Z]{2}\s{2}-\s')  # e.g., "AB  - "
         content_map = {}
+        cur_pmid = None
+        cur_field = None
+        buf = []
         
-        # Split by PMID entries
-        parts = response_text.split('PMID-')
+        def flush():
+            nonlocal buf
+            if cur_pmid and cur_field == 'AB':
+                prev = content_map.get(cur_pmid, '')
+                chunk = ' '.join(x.strip() for x in buf).strip()
+                if chunk:
+                    content_map[cur_pmid] = (prev + ' ' + chunk).strip() if prev else chunk
+            buf = []
+
+        for raw in response_text.splitlines():
+            line = raw.rstrip('\r')
+            if line.startswith('PMID-'):
+                flush()
+                cur_pmid = line.split('PMID-')[1].strip()
+                cur_field = None
+                continue
+            if FIELD_RE.match(line):
+                flush()
+                cur_field = line[:2]
+                val = line[6:].strip()  # after "XX  - "
+                buf = [val] if cur_field == 'AB' else []
+            else:
+                # continuation line (six spaces)
+                if cur_field == 'AB' and line.startswith('      '):
+                    buf.append(line.strip())
         
-        for part in parts[1:]:  # Skip first empty part
-            lines = part.strip().split('\n')
-            if lines:
-                pmid = lines[0].strip()
-                if pmid in pmids:
-                    # Look for abstract section (AB  -)
-                    abstract_text = ""
-                    for line in lines:
-                        if line.startswith('AB  -'):
-                            abstract_text = line[6:].strip()  # Remove 'AB  -' prefix
-                            break
-                    
-                    if abstract_text:
-                        content_map[pmid] = abstract_text
-                    else:
-                        # No abstract found
-                        content_map[pmid] = ""
+        flush()
         
-        return content_map
+        # Keep only requested PMIDs
+        return {k: v for k, v in content_map.items() if k in set(pmids)}
+    
+    def _parse_retry_after(self, retry_after_header: str) -> int:
+        """
+        Parse Retry-After header value (seconds or HTTP-date).
+        
+        Args:
+            retry_after_header: Retry-After header value
+            
+        Returns:
+            Seconds to wait
+        """
+        from email.utils import parsedate_to_datetime
+        from datetime import datetime
+        
+        try:
+            return int(retry_after_header)
+        except Exception:
+            try:
+                return max(0, int((parsedate_to_datetime(retry_after_header) - datetime.utcnow()).total_seconds()))
+            except Exception:
+                return 60
     
     def _parse_abstract_response(self, response_text: str, pmids: List[str]) -> Dict[str, str]:
         """
@@ -771,7 +979,7 @@ class PubMedClient:
     
     async def get_pmc_full_text(self, pmcid: str) -> Optional[str]:
         """
-        Fetch full text content for a PMC ID.
+        Fetch full text content for a PMC ID (plain text version).
         
         Args:
             pmcid: PMC ID
@@ -787,7 +995,7 @@ class PubMedClient:
             'retmode': 'text'
         })
         
-        logger.info(f"Fetching full text for PMCID: {pmcid}")
+        logger.info(f"Fetching full text (plain) for PMCID: {pmcid}")
         try:
             result = await self._make_request(self.EFETCH_URL, params, expect_json=False)
             if isinstance(result, str):
@@ -798,6 +1006,90 @@ class PubMedClient:
         except Exception as e:
             logger.error(f"Failed to fetch full text for PMCID {pmcid}: {e}")
             return None
+
+    async def get_pmc_full_text_jats(self, pmcid: str, include_refs: bool = True, include_captions: bool = True) -> Optional[str]:
+        """
+        Fetch full article text from PMC as JATS XML and convert to a comprehensive text string.
+        Includes abstract, body, back matter (references), and captions depending on flags.
+        
+        Args:
+            pmcid: PMC ID
+            include_refs: Whether to include references
+            include_captions: Whether to include figure/table captions
+            
+        Returns:
+            Comprehensive full text content or None if not available
+        """
+        params = self._get_base_params()
+        params.update({'db': 'pmc', 'id': pmcid, 'retmode': 'xml'})
+        
+        logger.info(f"Fetching full text (JATS XML) for PMCID: {pmcid}")
+        try:
+            xml_str = await self._make_request(self.EFETCH_URL, params, expect_json=False)
+            if not isinstance(xml_str, str):
+                logger.warning(f"Unexpected JATS response type for {pmcid}: {type(xml_str)}")
+                return None
+
+            # Parse XML
+            from lxml import etree
+            root = etree.fromstring(xml_str.encode("utf-8"))
+
+            # Get namespace
+            ns = {'ns': root.nsmap.get(None) or root.nsmap.get('') or ''}
+
+            # Extract sections
+            chunks = []
+
+            # Title & metadata
+            for node in root.xpath('.//ns:article-title', namespaces=ns):
+                chunks.append(' '.join(node.itertext()))
+
+            # Abstract(s)
+            for node in root.xpath('.//ns:abstract', namespaces=ns):
+                chunks.append(' '.join(node.itertext()))
+
+            # Main body
+            for node in root.xpath('.//ns:body', namespaces=ns):
+                chunks.append(' '.join(node.itertext()))
+
+            # Captions (figures/tables)
+            if include_captions:
+                for node in root.xpath('.//ns:fig/ns:caption|.//ns:table-wrap/ns:caption', namespaces=ns):
+                    chunks.append(' '.join(node.itertext()))
+
+            # Footnotes / acknowledgments
+            for node in root.xpath('.//ns:fn-group|.//ns:ack', namespaces=ns):
+                chunks.append(' '.join(node.itertext()))
+
+            # References
+            if include_refs:
+                for node in root.xpath('.//ns:ref-list', namespaces=ns):
+                    chunks.append(' '.join(node.itertext()))
+
+            # Normalize whitespace and HTML entities
+            text = self._normalize_text(' '.join(chunks))
+            logger.info(f"JATS extraction completed for {pmcid}: {len(text)} characters")
+            return text or None
+
+        except Exception as e:
+            logger.error(f"Failed to fetch/parse JATS for {pmcid}: {e}")
+            return None
+
+    def _normalize_text(self, text: str) -> str:
+        """
+        Normalize text by unescaping HTML entities and collapsing whitespace.
+        
+        Args:
+            text: Raw text to normalize
+            
+        Returns:
+            Normalized text
+        """
+        import html
+        # Unescape HTML entities
+        text = html.unescape(text)
+        # Collapse whitespace
+        return ' '.join(text.split())
     
     def calculate_query_hash(self, query: str) -> str:
         """
