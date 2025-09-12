@@ -8,4 +8,3 @@ Contains document processing and extraction components:
 from .late_fusion_orchestrator import LateFusionOrchestrator
 
 __all__ = ['LateFusionOrchestrator']
-

@@ -24,7 +24,7 @@ from .patent_client import USPTOPatentClient
 from .assignment_client import USPTOAssignmentClient
 from .patent_types import PatentRecord, AssignmentRecord, IngestionResult
 from ..sec import ingest_sec_rows
-from ...db.models import Patent, PatentAssignment, Company, Asset, AssetPatentLink, OwnershipSnapshot
+from ...db.models import Patent, PatentAssignment, Company, Asset
 from ...db.session import get_session
 from ...mapping.patent_assignee_resolver import PatentAssigneeResolver
 from ...mapping.asset_patent_linker import AssetPatentLinker

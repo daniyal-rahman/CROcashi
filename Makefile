@@ -23,6 +23,7 @@ endif
 POSTGRES_USER     ?= ncfd
 POSTGRES_PASSWORD ?= ncfd
 POSTGRES_DB       ?= ncfd
+DB_PORT           ?= 5433
 POSTGRES_HOST     ?= 127.0.0.1
 POSTGRES_HOST_PORT ?= 5433
 POSTGRES_DSN      ?= postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_HOST_PORT)/$(POSTGRES_DB)
@@ -147,6 +148,13 @@ type: ## Run type checking with mypy
 
 test: ## Run tests
 	CONFIG_PROFILE=local $(VENV)/bin/pytest -q
+
+test-cassava: ## Run comprehensive Cassava pipeline test
+	$(PYTHON) tests/scripts/run_comprehensive_cassava_test.py
+
+test-cassava-clean: ## Run Cassava test with fresh database
+	$(MAKE) db_reset
+	$(PYTHON) tests/scripts/run_comprehensive_cassava_test.py
 
 # --- Database Management ---
 

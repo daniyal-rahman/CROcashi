@@ -31,6 +31,34 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class CtgovPipelineResult:
+    """Result of CT.gov pipeline execution."""
+    success: bool
+    start_time: datetime
+    end_time: datetime
+    processing_time_seconds: float = field(init=False, default=0.0)
+    
+    # Trial metrics
+    trials_processed: int = 0
+    trials_created: int = 0
+    trials_updated: int = 0
+    trials_failed: int = 0
+    
+    # Change detection metrics
+    changes_detected: int = 0
+    material_changes: int = 0
+    
+    # Error tracking
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    
+    def __post_init__(self):
+        """Calculate processing time."""
+        if self.end_time and self.start_time:
+            self.processing_time_seconds = (self.end_time - self.start_time).total_seconds()
+
+
+@dataclass
 class CtgovPipelineConfig:
     """Configuration for CT.gov pipeline."""
     # API settings
@@ -125,7 +153,7 @@ class CtgovPipeline:
         Returns:
             IngestionResult with processing statistics
         """
-        start_time = datetime.now(UTC)
+        start_time = datetime.now(timezone.utc)
         self.logger.info("Starting CT.gov daily ingestion")
         
         try:
@@ -135,7 +163,7 @@ class CtgovPipeline:
                 since_date = self._get_last_update_date()
             
             if since_date is None:
-                since_date = datetime.now(UTC) - timedelta(days=self.config.default_since_days)
+                since_date = datetime.now(timezone.utc) - timedelta(days=self.config.default_since_days)
             
             self.logger.info(f"Ingesting trials since: {since_date}")
             
@@ -147,10 +175,10 @@ class CtgovPipeline:
             
             # Update cursor
             if self.config.save_cursor and result.success:
-                self._update_last_update_date(datetime.now(UTC))
+                self._update_last_update_date(datetime.now(timezone.utc))
             
             # Calculate processing time
-            result.processing_time_seconds = (datetime.now(UTC) - start_time).total_seconds()
+            result.processing_time_seconds = (datetime.now(timezone.utc) - start_time).total_seconds()
             
             self.logger.info(f"CT.gov ingestion completed: {result.trials_processed} trials processed")
             return result
@@ -162,7 +190,7 @@ class CtgovPipeline:
             return IngestionResult(
                 success=False,
                 errors=[error_msg],
-                processing_time_seconds=(datetime.now(UTC) - start_time).total_seconds()
+                processing_time_seconds=(datetime.now(timezone.utc) - start_time).total_seconds()
             )
     
     def run_limited_ingestion(self, 
@@ -182,7 +210,7 @@ class CtgovPipeline:
         Returns:
             IngestionResult with processing statistics
         """
-        start_time = datetime.now(UTC)
+        start_time = datetime.now(timezone.utc)
         self.logger.info(f"Starting limited CT.gov ingestion: max_studies={max_studies}")
         
         try:
@@ -200,7 +228,7 @@ class CtgovPipeline:
             )
             
             # Calculate processing time
-            result.processing_time_seconds = (datetime.now(UTC) - start_time).total_seconds()
+            result.processing_time_seconds = (datetime.now(timezone.utc) - start_time).total_seconds()
             
             self.logger.info(f"Limited CT.gov ingestion completed: {result.trials_processed} trials processed")
             return result
@@ -212,7 +240,7 @@ class CtgovPipeline:
             return IngestionResult(
                 success=False,
                 errors=[error_msg],
-                processing_time_seconds=(datetime.now(UTC) - start_time).total_seconds()
+                processing_time_seconds=(datetime.now(timezone.utc) - start_time).total_seconds()
             )
     
     def _run_ingestion_with_limits(self, 
@@ -454,7 +482,7 @@ class CtgovPipeline:
                 
                 new_version = TrialVersion(
                     trial_id=existing_trial.trial_id,
-                    captured_at=datetime.now(UTC),
+                    captured_at=datetime.now(timezone.utc),
                     raw_jsonb=raw_data,
                     sha256=sha256_hash,
                     primary_endpoint_text=trial_fields.primary_endpoint_text,
@@ -466,7 +494,7 @@ class CtgovPipeline:
                 
                 # Update trial fields
                 self._update_trial_fields(existing_trial, trial_fields)
-                existing_trial.last_seen_at = datetime.now(UTC)
+                existing_trial.last_seen_at = datetime.now(timezone.utc)
                 
                 # Handle asset resolution for updated trials
                 if self.config.asset_resolution_enabled:
@@ -479,7 +507,7 @@ class CtgovPipeline:
                 self.logger.info(f"Updated trial {trial_fields.nct_id}: {len(changes['changes'])} changes")
             else:
                 # No changes, just update last seen
-                existing_trial.last_seen_at = datetime.now(UTC)
+                existing_trial.last_seen_at = datetime.now(timezone.utc)
                 
         except Exception as e:
             self.logger.error(f"Error handling trial update for {trial_fields.nct_id}: {e}")
@@ -522,10 +550,10 @@ class CtgovPipeline:
                 phase=phase_value,
                 status=status_value,
                 est_primary_completion_date=trial_fields.primary_completion_date,
-                last_seen_at=datetime.now(UTC),
+                last_seen_at=datetime.now(timezone.utc),
                 current_sha256=sha256_hash,
-                created_at=datetime.now(UTC),
-                updated_at=datetime.now(UTC)
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
             )
             session.add(new_trial)
             session.flush()  # Get trial_id
@@ -555,7 +583,7 @@ class CtgovPipeline:
             
             initial_version = TrialVersion(
                 trial_id=new_trial.trial_id,
-                captured_at=datetime.now(UTC),
+                captured_at=datetime.now(timezone.utc),
                 raw_jsonb=raw_data,
                 sha256=sha256_hash,
                 primary_endpoint_text=trial_fields.primary_endpoint_text,

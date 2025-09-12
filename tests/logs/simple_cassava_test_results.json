@@ -1,0 +1,42 @@
+{
+  "test_info": {
+    "start_time": "2025-09-11T19:47:43.515023+00:00",
+    "test_name": "Simple Cassava Pipeline Test",
+    "version": "1.0",
+    "end_time": "2025-09-11T19:47:46.608708+00:00",
+    "duration_seconds": 3.093685
+  },
+  "pipeline_tests": {
+    "configuration_loading": {
+      "status": "success",
+      "config_keys": [
+        "profile_defaults",
+        "local",
+        "staging",
+        "prod"
+      ],
+      "has_llm_config": false,
+      "has_pubmed_config": false
+    },
+    "pipeline_initialization": {
+      "status": "success",
+      "pubmed_pipeline_created": true,
+      "study_card_pipeline_created": true
+    },
+    "real_data_processing": {
+      "status": "success",
+      "trial_data_valid": true,
+      "trial_id": "NCT04388254",
+      "trial_title": "A Phase 2, Randomized, Double-Blind, Placebo-Controlled Study of PTI-125 in Patients with Mild-to-Moderate Alzheimer's Disease",
+      "trial_phase": "PHASE2",
+      "trial_indication": "Alzheimer Disease",
+      "trial_interventions": [
+        "PTI-125",
+        "Placebo"
+      ],
+      "query_structure_created": true
+    }
+  },
+  "errors": [],
+  "warnings": []
+}

@@ -118,7 +118,7 @@ def _process_trial_events(self, item: EightKItem, filing_metadata: FilingMetadat
 **Problem**: Configuration is scattered across multiple files and formats:
 
 - `config/pipeline_config.yaml` - Main pipeline config
-- `config/config.yaml` - General config
+- `config/core_system_config.yaml` - Core system configuration
 - Individual pipeline configs in each module
 - Hardcoded values throughout the codebase
 

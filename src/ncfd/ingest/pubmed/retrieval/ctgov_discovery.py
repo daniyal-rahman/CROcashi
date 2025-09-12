@@ -12,7 +12,7 @@ import json
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 from datetime import datetime
-from ...entities.schema import EntityPack
+from ....entities.schema import EntityPack
 
 logger = logging.getLogger(__name__)
 

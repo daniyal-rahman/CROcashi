@@ -8,7 +8,7 @@ as specified in the retrieval specification.
 import logging
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
-from ...entities.schema import EntityPack
+from ....entities.schema import EntityPack
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +156,7 @@ class MultiTierQueryBuilder:
             disease_terms = entity_pack.get_all_indication_terms()
             
             if not drug_company_terms or not disease_terms:
-                logger.warning("Missing required terms for Query A")
+                logger.error("Missing required terms for Query A")
                 return None
             
             # Build drug/company TIAB clause
@@ -194,7 +194,7 @@ class MultiTierQueryBuilder:
             disease_terms = entity_pack.get_all_indication_terms()
             
             if not drug_terms or not disease_terms:
-                logger.warning("Missing required terms for Query B")
+                logger.error("Missing required terms for Query B")
                 return None
             
             # Build drug TIAB clause
@@ -245,7 +245,7 @@ class MultiTierQueryBuilder:
             disease_terms = entity_pack.get_all_indication_terms()
             
             if not mechanism_terms or not drug_terms or not disease_terms:
-                logger.warning("Missing required terms for Query C")
+                logger.error("Missing required terms for Query C")
                 return None
             
             # Build mechanism TIAB clause
@@ -286,7 +286,7 @@ class MultiTierQueryBuilder:
             nct_ids = list(getattr(getattr(entity_pack, "registries", None), "nct_ids", []) or [])
             
             if not nct_ids:
-                logger.warning("No NCT IDs available for Query D")
+                logger.error("No NCT IDs available for Query D")
                 return None
             
             # Build NCT SI clause
@@ -314,7 +314,7 @@ class MultiTierQueryBuilder:
             drug_terms = entity_pack.get_all_asset_terms()
             
             if not company_terms or not drug_terms:
-                logger.warning("Missing required terms for Query E")
+                logger.error("Missing required terms for Query E")
                 return None
             
             # Build company affiliation clause

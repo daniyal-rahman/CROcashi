@@ -24,7 +24,7 @@ def get_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         # Try multiple default locations
         project_root = Path(__file__).parent.parent.parent
         candidates = [
-            project_root / "config" / "config.yaml",
+            project_root / "config" / "core_system_config.yaml",
             project_root / "config" / "pipeline_config.yaml",
             project_root / "config" / "ctgov_config.yaml",
         ]
@@ -66,9 +66,9 @@ def get_config(config_path: Optional[str] = None) -> Dict[str, Any]:
 
 def get_database_url() -> str:
     """Get database URL from environment."""
-    return os.getenv('DATABASE_URL', 'postgresql://ncfd:ncfd@localhost:5432/ncfd')
+    return os.getenv('DATABASE_URL', 'postgresql://ncfd:ncfd@localhost:5433/ncfd')
 
 
 def get_postgres_dsn() -> str:
     """Get Postgres DSN from environment.""" 
-    return os.getenv('POSTGRES_DSN', 'postgresql+psycopg2://ncfd:ncfd@localhost:5432/ncfd')
+    return os.getenv('POSTGRES_DSN', 'postgresql+psycopg2://ncfd:ncfd@localhost:5433/ncfd')

@@ -243,7 +243,7 @@ def test_s1_endpoint_changes():
 ## Configuration
 
 ### Configuration Files
-- `config/config.yaml` - Main configuration
+- `config/core_system_config.yaml` - Core system configuration
 - `config/backtest.yaml` - Backtest settings
 - `config/ctgov_config.yaml` - CT.gov ingestion
 - `config/sec_config.yaml` - SEC filing processing

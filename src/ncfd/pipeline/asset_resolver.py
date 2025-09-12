@@ -350,7 +350,7 @@ class AssetResolver:
                 source_type='Registry',
                 source_url=f"https://clinicaltrials.gov/study/{nct_id}",
                 url_hash=hashlib.sha256(f"ctgov:{nct_id}".encode()).hexdigest(),
-                discovered_at=datetime.now(UTC),
+                discovered_at=datetime.now(timezone.utc),
                 content_type='registry',
                 nct_id=nct_id,
                 status='discovered',
@@ -391,7 +391,7 @@ class AssetResolver:
                     evidence_json={
                         'match_type': match.match_type,
                         'matched_alias': match.matched_alias,
-                        'resolved_at': datetime.now(UTC).isoformat()
+                        'resolved_at': datetime.now(timezone.utc).isoformat()
                     }
                 )
                 session.add(link)

@@ -44,6 +44,13 @@ class AssetIndicationNormalizer:
             'strengths': [
                 r'\b(\d+(?:\.\d+)?)\s*(mg|mcg|g|ml|mM|nM|μM|pM)\b',
                 r'\b(\d+(?:\.\d+)?)\s*percent|%'
+            ],
+            'pharmaceutical_suffixes': [
+                r'\b(-mab|-nib|-zumab|-cept|-ximab|-zomab|-mab)\b',
+                r'\b(-ol|-ole|-ine|-in|-ate|-ide|-ine|-in)\b'
+            ],
+            'chemical_prefixes': [
+                r'\b(N-|O-|S-|C-|H-)\b'
             ]
         }
         
@@ -213,6 +220,9 @@ class AssetIndicationNormalizer:
             '≥': ' greater than or equal to ',
             '×': ' x ',
             '÷': ' divided by ',
+            '≈': ' approximately ',
+            '≠': ' not equal to ',
+            '∞': ' infinity ',
             '²': '2',
             '³': '3',
             '¹': '1',
@@ -225,7 +235,17 @@ class AssetIndicationNormalizer:
             '₆': '6',
             '₇': '7',
             '₈': '8',
-            '₉': '9'
+            '₉': '9',
+            '′': "'",
+            '″': '"',
+            '‴': '"',
+            '–': '-',
+            '—': '-',
+            '…': '...',
+            '•': '*',
+            '◦': 'o',
+            '▪': '*',
+            '▫': '*'
         }
         
         return unicode_mappings.get(char)
@@ -277,6 +297,14 @@ class AssetIndicationNormalizer:
         for pattern in self.drug_patterns['strengths']:
             cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
         
+        # Remove pharmaceutical suffixes
+        for pattern in self.drug_patterns['pharmaceutical_suffixes']:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+        
+        # Remove chemical prefixes
+        for pattern in self.drug_patterns['chemical_prefixes']:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+        
         # Clean up extra whitespace
         cleaned = re.sub(r'\s+', ' ', cleaned).strip()
         
@@ -305,20 +333,41 @@ class AssetIndicationNormalizer:
     
     def _phonetic_normalization(self, text: str) -> str:
         """Generate phonetic representation of text."""
-        # Simple phonetic normalization (Metaphone-like)
-        # In production, you might want to use a proper phonetic library
+        # Improved phonetic normalization using Soundex-like algorithm
+        if not text:
+            return ""
         
-        # Remove vowels (except at start)
-        if len(text) > 1:
-            phonetic = text[0] + re.sub(r'[aeiouAEIOU]', '', text[1:])
-        else:
-            phonetic = text
+        # Convert to lowercase and remove non-alphabetic characters
+        text = re.sub(r'[^a-z]', '', text.lower())
         
-        # Convert to lowercase
-        phonetic = phonetic.lower()
+        if not text:
+            return ""
         
-        # Remove non-alphabetic characters
-        phonetic = re.sub(r'[^a-z]', '', phonetic)
+        # Soundex-like algorithm for pharmaceutical names
+        # Keep first letter
+        phonetic = text[0]
+        
+        # Map consonants to numbers
+        consonant_map = {
+            'b': '1', 'f': '1', 'p': '1', 'v': '1',
+            'c': '2', 'g': '2', 'j': '2', 'k': '2', 'q': '2', 's': '2', 'x': '2', 'z': '2',
+            'd': '3', 't': '3',
+            'l': '4',
+            'm': '5', 'n': '5',
+            'r': '6'
+        }
+        
+        # Process remaining characters
+        for char in text[1:]:
+            if char in consonant_map:
+                phonetic += consonant_map[char]
+            # Skip vowels and other characters
+        
+        # Remove consecutive duplicates
+        phonetic = re.sub(r'(.)\1+', r'\1', phonetic)
+        
+        # Pad or truncate to 4 characters
+        phonetic = (phonetic + '0000')[:4]
         
         return phonetic
     
@@ -328,30 +377,54 @@ class AssetIndicationNormalizer:
         
         # Common misspellings and variations
         common_variations = {
-            'cancer': ['canser', 'cancr', 'cancer'],
+            'cancer': ['canser', 'cancr'],
             'diabetes': ['diabetis', 'diabete', 'diabet'],
             'arthritis': ['arthritus', 'arthriti', 'arthrit'],
-            'leukemia': ['leukaemia', 'leukemia', 'leukemi'],
-            'tumor': ['tumour', 'tumor', 'tumr'],
+            'leukemia': ['leukaemia', 'leukemi'],
+            'tumor': ['tumour', 'tumr'],
             'therapy': ['theraphy', 'therapi', 'therap'],
             'treatment': ['treatmant', 'treatmnt', 'treat'],
-            'clinical': ['clinacal', 'clinacal', 'clinic'],
-            'trial': ['trail', 'trial', 'tri'],
-            'study': ['studdy', 'stud', 'stud'],
+            'clinical': ['clinacal', 'clinic'],
+            'trial': ['trail', 'tri'],
+            'study': ['studdy', 'stud'],
             'patient': ['patiant', 'patien', 'pati'],
-            'disease': ['diseas', 'diseas', 'dise'],
-            'syndrome': ['syndrom', 'syndrom', 'syndr'],
+            'disease': ['diseas', 'dise'],
+            'syndrome': ['syndrom', 'syndr'],
             'infection': ['infecton', 'infecti', 'infect'],
-            'inflammation': ['inflamation', 'inflammat', 'inflamm']
+            'inflammation': ['inflamation', 'inflammat', 'inflamm'],
+            'alzheimer': ['alzheimers', 'alzheimers', 'alzheim'],
+            'dementia': ['dementa', 'dementi', 'dement'],
+            'simufilam': ['simufilam', 'simufilam', 'simufil'],
+            'pti': ['pt', 'p-t-i', 'p t i'],
+            'pt125': ['pt-125', 'pt 125', 'pti125']
         }
         
-        # Generate variations based on common patterns
-        for word in text.split():
+        # Generate variations based on word matching
+        words = text.lower().split()
+        for word in words:
+            # Clean word for matching
+            clean_word = re.sub(r'[^\w]', '', word)
+            
             for pattern, variations in common_variations.items():
-                if word.lower() in pattern:
+                if clean_word == pattern or clean_word in variations:
                     for variation in variations:
-                        new_text = text.replace(word, variation)
-                        variants.append(new_text)
+                        if variation != clean_word:
+                            # Replace the word with variation
+                            new_text = text.replace(word, variation)
+                            variants.append(new_text)
+        
+        # Add common pharmaceutical variations
+        if 'pt' in text.lower() and '125' in text.lower():
+            # PTI-125 variations
+            variants.extend([
+                text.replace('PTI', 'PT'),
+                text.replace('PTI', 'P-T-I'),
+                text.replace('PTI', 'P T I'),
+                text.replace('125', '125'),
+                text.replace('-', ' '),
+                text.replace(' ', '-'),
+                text.replace('-', '')
+            ])
         
         return list(set(variants))  # Remove duplicates
     

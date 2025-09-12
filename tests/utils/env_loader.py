@@ -62,17 +62,18 @@ def setup_test_environment(project_root: Optional[Path] = None) -> Dict[str, str
         'LOG_LEVEL': 'WARNING'
     }
     
-    # For database, use PostgreSQL testing database (not production)
-    # Override database URLs to point to testing database
+    # For database, use the same database as production (ncfd)
+    # All tests now use the same database to avoid confusion
     test_defaults.update({
         'DB_HOST': 'localhost',
-        'DB_PORT': '5432',
+        'DB_PORT': '5433',
         'DB_USER': 'ncfd',
         'DB_PASS': 'ncfd',
-        'DB_NAME': 'ncfd_test',  # Testing database name
-        'PSQL_DSN': 'postgresql://ncfd:ncfd@localhost:5432/ncfd_test',
-        'DATABASE_URL': 'postgresql://ncfd:ncfd@localhost:5432/ncfd_test',
-        'POSTGRES_DSN': 'postgresql+psycopg2://ncfd:ncfd@localhost:5432/ncfd_test'
+        'DB_NAME': 'ncfd',  # Use same database as production
+        'PSQL_DSN': 'postgresql+psycopg2://ncfd:ncfd@localhost:5433/ncfd',
+        'DATABASE_URL': 'postgresql://ncfd:ncfd@localhost:5433/ncfd',
+        'POSTGRES_DSN': 'postgresql+psycopg2://ncfd:ncfd@localhost:5433/ncfd',
+        'PGPASSWORD': 'ncfd'  # Disable password prompts
     })
     
     # Only use SQLite if explicitly requested
@@ -103,14 +104,15 @@ def setup_test_environment(project_root: Optional[Path] = None) -> Dict[str, str
 def get_test_env() -> Dict[str, str]:
     """Get current test environment variables."""
     return {
-        'PSQL_DSN': os.environ.get('PSQL_DSN', 'postgresql://ncfd:ncfd@localhost:5432/ncfd_test'),
-        'DATABASE_URL': os.environ.get('DATABASE_URL', 'postgresql://ncfd:ncfd@localhost:5432/ncfd_test'),
-        'POSTGRES_DSN': os.environ.get('POSTGRES_DSN', 'postgresql+psycopg2://ncfd:ncfd@localhost:5432/ncfd_test'),
+        'PSQL_DSN': os.environ.get('PSQL_DSN', 'postgresql+psycopg2://ncfd:ncfd@localhost:5433/ncfd'),
+        'DATABASE_URL': os.environ.get('DATABASE_URL', 'postgresql://ncfd:ncfd@localhost:5433/ncfd'),
+        'POSTGRES_DSN': os.environ.get('POSTGRES_DSN', 'postgresql+psycopg2://ncfd:ncfd@localhost:5433/ncfd'),
         'DB_HOST': os.environ.get('DB_HOST', 'localhost'),
-        'DB_PORT': os.environ.get('DB_PORT', '5432'),
+        'DB_PORT': os.environ.get('DB_PORT', '5433'),
         'DB_USER': os.environ.get('DB_USER', 'ncfd'),
         'DB_PASS': os.environ.get('DB_PASS', 'ncfd'),
-        'DB_NAME': os.environ.get('DB_NAME', 'ncfd_test'),
+        'DB_NAME': os.environ.get('DB_NAME', 'ncfd'),
+        'PGPASSWORD': os.environ.get('PGPASSWORD', 'ncfd'),
         'OPENAI_API_KEY': os.environ.get('OPENAI_API_KEY', 'test-key-for-testing'),
         'STORAGE_TYPE': os.environ.get('STORAGE_TYPE', 'local'),
         'LOCAL_STORAGE_ROOT': os.environ.get('LOCAL_STORAGE_ROOT', './data/test'),

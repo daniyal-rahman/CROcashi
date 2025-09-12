@@ -15,21 +15,21 @@ from dataclasses import dataclass, asdict
 
 from ..db.models import Trial, TrialVersion, Study
 from ..db.session import get_session
-# Real extraction function using the study card pipeline
+# Real extraction function using the orchestrator
 def extract_study_card_from_document(document_path):
-    """Extract study card from document using the real extraction pipeline."""
+    """Extract study card from document using the orchestrator."""
     try:
-        from ncfd.pipeline.study_card_pipeline import StudyCardPipeline
+        from ncfd.pipeline.orchestrator import PipelineOrchestrator
         from ncfd.extract.models import DocumentCard
         
-        # Initialize the extraction pipeline
-        pipeline = StudyCardPipeline()
+        # Initialize the orchestrator
+        orchestrator = PipelineOrchestrator({})
         
         # Create document card from file
         doc_card = DocumentCard.from_file(document_path)
         
-        # Execute extraction pipeline
-        result = pipeline.execute(doc_card)
+        # Execute extraction using orchestrator
+        result = orchestrator.run_study_card_generation([{'trial_data': doc_card.__dict__}])
         
         if result.success:
             # Convert to study card format

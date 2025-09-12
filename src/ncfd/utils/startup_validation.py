@@ -59,7 +59,7 @@ class StartupValidator:
         
         try:
             # Check for required configuration values
-            from ..ingest.pubmed.pipeline import PubMedPipeline
+            from ..pipeline.pubmed_pipeline import PubMedPipeline
             
             # Test config with minimal requirements
             test_config = {
@@ -210,16 +210,16 @@ class StartupValidator:
         errors = []
         
         try:
-            from ..pipeline.sec_pipeline import SecPipeline
+            from ..pipeline.orchestrator import PipelineOrchestrator
             
-            # Test SEC pipeline instantiation
+            # Test orchestrator instantiation
             test_config = {'monitored_companies': []}
             try:
-                sec_pipeline = SecPipeline(test_config)
+                orchestrator = PipelineOrchestrator(test_config)
                 
                 # Check if universe is populated
-                if hasattr(sec_pipeline, 'monitored_companies'):
-                    if len(sec_pipeline.monitored_companies) == 0:
+                if hasattr(orchestrator, 'sec_pipeline') and hasattr(orchestrator.sec_pipeline, 'monitored_companies'):
+                    if len(orchestrator.sec_pipeline.monitored_companies) == 0:
                         errors.append("SEC universe is empty - no monitored companies configured")
                 else:
                     errors.append("SEC pipeline missing monitored_companies attribute")

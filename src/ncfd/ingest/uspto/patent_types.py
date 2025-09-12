@@ -160,7 +160,7 @@ class OwnershipEvent:
     ownership_percentage: Optional[Decimal] = None
     
     # Event details
-    event_date: date
+    event_date: Optional[date] = None
     event_type: str = ""  # "patent_assignment", "sec_filing", "press_release"
     
     # Evidence

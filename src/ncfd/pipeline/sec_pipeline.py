@@ -17,6 +17,7 @@ from datetime import date, timezone, datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Set
 import json
+from dataclasses import dataclass, field
 
 from ..ingest.sec_filings import SecFilingsClient
 from ..ingest.sec_langextract import SecLangExtractor
@@ -26,6 +27,35 @@ from ..ingest.sec_types import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SecPipelineResult:
+    """Result of SEC pipeline execution."""
+    success: bool
+    start_time: datetime
+    end_time: datetime
+    processing_time_seconds: float = field(init=False, default=0.0)
+    
+    # Filing metrics
+    filings_processed: int = 0
+    filings_created: int = 0
+    filings_updated: int = 0
+    filings_failed: int = 0
+    
+    # Document metrics
+    documents_processed: int = 0
+    documents_extracted: int = 0
+    documents_failed: int = 0
+    
+    # Error tracking
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    
+    def __post_init__(self):
+        """Calculate processing time."""
+        if self.end_time and self.start_time:
+            self.processing_time_seconds = (self.end_time - self.start_time).total_seconds()
 
 
 class SecPipeline:
@@ -76,7 +106,7 @@ class SecPipeline:
         Returns:
             Ingestion result summary
         """
-        start_time = datetime.now(UTC)
+        start_time = datetime.now(timezone.utc)
         logger.info("Starting daily SEC filing scan")
         
         # Determine scan parameters
@@ -107,7 +137,7 @@ class SecPipeline:
                     unchanged_filings += company_result.unchanged_filings
                 
                 # Update last check time
-                self.company_last_check[company_cik] = datetime.now(UTC).isoformat()
+                self.company_last_check[company_cik] = datetime.now(timezone.utc).isoformat()
                 
                 # Rate limiting between companies
                 time.sleep(1)  # Be extra polite
@@ -119,7 +149,7 @@ class SecPipeline:
                 failed_filings += 1
         
         # Calculate processing time
-        processing_time = (datetime.now(UTC) - start_time).total_seconds()
+        processing_time = (datetime.now(timezone.utc) - start_time).total_seconds()
         
         # Create overall result
         result = SecIngestionResult(
@@ -424,7 +454,7 @@ class SecPipeline:
             return last_scan_date - timedelta(days=2)
         
         # Default to 7 days ago
-        return datetime.now(UTC).date() - timedelta(days=7)
+        return datetime.now(timezone.utc).date() - timedelta(days=7)
     
     def _load_pipeline_state(self) -> Dict[str, Any]:
         """Load pipeline state from file."""
@@ -441,13 +471,13 @@ class SecPipeline:
         """Update pipeline state with latest results."""
         try:
             # Update last scan date
-            self.pipeline_state['last_scan_date'] = datetime.now(UTC).isoformat()
+            self.pipeline_state['last_scan_date'] = datetime.now(timezone.utc).isoformat()
             
             # Update company last check times
             self.pipeline_state['company_last_check'] = self.company_last_check
             
             # Update daily stats
-            today = datetime.now(UTC).date().isoformat()
+            today = datetime.now(timezone.utc).date().isoformat()
             if today not in self.daily_stats:
                 self.daily_stats[today] = {
                     'filings_processed': 0,

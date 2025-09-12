@@ -37,7 +37,7 @@ From the initial triage, this was identified as the next priority after implemen
 - [ ] Fix duplicate field bug in `src/ncfd/db/models.py` (duplicate `doc_id` in `Study`)
 
 **Configuration Consolidation:**
-- [ ] Consolidate config precedence: base `config/config.yaml` + per-domain YAMLs
+- [ ] Consolidate config precedence: base `config/core_system_config.yaml` + per-domain YAMLs
 - [ ] Add config validation at startup
 - [ ] Ensure all configs are properly validated
 

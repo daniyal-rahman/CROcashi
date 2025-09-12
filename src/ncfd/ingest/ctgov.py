@@ -8,6 +8,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, timezone, datetime
 from typing import Generator, Iterable, List, Optional, Tuple, Dict, Any
+
+# Alias for timezone.utc for convenience
+UTC = timezone.utc
 import hashlib
 import json
 import os

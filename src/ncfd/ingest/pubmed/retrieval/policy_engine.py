@@ -9,7 +9,7 @@ import logging
 import re
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
-from ...entities.schema import EntityPack
+from ....entities.schema import EntityPack
 
 logger = logging.getLogger(__name__)
 

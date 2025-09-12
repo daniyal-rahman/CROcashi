@@ -10,7 +10,7 @@ This module implements the guardrails from the retrieval specification:
 import logging
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
-from ...entities.schema import EntityPack
+from ....entities.schema import EntityPack
 
 logger = logging.getLogger(__name__)
 

@@ -1,0 +1,85 @@
+{
+  "test_info": {
+    "start_time": "2025-09-12T06:44:49.335397+00:00",
+    "test_name": "Comprehensive Cassava Pipeline Test",
+    "version": "1.0",
+    "end_time": "2025-09-12T06:45:12.537616+00:00",
+    "duration_seconds": 23.202219
+  },
+  "database_setup": {
+    "status": "success",
+    "tables_created": true,
+    "data_cleared": true,
+    "company_seeded": true
+  },
+  "ctgov_seeding": {
+    "status": "success",
+    "trials_seeded": 4,
+    "trials": [
+      {
+        "trial_id": 1,
+        "nct_id": "NCT04388254",
+        "title": "A Phase 2, Randomized, Double-Blind, Placebo-Controlled Study of PTI-125 in Patients with Mild-to-Moderate Alzheimer's Disease",
+        "phase": "PHASE2"
+      },
+      {
+        "trial_id": 2,
+        "nct_id": "NCT05515666",
+        "title": "A Phase 3, Randomized, Double-Blind, Placebo-Controlled Study of Simufilam in Patients with Mild-to-Moderate Alzheimer's Disease",
+        "phase": "PHASE3"
+      },
+      {
+        "trial_id": 3,
+        "nct_id": "NCT03838185",
+        "title": "A Phase 2, Single-Ascending Dose Study of PTI-125 in Healthy Volunteers",
+        "phase": "PHASE2"
+      },
+      {
+        "trial_id": 4,
+        "nct_id": "NCT03838186",
+        "title": "A Phase 2, Multiple-Ascending Dose Study of PTI-125 in Healthy Volunteers",
+        "phase": "PHASE2"
+      }
+    ]
+  },
+  "pubmed_processing": {},
+  "study_card_generation": {},
+  "orchestrator_testing": {
+    "status": "success",
+    "execution_id": "cassava_test_1757659489",
+    "total_processing_time": 22.798369,
+    "ctgov_result": {
+      "success": false,
+      "trials_processed": 0
+    },
+    "pubmed_result": {
+      "success": true,
+      "documents_processed": 0
+    },
+    "study_card_result": {
+      "success": false,
+      "gate_candidates": 0
+    },
+    "errors": [],
+    "warnings": []
+  },
+  "validation_results": {
+    "status": "success",
+    "entity_counts": {
+      "companies": 1,
+      "trials": 4,
+      "documents": 0,
+      "studies": 0
+    },
+    "relationships": {
+      "trials_with_company": 4,
+      "trials_with_documents": 0
+    },
+    "data_integrity": {
+      "all_trials_have_company": true,
+      "some_trials_have_documents": false
+    }
+  },
+  "errors": [],
+  "warnings": []
+}

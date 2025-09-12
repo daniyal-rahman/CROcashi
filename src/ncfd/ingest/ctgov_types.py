@@ -12,6 +12,9 @@ from datetime import date, datetime, timezone
 from typing import List, Optional, Dict, Any, Set
 from enum import Enum
 
+# Alias for timezone.utc for convenience
+UTC = timezone.utc
+
 
 class TrialPhase(Enum):
     """Trial phase enumeration."""
@@ -163,7 +166,7 @@ class ComprehensiveTrialFields:
     sponsor_info: SponsorInfo = field(default_factory=SponsorInfo)
     
     # Trial design
-    study_type: StudyType = field(default_factory=StudyType)
+    study_type: StudyType = StudyType.INTERVENTIONAL
     phase: Optional[TrialPhase] = None
     trial_design: TrialDesign = field(default_factory=TrialDesign)
     

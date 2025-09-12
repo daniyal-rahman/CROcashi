@@ -6,10 +6,17 @@ Backtest real ClinicalTrials.gov data.
 import json
 import sys
 from pathlib import Path
+from typing import List, Dict, Any
+import logging
 
 from ncfd.backtest.outcomes import BacktestOutcomes
 from ncfd.ingest.ctgov import CTGovIngester
 from ncfd.config import get_config
+from ncfd.pipeline.orchestrator import PipelineOrchestrator
+
+def get_logger(name: str) -> logging.Logger:
+    """Get logger instance."""
+    return logging.getLogger(name)
 
 
 def fetch_real_ctgov_trials(limit: int = 10) -> List[Dict[str, Any]]:
@@ -74,13 +81,15 @@ def test_ctgov_pipeline(trials: List[Dict[str, Any]]) -> Dict[str, Any]:
     logger = get_logger(__name__)
     logger.info("Testing CTGov pipeline with real data")
     
-    # Create pipeline
+    # Create orchestrator
     config = {
-        'api_base_url': 'https://clinicaltrials.gov/api/v2',
-        'batch_size': 100
+        'ctgov': {
+            'api_base_url': 'https://clinicaltrials.gov/api/v2',
+            'batch_size': 100
+        }
     }
     
-    pipeline = CtgovPipeline(config)
+    orchestrator = PipelineOrchestrator(config)
     
     # Test processing each trial
     results = []
@@ -89,8 +98,8 @@ def test_ctgov_pipeline(trials: List[Dict[str, Any]]) -> Dict[str, Any]:
         sponsor_name = trial_info["sponsor_name"]
         
         try:
-            # Extract comprehensive fields
-            fields = pipeline.client.extract_comprehensive_fields(trial_info["raw_data"])
+            # Extract comprehensive fields using orchestrator's CT.gov pipeline
+            fields = orchestrator.ctgov_pipeline.client.extract_comprehensive_fields(trial_info["raw_data"])
             
             result = {
                 "nct_id": nct_id,

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from ncfd.backtest.outcomes import BacktestOutcomes
-from ncfd.ingest.pubmed.pipeline import PubMedPipeline
+from ncfd.pipeline.pubmed_pipeline import PubMedPipeline
 from ncfd.config import get_config
 
 

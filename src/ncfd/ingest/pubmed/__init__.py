@@ -7,17 +7,15 @@ and pipeline orchestration for clinical trial literature processing.
 
 from .client import PubMedClient, PubMedBatchProcessor
 from .mapper import PubMedMapper
-from .pipeline import PubMedPipeline
+# from .pipeline import PubMedPipeline  # Moved to pipeline/pubmed_pipeline.py
 from .db_service import PubMedDBService, get_db_service
 from .normalization import AssetIndicationNormalizer
-from .stage_u1 import StageU1Processor, StageU1Result
+# Legacy stage_u1 removed - use new retrieval/processing modules
 
 # New retrieval system components
-from .multi_tier_query_builder import MultiTierQueryBuilder
-from .policy_engine import RetrievalPolicy, PolicyConfig
-from .advanced_scorer import AdvancedDocumentScorer, ScoringConfig
-from .guardrails import GuardrailsSystem, GuardrailConfig
-from .ctgov_integration import CTgovIntegration, CTgovConfig
+from .retrieval import RetrievalOrchestrator, RetrievalResult
+from .processing import AbstractProcessor, ProcessingResult
+from .pipeline_dual_persistence import PubMedPipelineDualPersistence
 
 __all__ = [
     # Core components
@@ -31,18 +29,12 @@ __all__ = [
     # Normalization
     "AssetIndicationNormalizer",
     
-    # Stage processors
-    "StageU1Processor", 
-    "StageU1Result",
+    # Legacy stage processors removed
     
     # New retrieval system components
-    "MultiTierQueryBuilder",
-    "RetrievalPolicy",
-    "PolicyConfig",
-    "AdvancedDocumentScorer",
-    "ScoringConfig",
-    "GuardrailsSystem",
-    "GuardrailConfig",
-    "CTgovIntegration",
-    "CTgovConfig"
+    "RetrievalOrchestrator",
+    "RetrievalResult",
+    "AbstractProcessor",
+    "ProcessingResult",
+    "PubMedPipelineDualPersistence"
 ]

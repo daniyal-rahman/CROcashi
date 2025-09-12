@@ -1,0 +1,177 @@
+# Comprehensive Cassava Pipeline Test Configuration
+# ================================================
+# Configuration for testing multiple pipeline components using real Cassava trial data
+
+# Environment settings
+env: "test"
+worker_id: "comprehensive_cassava_test"
+
+# Database configuration
+db:
+  dsn: ${PSQL_DSN}
+
+# LLM configuration
+llm:
+  provider: openai
+  model_map:
+    llm_decider: gpt-4o-mini
+    results_distiller: gpt-4o-mini
+    method_auditor: gpt-4o-mini
+    study_card_evaluator: gpt-4o-mini
+    gate_proposer: gpt-4o-mini
+    gate_validator: gpt-4o-mini
+    gate_assessor: gpt-4o-mini
+    fda_lens: gpt-4o-mini
+    memo_composer: gpt-4o-mini
+  api_keys:
+    openai: ${OPENAI_API_KEY}
+  rate_limits:
+    openai:
+      requests_per_minute: 60
+      tokens_per_minute: 50000
+
+# CT.gov pipeline configuration - use seeded trials
+ctgov:
+  incremental: false
+  seed_trials:
+    - nct_id: "NCT04388254"
+      company_name: "Cassava Sciences, Inc."
+      asset_aliases: ["simufilam", "PTI-125", "filamin A inhibitor"]
+      indication_terms: ["Alzheimer's disease", "dementia"]
+      extra_trial_fields:
+        phase: "PHASE2"
+        status: "COMPLETED"
+        brief_title: "A Phase 2, Randomized, Double-Blind, Placebo-Controlled Study of PTI-125 in Patients with Mild-to-Moderate Alzheimer's Disease"
+        is_pivotal: true
+        primary_endpoint: "ADAS-Cog11"
+        has_results: true
+    - nct_id: "NCT05515666"
+      company_name: "Cassava Sciences, Inc."
+      asset_aliases: ["simufilam", "PTI-125", "filamin A inhibitor"]
+      indication_terms: ["Alzheimer's disease", "dementia"]
+      extra_trial_fields:
+        phase: "PHASE3"
+        status: "RECRUITING"
+        brief_title: "A Phase 3, Randomized, Double-Blind, Placebo-Controlled Study of Simufilam in Patients with Mild-to-Moderate Alzheimer's Disease"
+        is_pivotal: true
+        primary_endpoint: "ADAS-Cog11"
+        has_results: false
+  batch_size: 10
+  retry_attempts: 3
+
+# PubMed pipeline configuration - use simufilam entity pack
+pubmed:
+  entity_id: "simufilam"
+  domain: "neurology"
+  
+  client_config:
+    rate_limit_requests_per_minute: 60
+    batch_size: 20
+    timeout_seconds: 30
+    max_retries: 3
+  
+  rerank_config:
+    feat_weights:
+      bm25: 1.0
+      has_must: 3.0
+      should_hits_capped: 1.0
+      cannot_without_must: -2.0
+      pubtype_trial: 1.5
+      mesh_primary: 0.5
+      nct_si: 1.0
+      recency: 0.3
+    require_any: ["drug_tiab", "company_tiab", "nct_si"]
+    mechanism_requires_must: true
+    drop_if_cannot_without_must: true
+    min_score_threshold: 0.0
+    max_results: 100
+  
+  asset_names: [
+    "simufilam", "PTI-125", "filamin A inhibitor", 
+    "Cassava Sciences", "FLNA inhibitor"
+  ]
+  indications: [
+    "Alzheimer's disease", "Alzheimer disease", "AD", 
+    "dementia", "cognitive decline", "mild cognitive impairment"
+  ]
+  query_config:
+    max_terms: 100
+    enable_boolean_operators: true
+    date_range: ("2020/01/01", "2024/12/31")
+
+# Study card pipeline configuration
+study_cards:
+  max_docs_per_trial: 100
+  store_json_snapshots: true
+  llm_timeout_seconds: 180
+  retrieval_timeout_seconds: 90
+  
+  retriever:
+    auto_span_generation: true
+    late_fusion: false
+    max_span_length: 500
+    min_confidence: 0.6
+  
+  validation:
+    strict_validation: false
+    fail_fast_on_validation: false
+    validation_error_action: 'warn'
+    max_validation_errors: 20
+  
+  stages:
+    retrieval:
+      enable: true
+      timeout_seconds: 90
+    llm_method_auditing:
+      enable: true
+      timeout_seconds: 180
+    deterministic_method_auditing:
+      enable: false
+      timeout_seconds: 30
+    llm_results_distillation:
+      enable: true
+      timeout_seconds: 180
+    deterministic_results_distillation:
+      enable: false
+      timeout_seconds: 30
+    gate_proposal:
+      enable: true
+      timeout_seconds: 120
+    gate_validation:
+      enable: true
+      timeout_seconds: 120
+    gate_assessment:
+      enable: true
+      timeout_seconds: 120
+    fda_lens:
+      enable: true
+      timeout_seconds: 120
+    memo_composition:
+      enable: true
+      timeout_seconds: 120
+
+# Orchestrator configuration
+execution_order: ['ctgov', 'pubmed', 'study_card']
+parallel_execution: false
+dependency_checking: true
+max_retries: 3
+retry_delay_seconds: 300
+
+# State management
+state_file: .state/comprehensive_cassava_test.json
+
+# Logging configuration
+logging:
+  level: INFO
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  file: logs/comprehensive_cassava_test.log
+
+# Test-specific configuration
+test_config:
+  focus_trials: ["NCT04388254", "NCT05515666"]
+  expected_company: "Cassava Sciences, Inc."
+  expected_assets: ["simufilam", "PTI-125"]
+  expected_indication: "Alzheimer's Disease"
+  expected_phases: ["PHASE2", "PHASE3"]
+  expected_mechanism: "filamin A inhibitor"
+  expected_endpoint: "ADAS-Cog11"

@@ -10,12 +10,12 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 
-from .db_service import PubMedDBService, get_db_service
-from .queue_service import TaskQueueService
+from ...ingest.pubmed.db_service import PubMedDBService, get_db_service
+from ...ingest.pubmed.queue_service import TaskQueueService
 from ...db.session import session_scope
 from ...db.models import Document, DocumentText, TrialDocCandidate, Trial, Company
 from ...db.study_card_models import MethodCard, ResultsFactsheet, GateAssessment, EvidenceSpan
-from ...pipeline.direct_study_card_pipeline import DirectStudyCardPipeline
+from ...pipeline.orchestrator import PipelineOrchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class StudyCardWorker:
         
         # Initialize the direct study card pipeline
         pipeline_config = config.get('study_card', {})
-        self.pipeline = DirectStudyCardPipeline(pipeline_config)
+        self.orchestrator = PipelineOrchestrator(pipeline_config)
         
         # Study card settings
         self.batch_size = self.config.get('batch_size', 3)
@@ -244,10 +244,10 @@ class StudyCardWorker:
             trial_context = await self._prepare_trial_context(trial_id, documents)
             
             # Execute the study card pipeline
-            pipeline_result = await self.pipeline.execute(
-                trial_id=str(trial_id),
-                trial_context=trial_context
-            )
+            pipeline_result = await self.orchestrator.run_study_card_generation([{
+                'trial_id': str(trial_id),
+                'trial_data': trial_context
+            }])
             
             if pipeline_result.success:
                 results['documents_processed'] = len(documents)

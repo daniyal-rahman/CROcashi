@@ -24,7 +24,7 @@ from sqlalchemy import text
 from ncfd.db.session import session_scope, get_engine
 from ncfd.db.models import Base, Trial, Company, Document, Study, DocumentLink, TrialDocCandidate, DocRSScore
 from ncfd.pipeline.orchestrator import UnifiedPipelineOrchestrator
-from ncfd.ingest.pubmed.pipeline import PubMedPipeline
+from ncfd.pipeline.pubmed_pipeline import PubMedPipeline
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

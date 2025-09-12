@@ -6,6 +6,12 @@ ingestion, trial version tracking, study card processing, and automated
 failure detection workflows.
 """
 
+from .orchestrator import (
+    PipelineOrchestrator,
+    UnifiedPipelineOrchestrator,  # Alias for backward compatibility
+    OrchestrationResult,
+)
+
 from .ingestion import (
     DocumentIngestionPipeline,
     ingest_document,
@@ -20,20 +26,6 @@ from .tracking import (
     generate_change_summary,
 )
 
-from .processing import (
-    StudyCardProcessor,
-    process_study_card,
-    extract_trial_metadata,
-    validate_study_card,
-)
-
-from .workflow import (
-    FailureDetectionWorkflow,
-    run_failure_detection,
-    batch_process_trials,
-    generate_failure_report,
-)
-
 from .lit_queue import (
     LiteratureQueue,
     TrialQueueItem,
@@ -46,7 +38,17 @@ from .early_stopping import (
     update_trial_state,
 )
 
+from .ctgov_pipeline import CtgovPipeline
+from .sec_pipeline import SecPipeline
+from .study_card_pipeline import StudyCardPipeline
+from .asset_resolver import AssetResolver
+
 __all__ = [
+    # Main orchestrator
+    "PipelineOrchestrator",
+    "UnifiedPipelineOrchestrator",
+    "OrchestrationResult",
+    
     # Document ingestion
     "DocumentIngestionPipeline",
     "ingest_document",
@@ -59,18 +61,6 @@ __all__ = [
     "detect_material_changes",
     "generate_change_summary",
     
-    # Study card processing
-    "StudyCardProcessor",
-    "process_study_card",
-    "extract_trial_metadata",
-    "validate_study_card",
-    
-    # Complete workflow
-    "FailureDetectionWorkflow",
-    "run_failure_detection",
-    "batch_process_trials",
-    "generate_failure_report",
-    
     # Literature queue management
     "LiteratureQueue",
     "TrialQueueItem",
@@ -80,4 +70,10 @@ __all__ = [
     "plateau_detected",
     "calculate_expected_utility",
     "update_trial_state",
+    
+    # Individual pipelines
+    "CtgovPipeline",
+    "SecPipeline", 
+    "StudyCardPipeline",
+    "AssetResolver",
 ]

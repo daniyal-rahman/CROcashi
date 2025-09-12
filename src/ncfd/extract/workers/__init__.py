@@ -6,6 +6,7 @@ This package contains all workers for the study card system.
 
 from .base_worker import BaseWorker
 from .retriever import Retriever
+# Note: StudyCardWorker moved here but not imported to avoid circular dependencies
 
 # LLM Workers
 from .llm import (

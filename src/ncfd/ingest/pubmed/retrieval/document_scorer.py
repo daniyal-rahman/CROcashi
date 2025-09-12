@@ -9,7 +9,7 @@ import logging
 import re
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
-from ...entities.schema import EntityPack
+from ....entities.schema import EntityPack
 from .policy_engine import PolicyResult
 
 logger = logging.getLogger(__name__)

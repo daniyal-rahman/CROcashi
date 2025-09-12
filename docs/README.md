@@ -105,7 +105,7 @@ python scripts/gpt5_analysis.py --trial-id trial_001
 ## Configuration
 
 The system uses multiple configuration files:
-- `config/config.yaml` - Main configuration
+- `config/core_system_config.yaml` - Core system configuration
 - `config/backtest.yaml` - Backtest settings
 - `config/ctgov_config.yaml` - CT.gov ingestion
 - `config/sec_config.yaml` - SEC filing processing

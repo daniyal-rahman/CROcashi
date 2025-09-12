@@ -95,10 +95,32 @@ class EnhancedRetriever(BaseWorker):
                             logger.warning(f"Could not convert trial_id '{trial_id}' to integer, skipping trial_id lookup")
                         
                         if trial_id_int is not None:
+                            # First try the traditional documents table
                             linked_docs = session.query(Document).join(
                                 DocumentLink, Document.doc_id == DocumentLink.doc_id
                             ).filter(DocumentLink.trial_id == trial_id_int).all()
                             logger.debug(f"Found {len(linked_docs)} documents linked to trial_id {trial_id_int}")
+                            
+                            # If no documents found, try the processed_documents table (PubMed pipeline)
+                            if not linked_docs:
+                                from ...db.retrieval_models import ProcessedDocument
+                                processed_docs = session.query(ProcessedDocument).filter(
+                                    ProcessedDocument.trial_id == trial_id_int
+                                ).all()
+                                logger.debug(f"Found {len(processed_docs)} processed documents for trial_id {trial_id_int}")
+                                
+                                # Convert ProcessedDocument to Document-like objects for compatibility
+                                for proc_doc in processed_docs:
+                                    # Create a mock Document object with the required fields
+                                    mock_doc = type('MockDocument', (), {
+                                        'doc_id': proc_doc.id,
+                                        'title': proc_doc.title or f"Processed Document {proc_doc.pmid}",
+                                        'pmid': proc_doc.pmid,
+                                        'nct_id': nct_id,
+                                        'published_at': None,
+                                        'source_type': 'Paper'
+                                    })()
+                                    linked_docs.append(mock_doc)
                     
                     # Also try NCT ID lookup (fallback strategy)
                     if not linked_docs and nct_id:
@@ -227,6 +249,23 @@ class EnhancedRetriever(BaseWorker):
                             logger.warning(f"Abstract too short ({abstract_length} chars) for quality study card generation")
                         
                         return doc_text.abstract_text
+                
+                # If no text found in traditional tables, try processed_documents table
+                # Extract trial_id from doc_id if it's in the format we created
+                if doc_id.startswith('db:'):
+                    try:
+                        doc_id_int = int(doc_id.split(':')[1])
+                        from ...db.retrieval_models import ProcessedDocument
+                        processed_doc = session.query(ProcessedDocument).filter(
+                            ProcessedDocument.id == doc_id_int
+                        ).first()
+                        
+                        if processed_doc and processed_doc.abstract:
+                            abstract_length = len(processed_doc.abstract)
+                            print(f"Retrieved {abstract_length} characters of abstract from processed_documents")
+                            return processed_doc.abstract
+                    except (ValueError, IndexError):
+                        pass
                 
                 print(f"No text content found for document {internal_doc_id}")
                 return ""

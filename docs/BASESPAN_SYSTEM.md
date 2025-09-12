@@ -64,7 +64,7 @@ CREATE TABLE derived_spans (
 
 ## Configuration
 
-The system is configured via `src/ncfd/extract/config/span_config.yaml`:
+The system is configured via `config/basespan_config.yaml`:
 
 ```yaml
 # Span Generation Settings

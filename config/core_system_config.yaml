@@ -1,15 +1,62 @@
-# config/config.yaml
+# config/core_system_config.yaml
 
 profile_defaults: &defaults
   logging:
     level: INFO
     json: true
+    
+    # Enhanced logging configuration
+    enable_logging: true
+    log_format: "json"
+    structured_logging: true
+    
+    # Log rotation
+    max_log_size_mb: 100
+    max_log_files: 10
+    log_retention_days: 30
+    
+    # Structured logging
+    include_timestamps: true
+    include_execution_id: true
+    include_pipeline_name: true
+    
+    # Log destinations
+    log_to_file: true
+    log_to_console: true
+    log_to_syslog: false
+    
+    # Context tracking
+    enable_context_tracking: true
+    log_context_vars: ["run_id", "trial_id", "task_id", "task_type"]
+    
+    # Metrics
+    enable_metrics: true
+    metrics_log_interval: 300  # 5 minutes
 
   database:
     # Prefer DSN from env; these serve as fallbacks
     dsn: ${POSTGRES_DSN}
     pool_size: 10
     pool_timeout_s: 30
+    
+    # Enhanced database configuration
+    connection_pool_size: 20
+    connection_timeout: 30
+    max_database_connections: 20
+    database_query_timeout_seconds: 300
+    
+    # Batch operations
+    batch_insert_size: 1000
+    batch_update_size: 50
+    use_bulk_operations: true
+    
+    # Transaction settings
+    auto_commit: false
+    isolation_level: "READ_COMMITTED"
+    
+    # Performance optimization
+    enable_connection_pooling: true
+    enable_memory_optimization: true
 
   duckdb:
     path: ${DUCKDB_PATH}
@@ -29,12 +76,7 @@ profile_defaults: &defaults
       fallback_s3: ${LOCAL_STORAGE_FALLBACK_S3:-true}
 
   ingestion:
-    ctgov:
-      base_url: https://clinicaltrials.gov/api/v2
-      backfill_start: "2000-01-01"
-      batch_size: 500
-      sleep_ms: 200
-      capture_version_history: true
+    # CT.gov configuration moved to config/ctgov_config.yaml
     sec:
       rate_limit_per_min: 6
       user_agent: ${SEC_USER_AGENT}

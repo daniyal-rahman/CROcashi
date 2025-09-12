@@ -224,7 +224,7 @@ API_PORT=8000
 # (4) `config.yaml` (key structure)
 
 ```yaml
-# config/config.yaml
+# config/core_system_config.yaml
 
 profile_defaults: &defaults
   logging:

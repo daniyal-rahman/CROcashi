@@ -198,9 +198,9 @@ class SpanConfigLoader:
     def __init__(self, config_path: Optional[str] = None):
         """Initialize the config loader."""
         if config_path is None:
-            # Default to config directory relative to this file
-            config_dir = Path(__file__).parent
-            config_path = config_dir / "span_config.yaml"
+            # Default to main config directory
+            project_root = Path(__file__).parent.parent.parent.parent
+            config_path = project_root / "config" / "basespan_config.yaml"
         
         self.config_path = Path(config_path)
         self._config = None
