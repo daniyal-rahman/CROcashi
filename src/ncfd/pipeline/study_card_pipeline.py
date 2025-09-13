@@ -256,6 +256,19 @@ class StudyCardPipeline:
             
             logger.info(f"Retrieved {len(result.document_cards)} documents with {len(raw_doc_texts)} raw texts")
             
+            # Stage 1.5: Apply document prioritization and rate limiting
+            logger.info("Stage 1.5: Applying document prioritization and rate limiting")
+            prioritized_docs, rate_stats = await self._apply_document_prioritization(
+                int(trial_id), result.document_cards, raw_doc_texts, trial_context
+            )
+            
+            # Update document cards and raw texts based on prioritization
+            result.document_cards = prioritized_docs['document_cards']
+            raw_doc_texts = prioritized_docs['raw_doc_texts']
+            
+            logger.info(f"Document prioritization applied: {len(result.document_cards)} documents selected from {rate_stats['total_candidates']} candidates")
+            logger.info(f"Prioritization stats: {rate_stats}")
+            
             # Stage 2: Direct LLM processing using our working components
             logger.info("Stage 2: Direct LLM processing")
             
@@ -490,6 +503,287 @@ class StudyCardPipeline:
             logger.error(f"Failed to save gate assessment to database: {e}")
     
     
+    async def _apply_document_prioritization(self, trial_id: int, document_cards: List, raw_doc_texts: Dict, trial_context: Dict[str, Any]) -> Tuple[Dict, Dict]:
+        """
+        Apply document prioritization and rate limiting to retrieved documents.
+        
+        Args:
+            trial_id: Trial ID
+            document_cards: List of document cards from retrieval
+            raw_doc_texts: Dictionary of raw document texts
+            trial_context: Trial context information
+            
+        Returns:
+            Tuple of (prioritized_docs, processing_stats)
+        """
+        try:
+            from ncfd.db.session import session_scope
+            from ncfd.db.models import Document, DocumentText, DocumentLink
+            
+            with session_scope() as session:
+                # Get all documents linked to this trial with R/S scores via TrialDocCandidate
+                from ncfd.db.models import TrialDocCandidate
+                documents = session.query(Document, DocumentText).outerjoin(
+                    DocumentText, Document.doc_id == DocumentText.doc_id
+                ).join(
+                    TrialDocCandidate, Document.doc_id == TrialDocCandidate.doc_id
+                ).filter(
+                    TrialDocCandidate.trial_id == trial_id,
+                    TrialDocCandidate.stage.in_(['U1_discovery', 'U1_abstract']),  # Accept both stages
+                    TrialDocCandidate.selected == True
+                ).all()
+                
+                if not documents:
+                    logger.warning(f"No documents found for trial {trial_id}")
+                    return {'document_cards': [], 'raw_doc_texts': {}}, {
+                        "total_documents": 0, 
+                        "total_candidates": 0,
+                        "selected_documents": 0,
+                        "priority_counts": {},
+                        "text_availability": {},
+                        "rs_score_stats": {},
+                        "rate_limit_applied": False
+                    }
+                
+                # Convert to processing candidates with prioritization
+                candidates = []
+                for doc, doc_text in documents:
+                    # Check text availability
+                    has_full_text = bool(doc_text and doc_text.fulltext_text and len(doc_text.fulltext_text.strip()) > 0)
+                    has_abstract = bool(doc_text and doc_text.abstract_text and len(doc_text.abstract_text.strip()) > 0)
+                    
+                    # Determine priority based on R/S scores and text availability
+                    priority = self._determine_document_priority(
+                        doc.r_score, doc.r_tier, doc.s_score, doc.s_tier,
+                        has_full_text, has_abstract
+                    )
+                    
+                    # Calculate processing score
+                    processing_score = self._calculate_processing_score(
+                        doc.r_score, doc.s_score, has_full_text, has_abstract,
+                        len(doc_text.fulltext_text) if doc_text and doc_text.fulltext_text else 0,
+                        len(doc_text.abstract_text) if doc_text and doc_text.abstract_text else 0
+                    )
+                    
+                    candidate = {
+                        'doc_id': doc.doc_id,
+                        'pmid': doc.pmid,
+                        'title': doc.title,
+                        'r_score': float(doc.r_score) if doc.r_score else 0.0,
+                        'r_tier': doc.r_tier,
+                        's_score': float(doc.s_score) if doc.s_score else 0.0,
+                        's_tier': doc.s_tier,
+                        'has_full_text': has_full_text,
+                        'has_abstract': has_abstract,
+                        'priority': priority,
+                        'processing_score': processing_score,
+                        'fulltext_text': doc_text.fulltext_text if doc_text else None,
+                        'abstract_text': doc_text.abstract_text if doc_text else None
+                    }
+                    candidates.append(candidate)
+                
+                # Sort candidates by priority and processing score
+                sorted_candidates = self._sort_document_candidates(candidates)
+                
+                # Apply rate limiting
+                selected_candidates = self._apply_document_rate_limits(sorted_candidates)
+                
+                # Generate processing statistics
+                stats = self._generate_document_processing_stats(documents, candidates, selected_candidates)
+                
+                # Convert selected candidates back to document cards and raw texts
+                prioritized_doc_cards = []
+                prioritized_raw_texts = {}
+                
+                for candidate in selected_candidates:
+                    # Find matching document card from original retrieval
+                    matching_doc_card = None
+                    for doc_card in document_cards:
+                        if doc_card.doc_id == candidate['doc_id']:
+                            matching_doc_card = doc_card
+                            break
+                    
+                    if matching_doc_card:
+                        prioritized_doc_cards.append(matching_doc_card)
+                        # Use full text if available, otherwise use abstract
+                        if candidate['has_full_text'] and candidate['fulltext_text']:
+                            prioritized_raw_texts[candidate['doc_id']] = candidate['fulltext_text']
+                        elif candidate['has_abstract'] and candidate['abstract_text']:
+                            prioritized_raw_texts[candidate['doc_id']] = candidate['abstract_text']
+                        else:
+                            # Fallback to original raw text
+                            prioritized_raw_texts[candidate['doc_id']] = raw_doc_texts.get(candidate['doc_id'], "")
+                
+                logger.info(f"Document prioritization applied: {len(prioritized_doc_cards)} documents selected from {len(candidates)} candidates")
+                
+                return {
+                    'document_cards': prioritized_doc_cards,
+                    'raw_doc_texts': prioritized_raw_texts
+                }, stats
+                
+        except Exception as e:
+            logger.error(f"Error applying document prioritization for trial {trial_id}: {e}")
+            return {'document_cards': document_cards, 'raw_doc_texts': raw_doc_texts}, {"error": str(e)}
+    
+    def _determine_document_priority(self, r_score, r_tier, s_score, s_tier, has_full_text, has_abstract):
+        """Determine document priority based on R/S scores and text availability."""
+        
+        # Convert tiers to scores if scores are missing
+        if r_score is None and r_tier:
+            r_score = self._tier_to_score(r_tier)
+        if s_score is None and s_tier:
+            s_score = self._tier_to_score(s_tier)
+        
+        # Default to low scores if missing
+        r_score = r_score or 0.0
+        s_score = s_score or 0.0
+        
+        # High priority: R≥2 AND S≥2 AND has text (full text preferred, abstract acceptable)
+        if (r_score >= 0.6 and s_score >= 0.6 and (has_full_text or has_abstract)):
+            return "HIGH"
+        
+        # Medium priority: R≥2 OR S≥2 AND has text (full text preferred, abstract acceptable)
+        if ((r_score >= 0.6 or s_score >= 0.6) and (has_full_text or has_abstract)):
+            return "MEDIUM"
+        
+        # Low priority: R≥1 OR S≥1 AND has text (full text preferred, abstract acceptable)
+        if ((r_score >= 0.4 or s_score >= 0.4) and (has_full_text or has_abstract)):
+            return "LOW"
+        
+        # Fallback: Any R/S score with abstract only (no full text)
+        if ((r_score >= 0.4 or s_score >= 0.4) and has_abstract and not has_full_text):
+            return "FALLBACK"
+        
+        # Default to low priority
+        return "LOW"
+    
+    def _tier_to_score(self, tier):
+        """Convert R/S tier to approximate score."""
+        tier_mapping = {
+            'R0': 0.0, 'R1': 0.4, 'R2': 0.6, 'R3': 0.8,
+            'S0': 0.0, 'S1': 0.4, 'S2': 0.6, 'S3': 0.8
+        }
+        return tier_mapping.get(tier, 0.0)
+    
+    def _calculate_processing_score(self, r_score, s_score, has_full_text, has_abstract, full_text_length, abstract_length):
+        """Calculate overall processing score for document prioritization."""
+        
+        # Base score from R/S scores
+        r_score = float(r_score) if r_score else 0.0
+        s_score = float(s_score) if s_score else 0.0
+        base_score = (r_score + s_score) / 2.0
+        
+        # Text availability bonus
+        text_bonus = 0.0
+        if has_full_text:
+            text_bonus += 0.3
+            # Bonus for longer full text
+            if full_text_length and full_text_length > 1000:
+                text_bonus += min(0.2, full_text_length / 10000.0)  # Cap at 0.2
+        elif has_abstract:
+            text_bonus += 0.1
+            # Bonus for longer abstract
+            if abstract_length and abstract_length > 200:
+                text_bonus += min(0.1, abstract_length / 2000.0)  # Cap at 0.1
+        
+        # Combine base score and text bonus
+        processing_score = base_score + text_bonus
+        
+        return min(1.0, processing_score)  # Cap at 1.0
+    
+    def _sort_document_candidates(self, candidates):
+        """Sort candidates by priority and processing score."""
+        
+        def sort_key(candidate):
+            # Primary sort: priority (HIGH=1, MEDIUM=2, LOW=3, FALLBACK=4)
+            priority_order = {"HIGH": 1, "MEDIUM": 2, "LOW": 3, "FALLBACK": 4}
+            priority_value = priority_order.get(candidate['priority'], 5)
+            
+            # Secondary sort: processing score (higher = better)
+            processing_score = candidate['processing_score']
+            
+            # Tertiary sort: R score (higher = better)
+            r_score = candidate['r_score']
+            
+            # Final sort: S score (higher = better)
+            s_score = candidate['s_score']
+            
+            return (priority_value, -processing_score, -r_score, -s_score)
+        
+        return sorted(candidates, key=sort_key)
+    
+    def _apply_document_rate_limits(self, candidates):
+        """Apply rate limiting to selected candidates."""
+        
+        # Get rate limiting config from pipeline config
+        max_documents_per_trial = self.config.get('max_documents_per_trial', 20)
+        enable_fallback_processing = self.config.get('enable_fallback_processing', True)
+        max_fallback_documents = self.config.get('max_fallback_documents', 5)
+        
+        # Separate candidates by priority
+        high_priority = [c for c in candidates if c['priority'] == 'HIGH']
+        medium_priority = [c for c in candidates if c['priority'] == 'MEDIUM']
+        low_priority = [c for c in candidates if c['priority'] == 'LOW']
+        fallback_priority = [c for c in candidates if c['priority'] == 'FALLBACK']
+        
+        selected = []
+        
+        # Select high priority documents first
+        selected.extend(high_priority[:max_documents_per_trial])
+        
+        # Add medium priority if we have room
+        remaining_slots = max_documents_per_trial - len(selected)
+        if remaining_slots > 0:
+            selected.extend(medium_priority[:remaining_slots])
+        
+        # Add low priority if we have room
+        remaining_slots = max_documents_per_trial - len(selected)
+        if remaining_slots > 0:
+            selected.extend(low_priority[:remaining_slots])
+        
+        # Add fallback documents if enabled and we have room
+        if enable_fallback_processing:
+            remaining_slots = max_documents_per_trial - len(selected)
+            if remaining_slots > 0:
+                selected.extend(fallback_priority[:min(remaining_slots, max_fallback_documents)])
+        
+        logger.info(f"Rate limiting applied: {len(selected)} documents selected from {len(candidates)} candidates")
+        
+        return selected
+    
+    def _generate_document_processing_stats(self, all_documents, candidates, selected):
+        """Generate processing statistics."""
+        
+        # Count by priority
+        priority_counts = {}
+        for priority in ["HIGH", "MEDIUM", "LOW", "FALLBACK"]:
+            priority_counts[priority] = len([c for c in candidates if c['priority'] == priority])
+        
+        # Count by text availability
+        text_stats = {
+            'has_full_text': len([c for c in candidates if c['has_full_text']]),
+            'has_abstract_only': len([c for c in candidates if c['has_abstract'] and not c['has_full_text']]),
+            'no_text': len([c for c in candidates if not c['has_abstract'] and not c['has_full_text']])
+        }
+        
+        # R/S score statistics
+        rs_stats = {
+            'high_r_scores': len([c for c in candidates if c['r_score'] >= 0.6]),
+            'high_s_scores': len([c for c in candidates if c['s_score'] >= 0.6]),
+            'medium_r_scores': len([c for c in candidates if c['r_score'] >= 0.4]),
+            'medium_s_scores': len([c for c in candidates if c['s_score'] >= 0.4])
+        }
+        
+        return {
+            'total_documents': len(all_documents),
+            'total_candidates': len(candidates),
+            'selected_documents': len(selected),
+            'priority_counts': priority_counts,
+            'text_availability': text_stats,
+            'rs_score_stats': rs_stats,
+            'rate_limit_applied': len(selected) < len(candidates)
+        }
+
     def _execute_retrieval(self, trial_context: Dict[str, Any]) -> Any:
         """Execute document retrieval stage."""
         inputs = {

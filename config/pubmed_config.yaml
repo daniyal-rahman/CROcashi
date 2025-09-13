@@ -213,6 +213,19 @@ studycard_stage:
   # Rate limiting
   requests_per_minute: 20
   delay_between_batches: 5
+  
+  # Document prioritization and rate limiting
+  max_documents_per_trial: 2
+  max_documents_per_batch: 5
+  enable_fallback_processing: true
+  max_fallback_documents: 5
+  
+  # Prioritization thresholds
+  high_priority_r_threshold: 0.6  # R2
+  high_priority_s_threshold: 0.6  # S2
+  medium_priority_r_threshold: 0.4  # R1
+  medium_priority_s_threshold: 0.4  # S1
+  full_text_preference_threshold: 1.0  # R score difference
 
 # Budget Configuration
 budget:

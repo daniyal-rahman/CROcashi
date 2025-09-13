@@ -309,7 +309,10 @@ class ComprehensiveCassavaTest:
             # Phase 4: PubMed Pipeline Testing (detailed results)
             await self._test_pubmed_pipeline()
             
-            # Phase 5: Validation and Reporting
+            # Phase 5: Study Card Pipeline Testing (direct test)
+            await self._test_study_card_pipeline()
+            
+            # Phase 6: Validation and Reporting
             await self._validate_results()
             
             # Final reporting
@@ -694,8 +697,8 @@ class ComprehensiveCassavaTest:
                 }
                 
                 # Run study card pipeline
-                logger.info(f"Generating study card for main trial {trial.nct_id}...")
-                result = await study_card_pipeline.execute(trial.nct_id, trial_context)
+                logger.info(f"Generating study card for main trial {trial.nct_id} (ID: {trial.trial_id})...")
+                result = await study_card_pipeline.execute(trial.trial_id, trial_context)
                 
                 # Extract gate details
                 gate_info = []
@@ -1010,30 +1013,29 @@ class ComprehensiveCassavaTest:
                     print(f"     {i}. PMID {doc['pmid']}: {doc['title']}")
         
         # Study card metrics
-        # COMMENTED OUT: Only running PubMed pipeline for now
-        # if "study_card_generation" in self.results and self.results["study_card_generation"].get("status") == "success":
-        #     study_cards = self.results["study_card_generation"]
-        #     print(f"\n📋 Study Card Generation Metrics:")
-        #     print(f"   • Trials processed: {study_cards.get('trials_processed', 0)}")
-        #     print(f"   • Total gates generated: {study_cards.get('total_gates_generated', 0)}")
-        #     print(f"   • Total conclusions generated: {study_cards.get('total_conclusions_generated', 0)}")
-        #     
-        #     # Show gate details
-        #     if study_cards.get('gate_details'):
-        #         print(f"   • Gate details:")
-        #         for i, gate in enumerate(study_cards['gate_details'][:3], 1):
-        #             print(f"     {i}. {gate.get('gate_type', 'Unknown')}: {gate.get('description', 'No description')}")
-        #             print(f"        Confidence: {gate.get('confidence', 0.0):.2f}")
-        #     
-        #     # Show conclusion details
-        #     if study_cards.get('conclusion_details'):
-        #         print(f"   • Conclusion details:")
-        #         for i, conclusion in enumerate(study_cards['conclusion_details'][:2], 1):
-        #             print(f"     {i}. Decision: {conclusion.get('decision', 'No decision')}")
-        #             print(f"        Confidence: {conclusion.get('confidence', 0.0):.2f}")
-        #             print(f"        Passed gates: {conclusion.get('passed_gates', 0)}")
-        #             print(f"        Failed gates: {conclusion.get('failed_gates', 0)}")
-        #             print(f"        Reasoning: {conclusion.get('reasoning', 'No reasoning')}")
+        if "study_card_generation" in self.results and self.results["study_card_generation"].get("status") == "success":
+            study_cards = self.results["study_card_generation"]
+            print(f"\n📋 Study Card Generation Metrics:")
+            print(f"   • Trials processed: {study_cards.get('trials_processed', 0)}")
+            print(f"   • Total gates generated: {study_cards.get('total_gates_generated', 0)}")
+            print(f"   • Total conclusions generated: {study_cards.get('total_conclusions_generated', 0)}")
+            
+            # Show gate details
+            if study_cards.get('gate_details'):
+                print(f"   • Gate details:")
+                for i, gate in enumerate(study_cards['gate_details'][:3], 1):
+                    print(f"     {i}. {gate.get('gate_type', 'Unknown')}: {gate.get('description', 'No description')}")
+                    print(f"        Confidence: {gate.get('confidence', 0.0):.2f}")
+            
+            # Show conclusion details
+            if study_cards.get('conclusion_details'):
+                print(f"   • Conclusion details:")
+                for i, conclusion in enumerate(study_cards['conclusion_details'][:2], 1):
+                    print(f"     {i}. Decision: {conclusion.get('decision', 'No decision')}")
+                    print(f"        Confidence: {conclusion.get('confidence', 0.0):.2f}")
+                    print(f"        Passed gates: {conclusion.get('passed_gates', 0)}")
+                    print(f"        Failed gates: {conclusion.get('failed_gates', 0)}")
+                    print(f"        Reasoning: {conclusion.get('reasoning', 'No reasoning')[:100]}...")
         
         # Errors and warnings
         if self.results["errors"]:

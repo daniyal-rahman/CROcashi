@@ -101,26 +101,16 @@ class EnhancedRetriever(BaseWorker):
                             ).filter(DocumentLink.trial_id == trial_id_int).all()
                             logger.debug(f"Found {len(linked_docs)} documents linked to trial_id {trial_id_int}")
                             
-                            # If no documents found, try the processed_documents table (PubMed pipeline)
+                            # If no documents found, try processed documents (PubMed pipeline)
                             if not linked_docs:
-                                from ...db.retrieval_models import ProcessedDocument
-                                processed_docs = session.query(ProcessedDocument).filter(
-                                    ProcessedDocument.trial_id == trial_id_int
+                                processed_docs = session.query(Document).join(DocumentLink).filter(
+                                    DocumentLink.trial_id == trial_id_int,
+                                    Document.processing_stage == 'processed'
                                 ).all()
                                 logger.debug(f"Found {len(processed_docs)} processed documents for trial_id {trial_id_int}")
                                 
-                                # Convert ProcessedDocument to Document-like objects for compatibility
-                                for proc_doc in processed_docs:
-                                    # Create a mock Document object with the required fields
-                                    mock_doc = type('MockDocument', (), {
-                                        'doc_id': proc_doc.id,
-                                        'title': proc_doc.title or f"Processed Document {proc_doc.pmid}",
-                                        'pmid': proc_doc.pmid,
-                                        'nct_id': nct_id,
-                                        'published_at': None,
-                                        'source_type': 'Paper'
-                                    })()
-                                    linked_docs.append(mock_doc)
+                                # Use the actual Document objects directly (no need for mock objects)
+                                linked_docs.extend(processed_docs)
                     
                     # Also try NCT ID lookup (fallback strategy)
                     if not linked_docs and nct_id:
@@ -232,32 +222,33 @@ class EnhancedRetriever(BaseWorker):
                     if hasattr(doc_text, 'fulltext_text') and doc_text.fulltext_text:
                         fulltext_length = len(doc_text.fulltext_text)
                         # Quality check: ensure fulltext is substantial
-                        if fulltext_length >= 500:  # Minimum length for methods/results extraction (lowered for testing)
+                        if fulltext_length >= 500:  # Minimum length for methods/results extraction
                             print(f"Retrieved {fulltext_length} characters of fulltext from document_text")
                             return doc_text.fulltext_text
                         else:
-                            logger.warning(f"Fulltext too short ({fulltext_length} chars) for document {internal_doc_id}, may lack methods/results")
-                            print(f"Fulltext too short ({fulltext_length} chars), falling back to abstract...")
+                            logger.info(f"Fulltext too short ({fulltext_length} chars) for document {internal_doc_id}, falling back to abstract...")
                     
-                    # Fallback to abstract
+                    # Fallback to abstract - accept abstracts for LLM processing
                     if doc_text.abstract_text:
                         abstract_length = len(doc_text.abstract_text)
                         print(f"Retrieved {abstract_length} characters of abstract text from document_text")
                         
-                        # Warn if only abstract available for study card generation
-                        if abstract_length < 50:
+                        # Accept abstracts for LLM processing (more flexible than before)
+                        if abstract_length >= 100:  # Lowered threshold for abstract acceptance
+                            logger.info(f"Using abstract ({abstract_length} chars) for LLM processing")
+                            return doc_text.abstract_text
+                        else:
                             logger.warning(f"Abstract too short ({abstract_length} chars) for quality study card generation")
-                        
-                        return doc_text.abstract_text
+                            return doc_text.abstract_text  # Still return it, let LLM decide
                 
                 # If no text found in traditional tables, try processed_documents table
                 # Extract trial_id from doc_id if it's in the format we created
                 if doc_id.startswith('db:'):
                     try:
                         doc_id_int = int(doc_id.split(':')[1])
-                        from ...db.retrieval_models import ProcessedDocument
-                        processed_doc = session.query(ProcessedDocument).filter(
-                            ProcessedDocument.id == doc_id_int
+                        processed_doc = session.query(Document).filter(
+                            Document.doc_id == doc_id_int,
+                            Document.processing_stage == 'processed'
                         ).first()
                         
                         if processed_doc and processed_doc.abstract:

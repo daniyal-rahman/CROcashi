@@ -394,36 +394,20 @@ class RetrievalProcessor:
             logger.info(f"  guardrails = {'enabled' if self.guardrails else 'disabled'}")
             logger.info(f"  filters = {{require_indication_signal: false, require_field_coverage: false}}")
             
-            # TEMPORARILY DISABLE POLICY ENGINE FOR DEBUGGING
-            logger.warning("Policy engine temporarily disabled for debugging")
-            # Return basic document structure for PMIDs
-            return [{'pmid': pmid, 'policy_engine_passed': True} for pmid in pmids]
-            
+            # Apply policy engine validation
             if not self.policy_engine:
                 logger.warning("Policy engine not available, skipping validation")
-                # Return basic document structure for PMIDs
                 return [{'pmid': pmid, 'policy_engine_passed': True} for pmid in pmids]
             
-            # Fetch document metadata for policy validation
-            async with self.client:
-                esummary_result = await self.client.esummary_batch(pmids)
-                documents = esummary_result.get('result', {})
-                
-                # Apply policy engine validation to each document
-                validated_docs = []
-                for pmid, doc_data in documents.items():
-                    if isinstance(doc_data, dict):
-                        policy_result = self.policy_engine.validate_document(doc_data, entity_pack)
-                        if policy_result.passes_validation:
-                            validated_docs.append({
-                                'pmid': pmid,
-                                'policy_engine_passed': True,
-                                'policy_score': policy_result.score,
-                                **doc_data
-                            })
-                
-                logger.info(f"Policy engine validation: {len(validated_docs)} valid, {len(pmids) - len(validated_docs)} rejected")
-                return validated_docs
+            # Apply policy engine validation to each PMID
+            validated_docs = []
+            for pmid in pmids:
+                validation_result = self.policy_engine.validate_document({'pmid': pmid}, entity_pack)
+                if validation_result.get('passed', True):  # Default to pass if validation unclear
+                    validated_docs.append({'pmid': pmid, 'policy_engine_passed': True})
+            
+            logger.info(f"Policy engine applied to {len(pmids)} documents: {len(validated_docs)} passed")
+            return validated_docs
                 
         except Exception as e:
             logger.error(f"Error applying policy engine: {e}")
@@ -456,10 +440,6 @@ class RetrievalProcessor:
     async def _apply_guardrails(self, documents: List[Dict[str, Any]], entity_pack: EntityPack) -> List[Dict[str, Any]]:
         """Apply guardrails for content filtering."""
         try:
-            # TEMPORARILY DISABLE GUARDRAILS FOR DEBUGGING
-            logger.warning("Guardrails temporarily disabled for debugging")
-            return documents
-            
             if not self.guardrails:
                 logger.warning("Guardrails not available, skipping filtering")
                 return documents

@@ -24,7 +24,8 @@ setup_test_environment(project_root)
 from sqlalchemy import text, func
 from ncfd.db.session import session_scope, reset_engine
 from ncfd.db.models import Trial, Company, Document
-from ncfd.db.retrieval_models import RetrievalSession, RetrievalDocument, ProcessedDocument
+# Note: retrieval_models was removed in favor of simplified Document table approach
+# from ncfd.db.retrieval_models import RetrievalSession, RetrievalDocument, ProcessedDocument
 
 
 def check_document_counts():
@@ -46,91 +47,75 @@ def check_document_counts():
         print(f"   • Trials: {trial_count}")
         print(f"   • Documents (legacy): {document_count}")
         
-        # Dual-persistence document counts
-        print("\n📚 Dual-Persistence Document Counts:")
-        retrieval_session_count = session.query(RetrievalSession).count()
-        retrieval_doc_count = session.query(RetrievalDocument).count()
-        processed_doc_count = session.query(ProcessedDocument).count()
+        # Simplified document counts by processing stage
+        print("\n📚 Document Counts by Processing Stage:")
+        raw_doc_count = session.query(Document).filter(Document.processing_stage == 'raw').count()
+        processed_doc_count = session.query(Document).filter(Document.processing_stage == 'processed').count()
         
-        print(f"   • Retrieval Sessions: {retrieval_session_count}")
-        print(f"   • Raw Retrieval Documents: {retrieval_doc_count}")
+        print(f"   • Raw Documents: {raw_doc_count}")
         print(f"   • Processed Documents: {processed_doc_count}")
         
-        # Detailed breakdown by trial
+        # Detailed breakdown by trial using DocumentLink
         print("\n🔬 Breakdown by Trial:")
+        from ncfd.db.models import DocumentLink
         trial_breakdown = session.query(
             Trial.nct_id,
             Trial.brief_title,
-            func.count(RetrievalDocument.id).label('retrieval_docs'),
-            func.count(ProcessedDocument.id).label('processed_docs')
-        ).outerjoin(RetrievalDocument, Trial.trial_id == RetrievalDocument.trial_id)\
-         .outerjoin(ProcessedDocument, Trial.trial_id == ProcessedDocument.trial_id)\
+            func.count(Document.doc_id).label('total_docs'),
+            func.count(Document.doc_id).filter(Document.processing_stage == 'raw').label('raw_docs'),
+            func.count(Document.doc_id).filter(Document.processing_stage == 'processed').label('processed_docs')
+        ).outerjoin(DocumentLink, Trial.trial_id == DocumentLink.trial_id)\
+         .outerjoin(Document, DocumentLink.doc_id == Document.doc_id)\
          .group_by(Trial.trial_id, Trial.nct_id, Trial.brief_title)\
          .all()
         
         for trial in trial_breakdown:
-            print(f"   • {trial.nct_id}: {trial.retrieval_docs} raw, {trial.processed_docs} processed")
+            print(f"   • {trial.nct_id}: {trial.raw_docs or 0} raw, {trial.processed_docs or 0} processed")
             if trial.brief_title:
                 print(f"     Title: {trial.brief_title[:80]}{'...' if len(trial.brief_title) > 80 else ''}")
         
-        # Retrieval session details
-        if retrieval_session_count > 0:
-            print("\n📋 Recent Retrieval Sessions:")
-            recent_sessions = session.query(RetrievalSession)\
-                .order_by(RetrievalSession.created_at.desc())\
-                .limit(5)\
-                .all()
-            
-            for session_obj in recent_sessions:
-                print(f"   • Session {session_obj.session_id[:8]}... (Trial {session_obj.trial_id})")
-                print(f"     Status: {session_obj.status}")
-                print(f"     Documents found: {session_obj.total_documents_found}")
-                print(f"     After policy engine: {session_obj.documents_after_policy_engine}")
-                print(f"     After guardrails: {session_obj.documents_after_guardrails}")
-                print(f"     After processing: {session_obj.documents_after_processing}")
-                print(f"     Created: {session_obj.created_at}")
-                print()
-        
-        # Sample retrieval documents
-        if retrieval_doc_count > 0:
-            print("\n📄 Sample Retrieval Documents:")
-            sample_docs = session.query(RetrievalDocument)\
-                .order_by(RetrievalDocument.created_at.desc())\
+        # Sample raw documents
+        if raw_doc_count > 0:
+            print("\n📄 Sample Raw Documents:")
+            sample_docs = session.query(Document)\
+                .filter(Document.processing_stage == 'raw')\
+                .order_by(Document.discovered_at.desc())\
                 .limit(3)\
                 .all()
             
             for doc in sample_docs:
-                print(f"   • PMID {doc.pmid}: {doc.title[:60]}{'...' if doc.title and len(doc.title) > 60 else ''}")
-                score_str = f"{doc.retrieval_score:.3f}" if doc.retrieval_score is not None else "N/A"
-                print(f"     Tier: {doc.retrieval_tier}, Score: {score_str}")
-                print(f"     Policy passed: {doc.policy_engine_passed}, Guardrails passed: {doc.guardrails_passed}")
+                print(f"   • PMID {doc.pmid}: {doc.title[:60] if doc.title else 'No title'}{'...' if doc.title and len(doc.title) > 60 else ''}")
+                print(f"     Status: {doc.status}, Discovered: {doc.discovered_at}")
                 print()
         
         # Sample processed documents
         if processed_doc_count > 0:
             print("\n⚙️ Sample Processed Documents:")
-            sample_processed = session.query(ProcessedDocument)\
-                .order_by(ProcessedDocument.created_at.desc())\
+            sample_processed = session.query(Document)\
+                .filter(Document.processing_stage == 'processed')\
+                .order_by(Document.parsed_at.desc())\
                 .limit(3)\
                 .all()
             
             for doc in sample_processed:
-                print(f"   • PMID {doc.pmid}: {doc.title[:60]}{'...' if doc.title and len(doc.title) > 60 else ''}")
-                print(f"     R-Score: {doc.r_score:.3f}, S-Score: {doc.s_score:.3f}, Tier: {doc.rs_tier}")
+                print(f"   • PMID {doc.pmid}: {doc.title[:60] if doc.title else 'No title'}{'...' if doc.title and len(doc.title) > 60 else ''}")
+                r_score_str = f"{doc.r_score:.3f}" if doc.r_score is not None else "N/A"
+                s_score_str = f"{doc.s_score:.3f}" if doc.s_score is not None else "N/A"
+                print(f"     R-Score: {r_score_str}, S-Score: {s_score_str}, R-Tier: {doc.r_tier}, S-Tier: {doc.s_tier}")
                 print()
         
         # Summary
         print("\n📈 Summary:")
-        if retrieval_doc_count > 0 and processed_doc_count > 0:
-            processing_rate = (processed_doc_count / retrieval_doc_count) * 100
-            print(f"   • Processing rate: {processing_rate:.1f}% ({processed_doc_count}/{retrieval_doc_count})")
+        if raw_doc_count > 0 and processed_doc_count > 0:
+            processing_rate = (processed_doc_count / raw_doc_count) * 100
+            print(f"   • Processing rate: {processing_rate:.1f}% ({processed_doc_count}/{raw_doc_count})")
         
-        if retrieval_doc_count == 0:
-            print("   • No retrieval documents found - pipeline may not have run yet")
+        if raw_doc_count == 0:
+            print("   • No raw documents found - pipeline may not have run yet")
         elif processed_doc_count == 0:
             print("   • No processed documents found - processing stage may not have completed")
         else:
-            print("   • Dual-persistence pipeline appears to be working correctly")
+            print("   • Simplified pipeline appears to be working correctly")
 
 
 if __name__ == "__main__":

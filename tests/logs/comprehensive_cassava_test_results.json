@@ -1,10 +1,10 @@
 {
   "test_info": {
-    "start_time": "2025-09-13T15:47:16.038062+00:00",
+    "start_time": "2025-09-13T20:00:24.556169+00:00",
     "test_name": "Comprehensive Cassava Pipeline Test",
     "version": "1.0",
-    "end_time": "2025-09-13T15:47:29.748917+00:00",
-    "duration_seconds": 13.710855
+    "end_time": "2025-09-13T20:00:46.035314+00:00",
+    "duration_seconds": 21.479145
   },
   "database_setup": {
     "status": "success",
@@ -82,29 +82,8 @@
         "guardrails_passed": false
       },
       {
-        "pmid": "32920628",
-        "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients.",
-        "retrieval_tier": "Unknown",
-        "policy_engine_passed": false,
-        "guardrails_passed": false
-      },
-      {
-        "pmid": "40141124",
-        "title": "Comment on Wang et al. Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's...",
-        "retrieval_tier": "Unknown",
-        "policy_engine_passed": false,
-        "guardrails_passed": false
-      },
-      {
         "pmid": "37457922",
         "title": "Simufilam suppresses overactive mTOR and restores its sensitivity to insulin in Alzheimer's disease ...",
-        "retrieval_tier": "Unknown",
-        "policy_engine_passed": false,
-        "guardrails_passed": false
-      },
-      {
-        "pmid": "37762230",
-        "title": "Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's Disease.",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
@@ -117,8 +96,29 @@
         "guardrails_passed": false
       },
       {
+        "pmid": "38215913",
+        "title": "Navigating the dementia landscape: Biomarkers and emerging therapies.",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
         "pmid": "28438486",
         "title": "PTI-125 binds and reverses an altered conformation of filamin A to reduce Alzheimer's disease pathog...",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "37762230",
+        "title": "Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's Disease.",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "32920628",
+        "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients.",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
@@ -131,11 +131,47 @@
       "stages_completed": 2
     }
   },
-  "study_card_generation": {},
+  "study_card_generation": {
+    "status": "success",
+    "main_trial": "NCT05515666",
+    "trials_processed": 1,
+    "total_gates_generated": 0,
+    "total_conclusions_generated": 0,
+    "gate_details": [],
+    "conclusion_details": [],
+    "results": [
+      {
+        "trial_id": 2,
+        "nct_id": "NCT05515666",
+        "success": false,
+        "document_cards": 0,
+        "evidence_spans": 0,
+        "claims": 0,
+        "method_cards": 0,
+        "results_factsheets": 0,
+        "gate_candidates": 0,
+        "gate_specs": 0,
+        "gate_assessments": 0,
+        "decision_record": false,
+        "gates": [],
+        "conclusions": [],
+        "errors": [
+          "Quality gate: Insufficient documents analyzed: 0 < 1",
+          "Quality gate: Insufficient quotes extracted: 0 < 3",
+          "Quality gate: Insufficient evidence spans: 0 < 3",
+          "Quality gate: Method section missing - no method card generated",
+          "Quality gate: Results section missing - no results factsheet generated",
+          "Quality gate: Gates section missing - no gate assessments generated",
+          "Quality gate: Insufficient LLM artifacts: 0 < 1"
+        ],
+        "warnings": []
+      }
+    ]
+  },
   "orchestrator_testing": {
     "status": "success",
-    "execution_id": "cassava_test_1757778436",
-    "total_processing_time": 6.650569,
+    "execution_id": "cassava_test_1757793624",
+    "total_processing_time": 9.757518,
     "ctgov_result": {
       "success": false,
       "trials_processed": 0
