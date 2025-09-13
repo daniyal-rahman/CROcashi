@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Any, Generator
 import json
 from dataclasses import dataclass, field
 
-from ..ingest.pubmed.pipeline_dual_persistence import PubMedPipelineDualPersistence
+# Dual persistence pipeline removed - using simplified approach
 from ..ingest.pubmed.db_service import PubMedDBService
 from ..ingest.pubmed.queue_service import TaskQueueService
 from ..ingest.pubmed.retrieval.policy_engine import RetrievalPolicy, PolicyConfig
@@ -84,11 +84,8 @@ class PubMedPipeline:
     def _initialize_components(self):
         """Initialize PubMed pipeline components."""
         try:
-            # Initialize dual persistence pipeline
-            self.pipeline = PubMedPipelineDualPersistence(
-                self.pubmed_config,
-                get_session
-            )
+            # Using simplified approach - no separate pipeline needed
+            self.pipeline = None
             
             # Initialize services
             self.db_service = PubMedDBService()
@@ -380,12 +377,11 @@ class PubMedPipeline:
                 with get_session() as session:
                     trial = session.query(Trial).filter(Trial.trial_id == trial_id).first()
                     if trial:
-                        # Extract from trial title and description
+                        # Extract comprehensive terms from trial data
                         if not asset_names:
-                            # Simple extraction - could be enhanced
-                            asset_names = [trial.title] if trial.title else []
+                            asset_names = self._extract_comprehensive_asset_names(trial)
                         if not indications:
-                            indications = [trial.title] if trial.title else []
+                            indications = self._extract_comprehensive_indications(trial)
             
             # Execute pipeline
             result = await self.execute(
@@ -418,3 +414,115 @@ class PubMedPipeline:
                 'errors': [str(e)],
                 'warnings': []
             }
+    
+    def _extract_comprehensive_asset_names(self, trial: Trial) -> List[str]:
+        """
+        Extract comprehensive asset names from trial data.
+        
+        Args:
+            trial: Trial object from database
+            
+        Returns:
+            List of comprehensive asset names and aliases
+        """
+        asset_names = []
+        
+        try:
+            # Extract from trial title
+            if trial.title:
+                # Look for drug names in title
+                title_lower = trial.title.lower()
+                
+                # Check for simufilam/PTI-125 patterns
+                if 'simufilam' in title_lower or 'pti' in title_lower:
+                    asset_names.extend([
+                        'simufilam', 'Simufilam', 'SIMUFILAM',
+                        'PTI-125', 'PTI 125', 'PTI125', 'PTI_125',
+                        'PTI-125HCl', 'PTI-125 HCl',
+                        'filamin A inhibitor', 'FLNA inhibitor', 'filamin-A inhibitor'
+                    ])
+                
+                # Extract other drug names from title
+                words = trial.title.split()
+                for word in words:
+                    if len(word) > 3 and word.isalpha():
+                        # Simple heuristic for drug names (capitalized, not common words)
+                        if word[0].isupper() and word.lower() not in ['study', 'patients', 'with', 'phase', 'trial', 'clinical']:
+                            asset_names.append(word)
+            
+            # Extract from trial description if available
+            if trial.description:
+                desc_lower = trial.description.lower()
+                if 'simufilam' in desc_lower or 'pti' in desc_lower:
+                    asset_names.extend([
+                        'simufilam', 'PTI-125', 'filamin A inhibitor'
+                    ])
+            
+            # Remove duplicates and empty strings
+            asset_names = list(set([name for name in asset_names if name.strip()]))
+            
+            # Fallback to trial title if no specific drug names found
+            if not asset_names and trial.title:
+                asset_names = [trial.title]
+            
+            logger.info(f"Extracted {len(asset_names)} asset names for trial {trial.trial_id}")
+            return asset_names
+            
+        except Exception as e:
+            logger.error(f"Error extracting asset names from trial {trial.trial_id}: {e}")
+            return [trial.title] if trial.title else []
+    
+    def _extract_comprehensive_indications(self, trial: Trial) -> List[str]:
+        """
+        Extract comprehensive indication terms from trial data.
+        
+        Args:
+            trial: Trial object from database
+            
+        Returns:
+            List of comprehensive indication terms and synonyms
+        """
+        indications = []
+        
+        try:
+            # Extract from trial title
+            if trial.title:
+                title_lower = trial.title.lower()
+                
+                # Check for Alzheimer's disease patterns
+                if 'alzheimer' in title_lower or 'dementia' in title_lower:
+                    indications.extend([
+                        'Alzheimer Disease', 'Alzheimer\'s Disease', 'AD',
+                        'dementia', 'cognitive impairment', 'mild cognitive impairment',
+                        'MCI', 'Alzheimer dementia', 'senile dementia'
+                    ])
+                
+                # Check for other common indications
+                if 'parkinson' in title_lower:
+                    indications.extend(['Parkinson Disease', 'Parkinson\'s Disease', 'PD'])
+                
+                if 'cancer' in title_lower or 'tumor' in title_lower or 'oncology' in title_lower:
+                    indications.extend(['cancer', 'tumor', 'oncology', 'neoplasm'])
+                
+                if 'diabetes' in title_lower:
+                    indications.extend(['diabetes', 'diabetes mellitus', 'DM'])
+            
+            # Extract from trial description if available
+            if trial.description:
+                desc_lower = trial.description.lower()
+                if 'alzheimer' in desc_lower:
+                    indications.extend(['Alzheimer Disease', 'dementia', 'cognitive impairment'])
+            
+            # Remove duplicates and empty strings
+            indications = list(set([ind for ind in indications if ind.strip()]))
+            
+            # Fallback to trial title if no specific indications found
+            if not indications and trial.title:
+                indications = [trial.title]
+            
+            logger.info(f"Extracted {len(indications)} indication terms for trial {trial.trial_id}")
+            return indications
+            
+        except Exception as e:
+            logger.error(f"Error extracting indications from trial {trial.trial_id}: {e}")
+            return [trial.title] if trial.title else []

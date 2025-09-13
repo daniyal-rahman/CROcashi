@@ -1003,6 +1003,160 @@ class PubMedDBService:
         
         self.logger.info(f"Stored trial-doc candidates (discovery): {successful} successful, {failed} failed")
         return successful, failed
+    
+    def mark_documents_as_processed(self, doc_ids: List[int]) -> int:
+        """
+        Mark documents as processed after filtering/scoring.
+        
+        Args:
+            doc_ids: List of document IDs to mark as processed
+            
+        Returns:
+            Number of documents successfully marked as processed
+        """
+        if not doc_ids:
+            return 0
+            
+        successful = 0
+        failed = 0
+        
+        with session_scope() as session:
+            for doc_id in doc_ids:
+                try:
+                    document = session.query(Document).filter(Document.doc_id == doc_id).first()
+                    if document:
+                        document.processing_stage = 'processed'
+                        successful += 1
+                        self.logger.debug(f"Marked document {doc_id} as processed")
+                    else:
+                        self.logger.warning(f"Document {doc_id} not found")
+                        failed += 1
+                        
+                except Exception as e:
+                    self.logger.error(f"Error marking document {doc_id} as processed: {e}")
+                    failed += 1
+                    continue
+        
+        self.logger.info(f"Marked {successful} documents as processed, {failed} failed")
+        return successful
+    
+    def get_raw_documents_for_trial(self, trial_id: int) -> List[Dict[str, Any]]:
+        """
+        Get all raw documents found for a trial.
+        
+        Args:
+            trial_id: Trial ID
+            
+        Returns:
+            List of raw document data
+        """
+        try:
+            with session_scope() as session:
+                # Get documents linked to trial via DocumentLink with raw processing stage
+                documents = session.query(Document).join(
+                    DocumentLink, Document.doc_id == DocumentLink.doc_id
+                ).filter(
+                    DocumentLink.trial_id == trial_id,
+                    Document.processing_stage == 'raw'
+                ).all()
+                
+                result = []
+                for doc in documents:
+                    result.append({
+                        'doc_id': doc.doc_id,
+                        'pmid': doc.pmid,
+                        'title': doc.title,
+                        'abstract': doc.text.abstract_text if doc.text else None,
+                        'published_at': doc.published_at,
+                        'publisher': doc.publisher,
+                        'processing_stage': doc.processing_stage,
+                        'status': doc.status
+                    })
+                
+                self.logger.debug(f"Found {len(result)} raw documents for trial {trial_id}")
+                return result
+                
+        except Exception as e:
+            self.logger.error(f"Failed to get raw documents for trial {trial_id}: {e}")
+            return []
+    
+    def get_processed_documents_for_trial(self, trial_id: int) -> List[Dict[str, Any]]:
+        """
+        Get all processed documents for a trial.
+        
+        Args:
+            trial_id: Trial ID
+            
+        Returns:
+            List of processed document data
+        """
+        try:
+            with session_scope() as session:
+                # Get documents linked to trial via DocumentLink with processed stage
+                documents = session.query(Document).join(
+                    DocumentLink, Document.doc_id == DocumentLink.doc_id
+                ).filter(
+                    DocumentLink.trial_id == trial_id,
+                    Document.processing_stage == 'processed'
+                ).all()
+                
+                result = []
+                for doc in documents:
+                    result.append({
+                        'doc_id': doc.doc_id,
+                        'pmid': doc.pmid,
+                        'title': doc.title,
+                        'abstract': doc.text.abstract_text if doc.text else None,
+                        'published_at': doc.published_at,
+                        'publisher': doc.publisher,
+                        'processing_stage': doc.processing_stage,
+                        'status': doc.status
+                    })
+                
+                self.logger.debug(f"Found {len(result)} processed documents for trial {trial_id}")
+                return result
+                
+        except Exception as e:
+            self.logger.error(f"Failed to get processed documents for trial {trial_id}: {e}")
+            return []
+    
+    def get_document_counts_by_stage(self, trial_id: int) -> Dict[str, int]:
+        """
+        Get document counts by processing stage for a trial.
+        
+        Args:
+            trial_id: Trial ID
+            
+        Returns:
+            Dictionary with counts by stage
+        """
+        try:
+            with session_scope() as session:
+                # Count raw documents
+                raw_count = session.query(Document).join(
+                    DocumentLink, Document.doc_id == DocumentLink.doc_id
+                ).filter(
+                    DocumentLink.trial_id == trial_id,
+                    Document.processing_stage == 'raw'
+                ).count()
+                
+                # Count processed documents
+                processed_count = session.query(Document).join(
+                    DocumentLink, Document.doc_id == DocumentLink.doc_id
+                ).filter(
+                    DocumentLink.trial_id == trial_id,
+                    Document.processing_stage == 'processed'
+                ).count()
+                
+                return {
+                    'raw': raw_count,
+                    'processed': processed_count,
+                    'total': raw_count + processed_count
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Failed to get document counts for trial {trial_id}: {e}")
+            return {'raw': 0, 'processed': 0, 'total': 0}
 
 
 # Module-level singleton instance

@@ -666,6 +666,7 @@ class Document(Base):
     storage_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     sha256: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     publisher: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    processing_stage: Mapped[str] = mapped_column(String(20), nullable=False, server_default='raw')
 
     # Relationships
     text: Mapped[Optional["DocumentText"]] = relationship(back_populates="document", uselist=False, cascade="all, delete-orphan")
@@ -693,8 +694,10 @@ class Document(Base):
         Index("ix_documents_url_hash", "url_hash", unique=True),
         Index("ix_documents_sha256", "sha256"),
         Index("ix_documents_source_url", "source_url"),
+        Index("ix_documents_processing_stage", "processing_stage"),
         CheckConstraint("source_type::text = ANY (ARRAY['PR','IR','SEC','Registry','Abstract','Poster','Paper','FDA','Patent']::text[])", name='ck_documents_source_type'),
-        CheckConstraint("status::text = ANY (ARRAY['discovered','fetched','parsed','linked','failed']::text[])", name='ck_documents_status')
+        CheckConstraint("status::text = ANY (ARRAY['discovered','fetched','parsed','linked','failed']::text[])", name='ck_documents_status'),
+        CheckConstraint("processing_stage::text = ANY (ARRAY['raw'::text, 'processed'::text])", name='ck_documents_processing_stage')
     )
 
 

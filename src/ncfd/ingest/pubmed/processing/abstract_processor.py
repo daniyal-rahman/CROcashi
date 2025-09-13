@@ -14,7 +14,7 @@ from dataclasses import dataclass, asdict
 from ..client import PubMedClient
 from ..mapper import PubMedMapper
 from ..db_service import PubMedDBService, get_db_service
-from ..dual_persistence_service import DualPersistenceService
+# Dual persistence service removed - using simplified approach
 from ....extract.abstract_features import AbstractFeatureExtractor
 
 logger = logging.getLogger(__name__)
@@ -70,11 +70,7 @@ class AbstractProcessor:
         self.db_service = get_db_service()
         self.feature_extractor = AbstractFeatureExtractor()
         
-        # Initialize dual persistence service
-        if session_factory:
-            self.persistence_service = DualPersistenceService(session_factory)
-        else:
-            self.persistence_service = None
+        # Using simplified approach - no separate persistence service needed
         
         # Processing settings
         self.batch_size = self.config.get('batch_size', 10)
@@ -218,19 +214,34 @@ class AbstractProcessor:
             if not pmids:
                 return 0
             
+            # Log EFetch diagnostics
+            logger.info(f"EFetch coverage diagnostics:")
+            logger.info(f"  EFetch batch size: {len(pmids)}, retry attempts: {self.client.max_retries}")
+            
             async with self.client:
                 # Fetch abstracts using EFetch
                 abstract_result = await self.client.efetch_batch(pmids, rettype='abstract')
                 
-                # Parse abstracts and add to documents
+                # Parse abstracts and add to documents with detailed diagnostics
                 abstracts_fetched = 0
+                no_abstract = 0
+                pmid_missing = 0
+                xml_parse_error = 0
+                
                 for doc in documents:
                     pmid = doc.get('pmid')
                     if pmid and pmid in abstract_result:
                         abstract_text = abstract_result[pmid]  # efetch_batch returns Dict[str, str]
-                        if abstract_text:
+                        if abstract_text and abstract_text.strip():
                             doc['abstract'] = abstract_text
                             abstracts_fetched += 1
+                        else:
+                            no_abstract += 1
+                    else:
+                        pmid_missing += 1
+                
+                # Log EFetch coverage results
+                logger.info(f"  EFetch results: parsed={abstracts_fetched}, no_abstract={no_abstract}, pmid_missing={pmid_missing}, xml_parse_error={xml_parse_error}")
                 
                 return abstracts_fetched
                 

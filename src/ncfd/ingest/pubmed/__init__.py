@@ -13,9 +13,9 @@ from .normalization import AssetIndicationNormalizer
 # Legacy stage_u1 removed - use new retrieval/processing modules
 
 # New retrieval system components
-from .retrieval import RetrievalOrchestrator, RetrievalResult
+from .retrieval import RetrievalProcessor, RetrievalResult
 from .processing import AbstractProcessor, ProcessingResult
-from .pipeline_dual_persistence import PubMedPipelineDualPersistence
+# Dual persistence pipeline removed - using simplified approach
 
 __all__ = [
     # Core components
@@ -32,9 +32,9 @@ __all__ = [
     # Legacy stage processors removed
     
     # New retrieval system components
-    "RetrievalOrchestrator",
+    "RetrievalProcessor",
     "RetrievalResult",
     "AbstractProcessor",
     "ProcessingResult",
-    "PubMedPipelineDualPersistence"
+    # Dual persistence pipeline removed
 ]

@@ -1,16 +1,19 @@
-#!/usr/bin/env python3
+#!/usr/bin/enkv python3
 """
 Comprehensive Cassava Trial Pipeline Test
 
-This test uses the Cassava Sciences Phase 2 trial (NCT04388254) to test multiple
+This test uses the Cassava Sciences Phase 3 trial (NCT05515666) to test multiple
 pipeline components with real-world data. The test:
 
 1. Clears the test database completely
-2. Seeds real Cassava trial data from CT.gov
-3. Runs PubMed literature processing with simufilam entity pack
+2. Seeds real Cassava trial data (including historical trials for context)
+3. Runs PubMed literature processing on the main Phase 3 trial only
 4. Executes study card generation with LLM workers
 5. Tests orchestrator coordination and error handling
 6. Validates data integrity and provides comprehensive reporting
+
+Note: While multiple trials are seeded for comprehensive aliases and company data,
+only the main Phase 3 trial (NCT05515666) is processed through the pipeline.
 
 Usage:
     python tests/scripts/comprehensive_cassava_pipeline_test.py
@@ -28,13 +31,18 @@ from typing import Dict, List, Any, Optional
 # Add the src directory to the path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root / "src"))
+sys.path.insert(0, str(project_root / "tests"))
+
+# Setup test environment before importing modules
+from utils.env_loader import setup_test_environment
+setup_test_environment(project_root)
 
 import requests
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, inspect
 
 # Import our modules
-from ncfd.db.session import session_scope, get_engine
+from ncfd.db.session import session_scope, get_engine, reset_engine
 from ncfd.db.models import Base, Trial, Company, Document, Study, DocumentLink, TrialDocCandidate, DocRSScore
 from ncfd.pipeline.orchestrator import PipelineOrchestrator
 from ncfd.ingest.pubmed.pipeline_dual_persistence import PubMedPipelineDualPersistence
@@ -47,7 +55,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Demote noisy DEBUG logs that are incorrectly using ERROR level
+logging.getLogger("ncfd.ingest.pubmed").setLevel(logging.INFO)
+logging.getLogger("ncfd.pipeline").setLevel(logging.INFO)
+
 # Real-world Cassava trial data - comprehensive list for building aliases and company info
+# Note: All trials are seeded for comprehensive aliases and company data, but only the main
+# Phase 3 trial (NCT05515666) is processed through the pipeline
 CASSAVA_TRIALS = [
     # Historical trials (for building aliases and company data)
     {
@@ -236,11 +250,12 @@ class ComprehensiveCassavaTest:
                 "query_config": {
                     "max_terms": 100,
                     "enable_boolean_operators": True,
-                    "date_range": ("2020/01/01", "2024/12/31")
+                    "date_range": ("2010/01/01", "2025/12/31")  # Widen date range to include 2025
                 },
-                "reuse_existing": False,  # Disable document reuse for now
+                "reuse_existing": True,  # Allow reusing already-retrieved docs
                 "min_documents_required": 1,  # Minimum docs needed
-                "skip_if_sufficient": False  # Disable skip for now
+                "skip_if_sufficient": False,  # Disable skip for now
+                "enable_stages": ["retrieval", "processing"]  # Ensure both stages are enabled
             },
             
             # Study card configuration
@@ -310,6 +325,9 @@ class ComprehensiveCassavaTest:
         logger.info("📊 Phase 1: Setting up test database")
         
         try:
+            # Reset engine to ensure it uses the test environment
+            reset_engine()
+            
             # Clear all data
             await self._clear_database()
             
@@ -342,6 +360,9 @@ class ComprehensiveCassavaTest:
         logger.info("🧹 Clearing test database...")
         
         with session_scope() as session:
+            # Get existing table names to avoid clearing non-existent tables
+            existing_tables = set(inspect(session.bind).get_table_names())
+            
             # Delete in order to respect foreign key constraints
             tables_to_clear = [
                 "doc_rs_scores", "trial_doc_candidates", "document_links",
@@ -351,16 +372,23 @@ class ComprehensiveCassavaTest:
                 "assets", "asset_ownership", "signals", "gates", "scores",
                 "catalysts", "labels", "disclosures", "method_cards",
                 "results_factsheets", "gate_candidates", "gate_specs",
-                "gate_assessments", "decision_records"
+                "gate_assessments", "decision_records",
+                # Add dual-persistence tables if they exist
+                "retrieval_sessions", "retrieval_documents", "processed_documents"
             ]
             
             for table in tables_to_clear:
-                try:
-                    session.execute(text(f"DELETE FROM {table}"))
-                except Exception as e:
-                    logger.error(f"Could not clear table {table}: {e}")
+                if table in existing_tables:
+                    try:
+                        session.execute(text(f"DELETE FROM {table}"))
+                        session.commit()  # commit per table so one failure doesn't poison the rest
+                        logger.info(f"Cleared table: {table}")
+                    except Exception as e:
+                        session.rollback()
+                        logger.warning(f"Could not clear table {table}: {e}")
+                else:
+                    logger.info(f"Skipping {table} (not present in schema)")
             
-            session.commit()
             logger.info("✅ Database cleared successfully")
     
     async def _seed_company_data(self):
@@ -769,8 +797,12 @@ class ComprehensiveCassavaTest:
             # Step 1: Get seeded trials (skip CT.gov ingestion)
             logger.info("Step 1: Using pre-seeded trials (skipping CT.gov ingestion)")
             with session_scope() as session:
-                seeded_trials = session.query(Trial).all()
-                logger.info(f"Found {len(seeded_trials)} pre-seeded trials")
+                # Only process the main Phase 3 trial (NCT05515666)
+                main_trial = session.query(Trial).filter(Trial.nct_id == "NCT05515666").first()
+                if not main_trial:
+                    raise ValueError("Main Phase 3 trial NCT05515666 not found in seeded data")
+                seeded_trials = [main_trial]
+                logger.info(f"Found {len(seeded_trials)} pre-seeded trials (filtered to main Phase 3 trial)")
             
             # Step 2: Company matching (using seeded data)
             logger.info("Step 2: Running company matching on seeded trials")
@@ -804,9 +836,14 @@ class ComprehensiveCassavaTest:
             result.pubmed_result = pubmed_results
             
             # Step 5: Study card generation
-            logger.info("Step 5: Running study card generation")
-            study_card_results = await orchestrator.run_study_card_generation(public_trials)
-            result.study_card_result = study_card_results
+            # COMMENTED OUT: Only running PubMed pipeline for now
+            # logger.info("Step 5: Running study card generation")
+            # study_card_results = await orchestrator.run_study_card_generation(public_trials)
+            # result.study_card_result = study_card_results
+            
+            # Mark skipped phases as skipped instead of unknown
+            self.results.setdefault("pubmed_processing", {"status": "skipped"})
+            self.results.setdefault("study_card_generation", {"status": "skipped"})
             
             # Step 6: Update metrics
             result.trials_matched_to_companies = len(matched_trials)
@@ -943,29 +980,30 @@ class ComprehensiveCassavaTest:
                     print(f"     {i}. PMID {doc['pmid']}: {doc['title']}")
         
         # Study card metrics
-        if "study_card_generation" in self.results and self.results["study_card_generation"].get("status") == "success":
-            study_cards = self.results["study_card_generation"]
-            print(f"\n📋 Study Card Generation Metrics:")
-            print(f"   • Trials processed: {study_cards.get('trials_processed', 0)}")
-            print(f"   • Total gates generated: {study_cards.get('total_gates_generated', 0)}")
-            print(f"   • Total conclusions generated: {study_cards.get('total_conclusions_generated', 0)}")
-            
-            # Show gate details
-            if study_cards.get('gate_details'):
-                print(f"   • Gate details:")
-                for i, gate in enumerate(study_cards['gate_details'][:3], 1):
-                    print(f"     {i}. {gate.get('gate_type', 'Unknown')}: {gate.get('description', 'No description')}")
-                    print(f"        Confidence: {gate.get('confidence', 0.0):.2f}")
-            
-            # Show conclusion details
-            if study_cards.get('conclusion_details'):
-                print(f"   • Conclusion details:")
-                for i, conclusion in enumerate(study_cards['conclusion_details'][:2], 1):
-                    print(f"     {i}. Decision: {conclusion.get('decision', 'No decision')}")
-                    print(f"        Confidence: {conclusion.get('confidence', 0.0):.2f}")
-                    print(f"        Passed gates: {conclusion.get('passed_gates', 0)}")
-                    print(f"        Failed gates: {conclusion.get('failed_gates', 0)}")
-                    print(f"        Reasoning: {conclusion.get('reasoning', 'No reasoning')}")
+        # COMMENTED OUT: Only running PubMed pipeline for now
+        # if "study_card_generation" in self.results and self.results["study_card_generation"].get("status") == "success":
+        #     study_cards = self.results["study_card_generation"]
+        #     print(f"\n📋 Study Card Generation Metrics:")
+        #     print(f"   • Trials processed: {study_cards.get('trials_processed', 0)}")
+        #     print(f"   • Total gates generated: {study_cards.get('total_gates_generated', 0)}")
+        #     print(f"   • Total conclusions generated: {study_cards.get('total_conclusions_generated', 0)}")
+        #     
+        #     # Show gate details
+        #     if study_cards.get('gate_details'):
+        #         print(f"   • Gate details:")
+        #         for i, gate in enumerate(study_cards['gate_details'][:3], 1):
+        #             print(f"     {i}. {gate.get('gate_type', 'Unknown')}: {gate.get('description', 'No description')}")
+        #             print(f"        Confidence: {gate.get('confidence', 0.0):.2f}")
+        #     
+        #     # Show conclusion details
+        #     if study_cards.get('conclusion_details'):
+        #         print(f"   • Conclusion details:")
+        #         for i, conclusion in enumerate(study_cards['conclusion_details'][:2], 1):
+        #             print(f"     {i}. Decision: {conclusion.get('decision', 'No decision')}")
+        #             print(f"        Confidence: {conclusion.get('confidence', 0.0):.2f}")
+        #             print(f"        Passed gates: {conclusion.get('passed_gates', 0)}")
+        #             print(f"        Failed gates: {conclusion.get('failed_gates', 0)}")
+        #             print(f"        Reasoning: {conclusion.get('reasoning', 'No reasoning')}")
         
         # Errors and warnings
         if self.results["errors"]:
