@@ -110,6 +110,7 @@ class RetrievalProcessor:
         
         try:
             logger.error(f"DEBUG: Starting retrieval processing with session_id: {session_id}")
+            logger.error(f"DEBUG: RetrievalProcessor inputs - asset_aliases: {asset_aliases}, indication_terms: {indication_terms}")
             
             # Store session metadata for tracking
             retrieval_session_id = session_id
@@ -126,11 +127,12 @@ class RetrievalProcessor:
             
             # Log entity pack snapshot for debugging
             logger.info(f"Entity pack snapshot (session_id={session_id}):")
-            logger.info(f"  Asset aliases: {entity_pack.asset.aliases}")
-            logger.info(f"  Indication aliases: {entity_pack.indications.synonyms}")
-            logger.info(f"  Company aliases: {entity_pack.company.aliases}")
+            logger.info(f"  Asset terms: {entity_pack.get_all_asset_terms()}")
+            logger.info(f"  Indication terms: {entity_pack.get_all_indication_terms()}")
+            logger.info(f"  Company terms: {entity_pack.get_all_company_terms()}")
             logger.info(f"  NCT IDs: {entity_pack.registries.nct_ids}")
             logger.info(f"  Mechanism targets: {entity_pack.mechanism.targets}")
+            logger.info(f"  Asset canonical: {entity_pack.asset.canonical}")
             
             if not entity_pack:
                 return RetrievalResult(
@@ -173,7 +175,7 @@ class RetrievalProcessor:
                 )
             
             # Step 3: Execute multi-tier queries with union + dedupe
-            all_pmids = await self._execute_multi_tier_queries(query_tiers, max_results)
+            all_pmids, tier_results = await self._execute_multi_tier_queries(query_tiers, max_results)
             if not all_pmids:
                 return RetrievalResult(
                     success=True,
@@ -195,39 +197,99 @@ class RetrievalProcessor:
             final_documents = await self._apply_guardrails(scored_documents, entity_pack)
             
             # Store RAW documents found during retrieval (before filtering)
-            if self.persistence_service and retrieval_session_id and all_pmids:
-                # Get raw document data for storage
+            if all_pmids:
+                # Fetch metadata for documents to get real titles
+                async with self.client:
+                    metadata_result = await self.client.esummary_batch(all_pmids)
+                
+                # Store documents directly using db_service
                 raw_documents = []
                 for pmid in all_pmids:
                     # Determine which query tier found this document
-                    query_tier = 'A'  # Default to tier A, we'll improve this later
+                    # Find the tier that contains this pmid
+                    query_tier = 'Unknown'
+                    for tier_type, tier_pmids in tier_results.items():
+                        if pmid in tier_pmids:
+                            query_tier = tier_type
+                            break
+                    
+                    # Extract real title from metadata
+                    title = 'No title available'
+                    if pmid in metadata_result:
+                        metadata = metadata_result[pmid]
+                        # ESummary uses 'title' field
+                        title = metadata.get('title', 'No title available')
+                        if title and len(title) > 200:
+                            title = title[:200] + '...'
+                        # Debug: log the actual metadata structure
+                        logger.debug(f"PMID {pmid} metadata keys: {list(metadata.keys())}")
+                        logger.debug(f"PMID {pmid} title: {title}")
+                    
                     raw_documents.append({
                         'pmid': pmid,
-                        'title': f'Document {pmid}',  # Placeholder - we'll get real data later
-                        'retrieval_tier': query_tier,  # Use valid tier value
+                        'title': title,
+                        'retrieval_tier': query_tier,  # Use actual tier value
                         'query_tier': query_tier,
                         'policy_engine_passed': False,  # Not yet processed
                         'guardrails_passed': False,     # Not yet processed
                         'created_at': datetime.now(timezone.utc)
                     })
                 
+                # Store documents using simplified approach
+                stored_count, failed_count = self.db_service.store_documents_metadata(raw_documents)
+                logger.info(f"store_documents_metadata: stored={stored_count}, failed={failed_count}, session={retrieval_session_id}")
+                
+                # Link documents to trial
+                if stored_count > 0:
+                    # Create trial-document candidates for discovery stage
+                    doc_candidates = []
+                    for doc_data in raw_documents:
+                        doc_candidates.append({
+                            'pmid': doc_data['pmid'],
+                            'stage': 'U1_discovery',
+                            'retrieval_tier': doc_data['retrieval_tier'],
+                            'query_tier': doc_data['query_tier']
+                        })
+                    
+                    linked_count, link_failed = self.db_service.store_trial_doc_candidates_discovery(
+                        trial_id=trial_id,
+                        candidates=doc_candidates
+                    )
+                    logger.info(f"store_trial_doc_candidates_discovery: linked={linked_count}, failed={link_failed}")
+                
                 # Log top-N preview for sanity check
                 logger.info("Top-N preview (first 5 ranked hits):")
                 for i, doc in enumerate(final_documents[:5]):
-                    title_preview = doc.get('title', 'No title')[:120]
-                    tier_hit = doc.get('retrieval_tier', 'Unknown')
-                    score = doc.get('retrieval_score', 0.0)
-                    pmid = doc.get('pmid', 'Unknown')
-                    logger.info(f"  {i+1}) {pmid} \"{title_preview}...\" [hit:{tier_hit}, score:{score}]")
-                
-                # Store documents using simplified approach
-                logger.info(f"store_retrieval_documents: stored={len(final_documents)}, duplicates=0, failed=0, session={retrieval_session_id}")
+                    # Better title extraction with fallbacks
+                    title_preview = (doc.get('title') or 
+                                   doc.get('metadata', {}).get('title') or 
+                                   doc.get('summary', {}).get('title') or 
+                                   'No title')[:120]
+                    
+                    # Better tier extraction with fallbacks
+                    tier_hit = (doc.get('retrieval_tier') or 
+                              doc.get('tier_type') or 
+                              doc.get('query_tier') or 
+                              'Unknown')
+                    
+                    # Better score extraction with fallbacks
+                    score = (doc.get('retrieval_score') or 
+                            doc.get('score') or 
+                            doc.get('ranking_score') or 
+                            0.0)
+                    
+                    pmid = doc.get('pmid', doc.get('id', 'Unknown'))
+                    logger.info(f"  {i+1}) {pmid} \"{title_preview}...\" [hit:{tier_hit}, score:{score:.2f}]")
             
             execution_time = (datetime.now(timezone.utc) - start_time).total_seconds()
             
-            # Log final counts from database
+            # Log final counts from database with debug info
             final_counts = self.db_service.get_document_counts_by_stage(trial_id)
-            logger.info(f"final_counts: retrieval_docs_in_db={final_counts['total']}, processed_docs_in_db={final_counts['processed']}")
+            logger.info(f"DEBUG: get_document_counts_by_stage returned: {final_counts}")
+            logger.info(f"final_counts: retrieval_docs_in_db={final_counts.get('total', 0)}, processed_docs_in_db={final_counts.get('processed', 0)}")
+            
+            # Also log actual stored counts for comparison
+            logger.info(f"DEBUG: Documents stored this session: {stored_count}, candidates linked: {linked_count}")
             
             # Log rate limiting & retries summary
             rate_limit_info = self.client.get_rate_limit_info()
@@ -259,17 +321,8 @@ class RetrievalProcessor:
         except Exception as e:
             logger.error(f"Error in retrieval processing: {e}")
             
-            # Update session as failed
-            if self.persistence_service and retrieval_session_id:
-                await self.persistence_service.update_session_completion(
-                    session_id=retrieval_session_id,
-                    total_documents_found=0,
-                    documents_after_policy_engine=0,
-                    documents_after_guardrails=0,
-                    documents_after_processing=0,
-                    execution_time_seconds=0.0,
-                    status='failed'
-                )
+            # Log failure - no session tracking needed in simplified approach
+            logger.error(f"Retrieval processing failed for session {retrieval_session_id}")
             
             return RetrievalResult(
                 success=False,
@@ -282,7 +335,7 @@ class RetrievalProcessor:
                 error_message=str(e)
             )
     
-    async def _execute_multi_tier_queries(self, query_tiers: List[QueryTier], max_results: Optional[int]) -> List[str]:
+    async def _execute_multi_tier_queries(self, query_tiers: List[QueryTier], max_results: Optional[int]) -> Tuple[List[str], Dict[str, List[str]]]:
         """Execute multi-tier queries and union results."""
         try:
             all_pmids = []
@@ -325,11 +378,11 @@ class RetrievalProcessor:
             unique_pmids = list(set(all_pmids))
             logger.info(f"Union results: {len(all_pmids)} total PMIDs, {len(unique_pmids)} unique")
             
-            return unique_pmids
+            return unique_pmids, tier_results
             
         except Exception as e:
             logger.error(f"Error executing multi-tier queries: {e}")
-            return []
+            return [], {}
     
     async def _apply_policy_engine(self, pmids: List[str], entity_pack: EntityPack) -> List[Dict[str, Any]]:
         """Apply policy engine validation to PMIDs and return documents."""
@@ -382,8 +435,14 @@ class RetrievalProcessor:
                 logger.warning("Document scorer not available, skipping scoring")
                 return documents
             
+            logger.info(f"DEBUG: Starting scoring for {len(documents)} documents")
+            
             # Apply advanced scoring
             scored_tuples = self.document_scorer.rank_documents(documents, entity_pack)
+            
+            # Debug logging for first few documents
+            for i, (doc, score) in enumerate(scored_tuples[:3]):
+                logger.info(f"DEBUG: Doc {i+1} final score: {score}, pmid: {doc.get('pmid', 'Unknown')}")
             
             # Extract just the documents from the tuples
             scored_docs = [doc for doc, _ in scored_tuples]

@@ -14,6 +14,7 @@ from dataclasses import dataclass, asdict
 from ..client import PubMedClient
 from ..mapper import PubMedMapper
 from ..db_service import PubMedDBService, get_db_service
+from ....db.session import session_scope
 # Dual persistence service removed - using simplified approach
 from ....extract.abstract_features import AbstractFeatureExtractor
 
@@ -150,33 +151,25 @@ class AbstractProcessor:
             selected_docs, dropped_docs = await self._select_documents(documents_scored)
             
             # Store only processed documents (filtered for LLM processing)
-            if self.persistence_service:
-                # Prepare documents for storage with retrieval document links
-                processed_docs = []
+            if selected_docs:
+                # Mark documents as processed using simplified approach
+                doc_ids = []
                 for doc in selected_docs:
-                    # Convert ExtractedEntity objects to dictionaries for JSON serialization
-                    entities = doc.get('extracted_entities', [])
-                    entities_dict = [asdict(entity) for entity in entities] if entities else []
+                    pmid = doc.get('pmid')
+                    if pmid:
+                        # Get document ID from database
+                        with session_scope() as session:
+                            from ....db.models import Document
+                            db_doc = session.query(Document).filter(Document.pmid == pmid).first()
+                            if db_doc:
+                                doc_ids.append(db_doc.doc_id)
+                
+                if doc_ids:
+                    processed_count = self.db_service.mark_documents_as_processed(doc_ids)
+                    logger.info(f"mark_documents_as_processed: marked={processed_count} documents as processed")
                     
-                    processed_doc = {
-                        'retrieval_doc_id': doc.get('retrieval_doc_id'),
-                        'pmid': doc.get('pmid'),
-                        'title': doc.get('title'),
-                        'abstract': doc.get('abstract'),
-                        'r_score': doc.get('r_score'),
-                        's_score': doc.get('s_score'),
-                        'rs_tier': doc.get('rs_tier'),
-                        'entities': entities_dict
-                    }
-                    processed_docs.append(processed_doc)
-                
-                processed_docs_stored = await self.persistence_service.store_processed_documents(
-                    trial_id=trial_id,
-                    documents=processed_docs
-                )
-                
-                if processed_docs_stored == 0:
-                    logger.error(f"Failed to store processed documents: no documents stored")
+                    if processed_count == 0:
+                        logger.error(f"Failed to mark documents as processed: no documents updated")
             
             execution_time = (datetime.now(timezone.utc) - start_time).total_seconds()
             
@@ -219,8 +212,8 @@ class AbstractProcessor:
             logger.info(f"  EFetch batch size: {len(pmids)}, retry attempts: {self.client.max_retries}")
             
             async with self.client:
-                # Fetch abstracts using EFetch
-                abstract_result = await self.client.efetch_batch(pmids, rettype='abstract')
+                # Fetch abstracts using EFetch XML for more reliable parsing
+                abstract_result = await self.client.efetch_abstracts_xml(pmids)
                 
                 # Parse abstracts and add to documents with detailed diagnostics
                 abstracts_fetched = 0
@@ -228,10 +221,17 @@ class AbstractProcessor:
                 pmid_missing = 0
                 xml_parse_error = 0
                 
+                # Log EFetch URL and payload for debugging
+                logger.info(f"EFetch requested PMIDs: {pmids}")
+                logger.info(f"EFetch returned PMIDs: {list(abstract_result.keys())}")
+                missing_pmids = set(pmids) - set(abstract_result.keys())
+                if missing_pmids:
+                    logger.warning(f"EFetch missing PMIDs: {sorted(missing_pmids)[:10]}")
+                
                 for doc in documents:
                     pmid = doc.get('pmid')
                     if pmid and pmid in abstract_result:
-                        abstract_text = abstract_result[pmid]  # efetch_batch returns Dict[str, str]
+                        abstract_text = abstract_result[pmid]  # efetch_abstracts_xml returns Dict[str, str]
                         if abstract_text and abstract_text.strip():
                             doc['abstract'] = abstract_text
                             abstracts_fetched += 1

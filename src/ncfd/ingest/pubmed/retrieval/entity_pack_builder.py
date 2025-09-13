@@ -49,14 +49,19 @@ class EntityPackBuilder:
             
             # Default asset info
             asset_canonical = asset_aliases[0] if asset_aliases else "unknown"
-            asset_alias_list = asset_aliases[1:] if len(asset_aliases) > 1 else []
+            asset_alias_list = asset_aliases if asset_aliases else []
+            
+            # Debug logging for entity pack creation
+            logger.info(f"DEBUG: Creating entity pack with asset_aliases={asset_aliases}")
+            logger.info(f"DEBUG: asset_canonical='{asset_canonical}'")
             
             # Default mechanism info (can be customized per asset)
             mechanism_targets = self._get_mechanism_targets(asset_canonical)
+            logger.info(f"DEBUG: mechanism_targets={mechanism_targets}")
             
             # Default indication info
             indication_primary = [indication_terms[0]] if indication_terms else ["Alzheimer Disease"]
-            indication_synonyms = indication_terms[1:] if len(indication_terms) > 1 else []
+            indication_synonyms = indication_terms if indication_terms else []
             
             # Registry info
             nct_ids = [trial_nct] if trial_nct else []
@@ -99,16 +104,23 @@ class EntityPackBuilder:
     
     def _get_mechanism_targets(self, asset_name: str) -> List[str]:
         """Get mechanism targets based on asset name."""
+        logger.info(f"DEBUG: Getting mechanism targets for asset_name='{asset_name}'")
+        
         # Comprehensive mechanism targets for simufilam/PTI-125
         if "simufilam" in asset_name.lower() or "pti" in asset_name.lower():
-            return [
+            targets = [
                 "filamin A", "FLNA", "filamin-A", "filamin A protein",
                 "amyloid", "tau", "amyloid-beta", "Aβ", "beta-amyloid",
                 "amyloid precursor protein", "APP", "presenilin"
             ]
+            logger.info(f"DEBUG: Found simufilam/PTI match, returning {len(targets)} targets: {targets}")
+            return targets
         elif "alzheimer" in asset_name.lower():
-            return ["amyloid", "tau", "amyloid-beta", "Aβ", "beta-amyloid"]
+            targets = ["amyloid", "tau", "amyloid-beta", "Aβ", "beta-amyloid"]
+            logger.info(f"DEBUG: Found Alzheimer match, returning {len(targets)} targets: {targets}")
+            return targets
         else:
+            logger.warning(f"DEBUG: No mechanism targets found for asset_name='{asset_name}', returning empty list")
             return []
     
     def update_entity_pack_with_nct_ids(self, entity_pack: EntityPack, nct_ids: List[str]) -> EntityPack:

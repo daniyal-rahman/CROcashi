@@ -27,7 +27,7 @@ from ..ingest.pubmed.retrieval.query_builder import MultiTierQueryBuilder
 from ..ingest.pubmed.retrieval.document_scorer import AdvancedDocumentScorer, ScoringConfig
 from ..ingest.pubmed.retrieval.guardrails import GuardrailsSystem, GuardrailConfig
 from ..ingest.pubmed.retrieval.ctgov_discovery import CTgovIntegration, CTgovConfig
-from ..db.session import get_session
+from ..db.session import get_session, session_scope
 from ..db.models import Trial, Document, DocumentLink
 from ..config import get_config
 
@@ -145,26 +145,44 @@ class PubMedPipeline:
                     trial_phase = trial_phases[i] if trial_phases and i < len(trial_phases) else None
                     company_name = company_names[i] if company_names and i < len(company_names) else None
                     
-                    # Execute dual persistence pipeline
-                    results = await self.pipeline.execute_pipeline(
+                    # Execute simplified pipeline using new components
+                    from ..ingest.pubmed import RetrievalProcessor, AbstractProcessor
+                    
+                    retrieval_processor = RetrievalProcessor(self.config)
+                    abstract_processor = AbstractProcessor(self.config)
+                    
+                    # Run retrieval
+                    retrieval_result = await retrieval_processor.execute_retrieval(
                         trial_id=trial_id,
-                        asset_names=asset_names,
-                        indications=indications,
+                        asset_aliases=asset_names or [],
+                        indication_terms=indications or [],
                         max_results=max_results,
-                        enable_stages=['retrieval', 'processing'],
                         trial_nct=trial_nct,
                         trial_phase=trial_phase,
                         company_name=company_name
                     )
                     
-                    # Aggregate results
-                    for result in results:
-                        if result.success:
-                            total_documents += result.documents_processed
-                        if result.errors:
-                            total_errors.extend(result.errors)
-                        if result.warnings:
-                            total_warnings.extend(result.warnings)
+                    if not retrieval_result.success:
+                        error_msg = f"Retrieval failed for trial {trial_id}: {retrieval_result.error_message}"
+                        logger.error(error_msg)
+                        total_errors.append(error_msg)
+                        continue
+                    
+                    # Run processing
+                    processing_result = await abstract_processor.process_documents(
+                        documents=retrieval_result.documents,
+                        trial_id=trial_id,
+                        trial_asset=asset_names[0] if asset_names else "unknown",
+                        trial_indication=indications[0] if indications else "unknown",
+                        trial_nct=trial_nct
+                    )
+                    
+                    if processing_result.success:
+                        total_documents += processing_result.documents_processed
+                    else:
+                        error_msg = f"Processing failed for trial {trial_id}: {processing_result.error_message}"
+                        logger.error(error_msg)
+                        total_errors.append(error_msg)
                     
                     sessions_created += 1
                     
@@ -178,8 +196,9 @@ class PubMedPipeline:
             processed_docs = 0
             for trial_id in trial_ids:
                 try:
-                    retrieval_docs += len(await self.pipeline.get_retrieval_documents(trial_id))
-                    processed_docs += len(await self.pipeline.get_processed_documents(trial_id))
+                    counts = self.db_service.get_document_counts_by_stage(trial_id)
+                    retrieval_docs += counts['total']
+                    processed_docs += counts['processed']
                 except Exception:
                     pass  # Ignore errors getting metrics
             
@@ -225,7 +244,12 @@ class PubMedPipeline:
     def get_retrieval_metrics(self, trial_id: int) -> Dict[str, Any]:
         """Get retrieval metrics for a specific trial."""
         try:
-            return self.pipeline.get_retrieval_metrics(trial_id)
+            counts = self.db_service.get_document_counts_by_stage(trial_id)
+            return {
+                'total_documents': counts['total'],
+                'processed_documents': counts['processed'],
+                'raw_documents': counts['total'] - counts['processed']
+            }
         except Exception as e:
             logger.error(f"Error getting retrieval metrics for trial {trial_id}: {e}")
             return {}
@@ -233,7 +257,14 @@ class PubMedPipeline:
     def get_retrieval_documents(self, trial_id: int) -> List[Dict[str, Any]]:
         """Get retrieval documents for a specific trial."""
         try:
-            return self.pipeline.get_retrieval_documents(trial_id)
+            # Return simplified document list from database
+            with session_scope() as session:
+                from ..db.models import Document, DocumentLink
+                docs = session.query(Document).join(DocumentLink).filter(
+                    DocumentLink.trial_id == trial_id,
+                    Document.processing_stage == 'raw'
+                ).all()
+                return [{'pmid': doc.pmid, 'title': doc.title, 'abstract': doc.abstract} for doc in docs]
         except Exception as e:
             logger.error(f"Error getting retrieval documents for trial {trial_id}: {e}")
             return []
@@ -241,7 +272,14 @@ class PubMedPipeline:
     def get_processed_documents(self, trial_id: int) -> List[Dict[str, Any]]:
         """Get processed documents for a specific trial."""
         try:
-            return self.pipeline.get_processed_documents(trial_id)
+            # Return simplified document list from database
+            with session_scope() as session:
+                from ..db.models import Document, DocumentLink
+                docs = session.query(Document).join(DocumentLink).filter(
+                    DocumentLink.trial_id == trial_id,
+                    Document.processing_stage == 'processed'
+                ).all()
+                return [{'pmid': doc.pmid, 'title': doc.title, 'abstract': doc.abstract} for doc in docs]
         except Exception as e:
             logger.error(f"Error getting processed documents for trial {trial_id}: {e}")
             return []

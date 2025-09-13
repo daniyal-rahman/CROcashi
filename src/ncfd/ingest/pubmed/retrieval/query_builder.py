@@ -244,6 +244,11 @@ class MultiTierQueryBuilder:
             company_terms = entity_pack.get_all_company_terms()
             disease_terms = entity_pack.get_all_indication_terms()
             
+            logger.info(f"DEBUG: Query C requirements check:")
+            logger.info(f"  mechanism_terms: {mechanism_terms} (len={len(mechanism_terms)})")
+            logger.info(f"  drug_terms: {drug_terms} (len={len(drug_terms)})")
+            logger.info(f"  disease_terms: {disease_terms} (len={len(disease_terms)})")
+            
             if not mechanism_terms or not drug_terms or not disease_terms:
                 logger.error("Missing required terms for Query C")
                 return None

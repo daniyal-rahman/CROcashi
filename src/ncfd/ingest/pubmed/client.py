@@ -453,8 +453,31 @@ class PubMedClient:
         content_map = {pmid: "" for pmid in pmids}
         
         try:
-            # Use stream parsing for memory efficiency
-            self._parse_xml_stream(xml_text, pmid_set, content_map)
+            # Log XML root for debugging
+            root = ET.fromstring(xml_text)
+            logger.info(f"XML root tag: {root.tag}")
+            
+            # Accept both possible XML structures
+            articles = root.findall('.//PubmedArticle')
+            if not articles and root.tag == 'PubmedArticleSet':
+                articles = list(root)
+            
+            returned_pmids = set()
+            for article in articles:
+                pmid_elem = article.find('.//PMID')
+                if pmid_elem is not None and pmid_elem.text:
+                    pmid = pmid_elem.text
+                    returned_pmids.add(pmid)
+                    if pmid in pmid_set:
+                        # Extract abstract for this PMID
+                        abstract_text = self._extract_full_abstract(article)
+                        if abstract_text:
+                            content_map[pmid] = abstract_text
+            
+            # Log missing PMIDs for debugging
+            missing = pmid_set - returned_pmids
+            if missing:
+                logger.warning(f"EFetch returned {len(returned_pmids)}/{len(pmids)} PMIDs; missing: {sorted(missing)[:10]}")
             
             logger.info(f"Parsed XML response: {len([k for k, v in content_map.items() if v])}/{len(pmids)} PMIDs with abstracts")
             

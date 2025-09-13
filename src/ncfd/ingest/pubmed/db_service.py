@@ -509,6 +509,7 @@ class PubMedDBService:
         failed = 0
         
         with session_scope() as session:
+            self.logger.info(f"DEBUG: Starting to store {len(valid_documents)} documents")
             for doc_data in valid_documents:
                 try:
                     pmid = doc_data.get('pmid')
@@ -575,7 +576,8 @@ class PubMedDBService:
                             session.add(citation)
                             self.logger.debug(f"Created citation for PMID {pmid}")
                         
-                        self.logger.debug(f"Created document for PMID {pmid} with doc_id {document.doc_id}")
+                        self.logger.info(f"DEBUG: Created document for PMID {pmid} with doc_id {document.doc_id}")
+                        session.flush()  # Ensure the document is persisted
                     
                     successful += 1
                     
@@ -589,6 +591,7 @@ class PubMedDBService:
                     continue
         
         self.logger.info(f"Stored document metadata: {successful} successful, {failed} failed")
+        self.logger.info(f"DEBUG: Session commit completed successfully")
         return successful, failed
     
     def store_document_links(self, trial_id: int, docs_with_links: List[Dict[str, Any]]) -> Tuple[int, int]:
@@ -1132,31 +1135,41 @@ class PubMedDBService:
         """
         try:
             with session_scope() as session:
-                # Count raw documents
+                # Count documents linked to trial via TrialDocCandidate (discovery stage)
+                # This matches how documents are actually stored in the retrieval processor
                 raw_count = session.query(Document).join(
-                    DocumentLink, Document.doc_id == DocumentLink.doc_id
+                    TrialDocCandidate, Document.doc_id == TrialDocCandidate.doc_id
                 ).filter(
-                    DocumentLink.trial_id == trial_id,
+                    TrialDocCandidate.trial_id == trial_id,
                     Document.processing_stage == 'raw'
                 ).count()
                 
                 # Count processed documents
                 processed_count = session.query(Document).join(
-                    DocumentLink, Document.doc_id == DocumentLink.doc_id
+                    TrialDocCandidate, Document.doc_id == TrialDocCandidate.doc_id
                 ).filter(
-                    DocumentLink.trial_id == trial_id,
+                    TrialDocCandidate.trial_id == trial_id,
                     Document.processing_stage == 'processed'
+                ).count()
+                
+                # Also count documents with no processing_stage set (discovered but not yet processed)
+                discovered_count = session.query(Document).join(
+                    TrialDocCandidate, Document.doc_id == TrialDocCandidate.doc_id
+                ).filter(
+                    TrialDocCandidate.trial_id == trial_id,
+                    Document.processing_stage.is_(None)
                 ).count()
                 
                 return {
                     'raw': raw_count,
                     'processed': processed_count,
-                    'total': raw_count + processed_count
+                    'discovered': discovered_count,
+                    'total': raw_count + processed_count + discovered_count
                 }
                 
         except Exception as e:
             self.logger.error(f"Failed to get document counts for trial {trial_id}: {e}")
-            return {'raw': 0, 'processed': 0, 'total': 0}
+            return {'raw': 0, 'processed': 0, 'discovered': 0, 'total': 0}
 
 
 # Module-level singleton instance

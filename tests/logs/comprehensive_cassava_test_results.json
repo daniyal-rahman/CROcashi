@@ -1,10 +1,10 @@
 {
   "test_info": {
-    "start_time": "2025-09-13T06:22:32.519456+00:00",
+    "start_time": "2025-09-13T14:04:55.328554+00:00",
     "test_name": "Comprehensive Cassava Pipeline Test",
     "version": "1.0",
-    "end_time": "2025-09-13T06:22:38.273955+00:00",
-    "duration_seconds": 5.754499
+    "end_time": "2025-09-13T14:05:09.186926+00:00",
+    "duration_seconds": 13.858372
   },
   "database_setup": {
     "status": "success",
@@ -42,19 +42,106 @@
       }
     ]
   },
-  "pubmed_processing": {},
+  "pubmed_processing": {
+    "status": "success",
+    "main_trial": "NCT05515666",
+    "trials_processed": 1,
+    "documents_created": 20,
+    "document_links": 0,
+    "retrieval_documents": 20,
+    "processed_documents": 16,
+    "retrieval_metrics": {},
+    "document_details": [
+      {
+        "pmid": "39239266",
+        "title": "Expression of concern: Simufilam suppresses overactive mTOR and restores its sensitivity to insulin ...",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "39009358",
+        "title": "Scientist who worked on Cassava's Alzheimer drug simufilam charged with fraud.",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "36934371",
+        "title": "Assessing preparedness for Alzheimer disease-modifying therapies in Australasian health care systems...",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "36625928",
+        "title": "A Review of Scientific Ethics Issues Associated with the Recently Approved Drugs for Alzheimer's Dis...",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "32075941",
+        "title": "Filamin A inhibition reduces seizure activity in a mouse model of focal cortical malformations.",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "37291958",
+        "title": "Targeting \u03b17 nicotinic acetylcholine receptors and their protein interactions in Alzheimer's disease...",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "40299221",
+        "title": "Unraveling the Immune Puzzle: Role of Immunomodulation in Alzheimer's Disease.",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "22815492",
+        "title": "Reducing amyloid-related Alzheimer's disease pathogenesis by a small molecule targeting filamin A.",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "37457922",
+        "title": "Simufilam suppresses overactive mTOR and restores its sensitivity to insulin in Alzheimer's disease ...",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "37762230",
+        "title": "Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's Disease.",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      }
+    ],
+    "pipeline_result": {
+      "success": true,
+      "documents_processed": 20,
+      "errors": [],
+      "stages_completed": 2
+    }
+  },
   "study_card_generation": {},
   "orchestrator_testing": {
     "status": "success",
-    "execution_id": "cassava_test_1757744553",
-    "total_processing_time": 5.103945,
+    "execution_id": "cassava_test_1757772295",
+    "total_processing_time": 6.61834,
     "ctgov_result": {
       "success": false,
       "trials_processed": 0
     },
     "pubmed_result": {
       "success": true,
-      "documents_processed": 22
+      "documents_processed": 18
     },
     "study_card_result": {
       "success": false,
@@ -68,7 +155,7 @@
     "entity_counts": {
       "companies": 1,
       "trials": 4,
-      "documents": 0,
+      "documents": 20,
       "studies": 0
     },
     "relationships": {

@@ -570,6 +570,8 @@ class PipelineOrchestrator:
             # Delegate to PubMed pipeline with additional context
             result = await self.pubmed_pipeline.execute(
                 trial_ids=trial_ids,
+                asset_names=self.config.get('pubmed', {}).get('asset_names', []),
+                indications=self.config.get('pubmed', {}).get('indications', []),
                 trial_nct_ids=nct_ids,
                 trial_phases=trial_phases,
                 company_names=company_names
@@ -601,8 +603,9 @@ class PipelineOrchestrator:
         
         for trial in trial_list:
             trial_id = trial['trial_id']
-            count = await self.pubmed_pipeline.pipeline.get_existing_documents_count(trial_id)
-            existing_counts[trial_id] = count
+            # Use simplified approach with db_service
+            counts = self.pubmed_pipeline.db_service.get_document_counts_by_stage(trial_id)
+            existing_counts[trial_id] = counts['total']
         
         return existing_counts
     

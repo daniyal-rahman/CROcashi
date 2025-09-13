@@ -154,6 +154,10 @@ class AdvancedDocumentScorer:
             query_terms = self._extract_query_terms(entity_pack)
             base_score = self.bm25_calculator.calculate_score(doc_text, query_terms)
             
+            # Seed base score with simple signals even when policy is disabled
+            if base_score == 0.0:
+                base_score = self._calculate_simple_base_score(doc, entity_pack, doc_text)
+            
             # Apply policy engine scoring if available
             policy_score = 0.0
             if policy_result:
@@ -209,6 +213,63 @@ class AdvancedDocumentScorer:
                 recency_bonus=0.0,
                 score_breakdown={'error': str(e)}
             )
+    
+    def _calculate_simple_base_score(self, doc: Dict[str, Any], entity_pack: EntityPack, doc_text: str) -> float:
+        """
+        Calculate simple base score using basic signals when BM25 is 0.
+        
+        Args:
+            doc: Document to score
+            entity_pack: Entity pack with asset/indication terms
+            doc_text: Document text content
+            
+        Returns:
+            Simple base score
+        """
+        try:
+            score = 0.0
+            
+            # Check for asset terms in title/abstract
+            asset_terms = entity_pack.get_all_asset_terms()
+            if asset_terms and doc_text:
+                doc_text_lower = doc_text.lower()
+                for term in asset_terms:
+                    if term.lower() in doc_text_lower:
+                        score += 1.0
+                        break  # Only count once per document
+            
+            # Check for NCT IDs
+            nct_ids = entity_pack.registries.nct_ids
+            if nct_ids and doc_text:
+                doc_text_lower = doc_text.lower()
+                for nct_id in nct_ids:
+                    if nct_id.lower() in doc_text_lower:
+                        score += 1.0
+                        break  # Only count once per document
+            
+            # Check for RCT/Clinical Trial publication type
+            pub_types = doc.get('pubtype', [])
+            if isinstance(pub_types, list):
+                for pub_type in pub_types:
+                    if any(keyword in pub_type.lower() for keyword in ['rct', 'clinical trial', 'randomized']):
+                        score += 1.0
+                        break
+            
+            # Recency bonus (simplified)
+            pubdate = doc.get('pubdate', '')
+            if pubdate and len(pubdate) >= 4:
+                try:
+                    year = int(pubdate[:4])
+                    if year >= 2020:  # Recent papers get bonus
+                        score += 0.5
+                except ValueError:
+                    pass
+            
+            return min(score, 3.0)  # Cap at 3.0
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating simple base score: {e}")
+            return 0.0
     
     def _extract_document_text(self, doc: Dict[str, Any]) -> str:
         """Extract text content from document for scoring."""
