@@ -1,10 +1,10 @@
 {
   "test_info": {
-    "start_time": "2025-09-13T14:04:55.328554+00:00",
+    "start_time": "2025-09-13T15:47:16.038062+00:00",
     "test_name": "Comprehensive Cassava Pipeline Test",
     "version": "1.0",
-    "end_time": "2025-09-13T14:05:09.186926+00:00",
-    "duration_seconds": 13.858372
+    "end_time": "2025-09-13T15:47:29.748917+00:00",
+    "duration_seconds": 13.710855
   },
   "database_setup": {
     "status": "success",
@@ -47,21 +47,22 @@
     "main_trial": "NCT05515666",
     "trials_processed": 1,
     "documents_created": 20,
-    "document_links": 0,
+    "document_links": 20,
+    "pubmed_documents": 20,
     "retrieval_documents": 20,
     "processed_documents": 16,
     "retrieval_metrics": {},
     "document_details": [
       {
-        "pmid": "39239266",
-        "title": "Expression of concern: Simufilam suppresses overactive mTOR and restores its sensitivity to insulin ...",
+        "pmid": "39009358",
+        "title": "Scientist who worked on Cassava's Alzheimer drug simufilam charged with fraud.",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
       },
       {
-        "pmid": "39009358",
-        "title": "Scientist who worked on Cassava's Alzheimer drug simufilam charged with fraud.",
+        "pmid": "39239266",
+        "title": "Expression of concern: Simufilam suppresses overactive mTOR and restores its sensitivity to insulin ...",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
@@ -74,36 +75,22 @@
         "guardrails_passed": false
       },
       {
-        "pmid": "36625928",
-        "title": "A Review of Scientific Ethics Issues Associated with the Recently Approved Drugs for Alzheimer's Dis...",
+        "pmid": "34295950",
+        "title": "Altered filamin A enables amyloid beta-induced tau hyperphosphorylation and neuroinflammation in Alz...",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
       },
       {
-        "pmid": "32075941",
-        "title": "Filamin A inhibition reduces seizure activity in a mouse model of focal cortical malformations.",
+        "pmid": "32920628",
+        "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients.",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
       },
       {
-        "pmid": "37291958",
-        "title": "Targeting \u03b17 nicotinic acetylcholine receptors and their protein interactions in Alzheimer's disease...",
-        "retrieval_tier": "Unknown",
-        "policy_engine_passed": false,
-        "guardrails_passed": false
-      },
-      {
-        "pmid": "40299221",
-        "title": "Unraveling the Immune Puzzle: Role of Immunomodulation in Alzheimer's Disease.",
-        "retrieval_tier": "Unknown",
-        "policy_engine_passed": false,
-        "guardrails_passed": false
-      },
-      {
-        "pmid": "22815492",
-        "title": "Reducing amyloid-related Alzheimer's disease pathogenesis by a small molecule targeting filamin A.",
+        "pmid": "40141124",
+        "title": "Comment on Wang et al. Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's...",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
@@ -121,6 +108,20 @@
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
+      },
+      {
+        "pmid": "22815492",
+        "title": "Reducing amyloid-related Alzheimer's disease pathogenesis by a small molecule targeting filamin A.",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "28438486",
+        "title": "PTI-125 binds and reverses an altered conformation of filamin A to reduce Alzheimer's disease pathog...",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
       }
     ],
     "pipeline_result": {
@@ -133,8 +134,8 @@
   "study_card_generation": {},
   "orchestrator_testing": {
     "status": "success",
-    "execution_id": "cassava_test_1757772295",
-    "total_processing_time": 6.61834,
+    "execution_id": "cassava_test_1757778436",
+    "total_processing_time": 6.650569,
     "ctgov_result": {
       "success": false,
       "trials_processed": 0
@@ -160,11 +161,11 @@
     },
     "relationships": {
       "trials_with_company": 4,
-      "trials_with_documents": 0
+      "trials_with_documents": 1
     },
     "data_integrity": {
       "all_trials_have_company": true,
-      "some_trials_have_documents": false
+      "some_trials_have_documents": true
     }
   },
   "errors": [],

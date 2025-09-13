@@ -129,7 +129,8 @@ class CTgovAPIClient:
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    self.logger.info(f"CT.gov API search successful: {data.get('totalStudies', 0)} trials found")
+                    trials_found = data.get('totalStudies', 0)
+                    self.logger.info(f"CT.gov direct API search completed: {trials_found} trials found")
                     return data
                 else:
                     error_text = await response.text()
@@ -218,15 +219,8 @@ class CTgovTrialDiscoverer:
                 api_response = await client.search_trials(**search_params)
                 
                 if not api_response.get('studies'):
-                    self.logger.info("No trials found in CT.gov search")
-                    return CTgovDiscoveryResult(
-                        trials_found=0,
-                        nct_ids=[],
-                        trial_info=[],
-                        linked_pmids=[],
-                        discovery_time=(datetime.now() - start_time).total_seconds(),
-                        success=True
-                    )
+                    self.logger.info("CT.gov term-based search found 0 trials, proceeding with NCT backfill")
+                    # Don't return early - continue with NCT backfill
                 
                 # Process trial results
                 trial_info = self._process_trial_results(api_response['studies'])
@@ -244,7 +238,8 @@ class CTgovTrialDiscoverer:
                 
                 discovery_time = (datetime.now() - start_time).total_seconds()
                 
-                self.logger.info(f"CT.gov discovery completed: {len(trial_info)} trials, "
+                self.logger.info(f"CT.gov discovery completed: {len(trial_info)} total trials "
+                               f"({len(api_response.get('studies', []))} from term search + {len(nct_ids) - len(api_response.get('studies', []))} from NCT backfill), "
                                f"{len(nct_ids)} NCT IDs, {len(linked_pmids)} linked PMIDs")
                 
                 return CTgovDiscoveryResult(

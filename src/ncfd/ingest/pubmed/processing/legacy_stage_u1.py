@@ -4,7 +4,7 @@ Stage U1: Abstract Processing.
 EFetch abstracts → write document_text.abstract_text.
 Extract quick entities (NCT, phase/design, HR/ORR/p/CI/N).
 Emit coarse document_links (nct_in_text / asset_in_text).
-Compute R and S per (trial, doc) → doc_rs_scores.
+Compute R and S per document → store directly in documents table.
 Select/Drop docs based on R/S tier rules; advance candidates.
 """
 

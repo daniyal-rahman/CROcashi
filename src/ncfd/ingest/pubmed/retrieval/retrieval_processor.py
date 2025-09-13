@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from .entity_pack_builder import EntityPackBuilder, EntityPack
 from .query_builder import MultiTierQueryBuilder, QueryTier
 from .policy_engine import RetrievalPolicy
-from .document_scorer import AdvancedDocumentScorer
+from .document_scorer import AdvancedDocumentScorer, ScoringResult
 from .guardrails import GuardrailsSystem
 from .ctgov_discovery import CTgovIntegration
 from ..client import PubMedClient
@@ -109,8 +109,8 @@ class RetrievalProcessor:
         session_id = str(uuid.uuid4())
         
         try:
-            logger.error(f"DEBUG: Starting retrieval processing with session_id: {session_id}")
-            logger.error(f"DEBUG: RetrievalProcessor inputs - asset_aliases: {asset_aliases}, indication_terms: {indication_terms}")
+            logger.debug(f"Starting retrieval processing with session_id: {session_id}")
+            logger.debug(f"RetrievalProcessor inputs - asset_aliases: {asset_aliases}, indication_terms: {indication_terms}")
             
             # Store session metadata for tracking
             retrieval_session_id = session_id
@@ -190,11 +190,8 @@ class RetrievalProcessor:
             # Step 4: Apply policy engine validation (must/should/cannot)
             validated_documents = await self._apply_policy_engine(all_pmids, entity_pack)
             
-            # Step 5: Apply sophisticated scoring and re-ranking
-            scored_documents = await self._apply_document_scoring(validated_documents, entity_pack)
-            
             # Step 6: Apply guardrails (content filtering)
-            final_documents = await self._apply_guardrails(scored_documents, entity_pack)
+            final_documents = await self._apply_guardrails(validated_documents, entity_pack)
             
             # Store RAW documents found during retrieval (before filtering)
             if all_pmids:
@@ -217,8 +214,8 @@ class RetrievalProcessor:
                     title = 'No title available'
                     if pmid in metadata_result:
                         metadata = metadata_result[pmid]
-                        # ESummary uses 'title' field
-                        title = metadata.get('title', 'No title available')
+                        # ESummary uses 'Title' field (capital T)
+                        title = metadata.get('Title', metadata.get('title', 'No title available'))
                         if title and len(title) > 200:
                             title = title[:200] + '...'
                         # Debug: log the actual metadata structure
@@ -235,15 +232,22 @@ class RetrievalProcessor:
                         'created_at': datetime.now(timezone.utc)
                     })
                 
+                # Apply scoring to documents with titles
+                scored_tuples = await self._apply_document_scoring(raw_documents, entity_pack)
+                
+                # Extract documents and scores for storage and preview
+                scored_documents = [doc for doc, _ in scored_tuples]
+                scoring_results = {doc['pmid']: score for doc, score in scored_tuples}
+                
                 # Store documents using simplified approach
-                stored_count, failed_count = self.db_service.store_documents_metadata(raw_documents)
+                stored_count, failed_count = self.db_service.store_documents_metadata(scored_documents)
                 logger.info(f"store_documents_metadata: stored={stored_count}, failed={failed_count}, session={retrieval_session_id}")
                 
                 # Link documents to trial
                 if stored_count > 0:
                     # Create trial-document candidates for discovery stage
                     doc_candidates = []
-                    for doc_data in raw_documents:
+                    for doc_data in scored_documents:
                         doc_candidates.append({
                             'pmid': doc_data['pmid'],
                             'stage': 'U1_discovery',
@@ -259,7 +263,7 @@ class RetrievalProcessor:
                 
                 # Log top-N preview for sanity check
                 logger.info("Top-N preview (first 5 ranked hits):")
-                for i, doc in enumerate(final_documents[:5]):
+                for i, (doc, score_result) in enumerate(scored_tuples[:5]):
                     # Better title extraction with fallbacks
                     title_preview = (doc.get('title') or 
                                    doc.get('metadata', {}).get('title') or 
@@ -272,11 +276,8 @@ class RetrievalProcessor:
                               doc.get('query_tier') or 
                               'Unknown')
                     
-                    # Better score extraction with fallbacks
-                    score = (doc.get('retrieval_score') or 
-                            doc.get('score') or 
-                            doc.get('ranking_score') or 
-                            0.0)
+                    # Use the actual scoring result
+                    score = score_result.total_score
                     
                     pmid = doc.get('pmid', doc.get('id', 'Unknown'))
                     logger.info(f"  {i+1}) {pmid} \"{title_preview}...\" [hit:{tier_hit}, score:{score:.2f}]")
@@ -444,15 +445,13 @@ class RetrievalProcessor:
             for i, (doc, score) in enumerate(scored_tuples[:3]):
                 logger.info(f"DEBUG: Doc {i+1} final score: {score}, pmid: {doc.get('pmid', 'Unknown')}")
             
-            # Extract just the documents from the tuples
-            scored_docs = [doc for doc, _ in scored_tuples]
-            
-            logger.info(f"Advanced scoring applied to {len(scored_docs)} documents")
-            return scored_docs
+            logger.info(f"Advanced scoring applied to {len(scored_tuples)} documents")
+            return scored_tuples
             
         except Exception as e:
             logger.error(f"Error applying document scoring: {e}")
-            return documents
+            # Return tuples with zero scores for error case
+            return [(doc, ScoringResult(total_score=0.0)) for doc in documents]
     
     async def _apply_guardrails(self, documents: List[Dict[str, Any]], entity_pack: EntityPack) -> List[Dict[str, Any]]:
         """Apply guardrails for content filtering."""

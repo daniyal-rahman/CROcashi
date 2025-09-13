@@ -155,8 +155,17 @@ class AdvancedDocumentScorer:
             base_score = self.bm25_calculator.calculate_score(doc_text, query_terms)
             
             # Seed base score with simple signals even when policy is disabled
-            if base_score == 0.0:
-                base_score = self._calculate_simple_base_score(doc, entity_pack, doc_text)
+            # Always try simple scoring when policy is disabled (for debugging)
+            pmid = doc.get('pmid', 'Unknown')
+            self.logger.info(f"PMID {pmid}: BM25 score={base_score}, policy_result={policy_result}")
+            
+            # Force simple scoring when policy is disabled
+            if not policy_result:
+                simple_score = self._calculate_simple_base_score(doc, entity_pack, doc_text)
+                self.logger.info(f"PMID {pmid}: Simple score={simple_score}")
+                if simple_score > base_score:
+                    base_score = simple_score
+                    self.logger.info(f"PMID {pmid}: Using simple score {base_score}")
             
             # Apply policy engine scoring if available
             policy_score = 0.0
@@ -229,22 +238,33 @@ class AdvancedDocumentScorer:
         try:
             score = 0.0
             
+            # Get title separately for better matching
+            title = doc.get('title', '')
+            pmid = doc.get('pmid', 'Unknown')
+            
+            self.logger.info(f"PMID {pmid}: doc_text='{doc_text[:100]}...', title='{title}'")
+            
             # Check for asset terms in title/abstract
             asset_terms = entity_pack.get_all_asset_terms()
-            if asset_terms and doc_text:
-                doc_text_lower = doc_text.lower()
+            self.logger.info(f"PMID {pmid}: asset_terms={asset_terms}")
+            
+            if asset_terms and (doc_text or title):
+                search_text = (doc_text + ' ' + title).lower()
+                self.logger.info(f"PMID {pmid}: search_text='{search_text[:200]}...'")
                 for term in asset_terms:
-                    if term.lower() in doc_text_lower:
+                    if term.lower() in search_text:
                         score += 1.0
+                        self.logger.info(f"PMID {pmid}: Found asset term '{term}' in text")
                         break  # Only count once per document
             
             # Check for NCT IDs
             nct_ids = entity_pack.registries.nct_ids
-            if nct_ids and doc_text:
-                doc_text_lower = doc_text.lower()
+            if nct_ids and (doc_text or title):
+                search_text = (doc_text + ' ' + title).lower()
                 for nct_id in nct_ids:
-                    if nct_id.lower() in doc_text_lower:
+                    if nct_id.lower() in search_text:
                         score += 1.0
+                        self.logger.debug(f"PMID {pmid}: Found NCT ID '{nct_id}' in text")
                         break  # Only count once per document
             
             # Check for RCT/Clinical Trial publication type
@@ -253,6 +273,7 @@ class AdvancedDocumentScorer:
                 for pub_type in pub_types:
                     if any(keyword in pub_type.lower() for keyword in ['rct', 'clinical trial', 'randomized']):
                         score += 1.0
+                        self.logger.debug(f"PMID {pmid}: Found RCT pubtype '{pub_type}'")
                         break
             
             # Recency bonus (simplified)
@@ -262,9 +283,16 @@ class AdvancedDocumentScorer:
                     year = int(pubdate[:4])
                     if year >= 2020:  # Recent papers get bonus
                         score += 0.5
+                        self.logger.debug(f"PMID {pmid}: Recent paper ({year}) gets recency bonus")
                 except ValueError:
                     pass
             
+            # If still no score, give a small base score for any document with a title
+            if score == 0.0 and title and title != 'No title available':
+                score = 0.1
+                self.logger.debug(f"PMID {pmid}: Giving base score for having title")
+            
+            self.logger.debug(f"PMID {pmid}: Simple base score = {score}")
             return min(score, 3.0)  # Cap at 3.0
             
         except Exception as e:

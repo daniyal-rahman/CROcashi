@@ -83,16 +83,40 @@ class EntityPack:
     notes: Optional[str] = None
     
     def get_all_asset_terms(self) -> List[str]:
-        """Get all asset terms (canonical + aliases)."""
-        return [self.asset.canonical] + self.asset.aliases
+        """Get all asset terms (canonical + aliases) with duplicates removed."""
+        all_terms = [self.asset.canonical] + self.asset.aliases
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_terms = []
+        for term in all_terms:
+            if term not in seen:
+                seen.add(term)
+                unique_terms.append(term)
+        return unique_terms
     
     def get_all_company_terms(self) -> List[str]:
-        """Get all company terms (canonical + aliases)."""
-        return [self.company.canonical] + self.company.aliases
+        """Get all company terms (canonical + aliases) with duplicates removed."""
+        all_terms = [self.company.canonical] + self.company.aliases
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_terms = []
+        for term in all_terms:
+            if term not in seen:
+                seen.add(term)
+                unique_terms.append(term)
+        return unique_terms
     
     def get_all_indication_terms(self) -> List[str]:
-        """Get all indication terms (primary + synonyms)."""
-        return self.indications.primary + self.indications.synonyms
+        """Get all indication terms (primary + synonyms) with duplicates removed."""
+        all_terms = self.indications.primary + self.indications.synonyms
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_terms = []
+        for term in all_terms:
+            if term not in seen:
+                seen.add(term)
+                unique_terms.append(term)
+        return unique_terms
     
     def get_all_author_terms(self) -> List[str]:
         """Get all author terms (primary + aliases)."""

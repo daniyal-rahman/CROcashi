@@ -12,7 +12,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from ...db.models import Document, DocumentText, DocumentLink, DocRSScore, TrialDocCandidate, TrialLitState, PubMedMeta, DocumentCitation
+from ...db.models import Document, DocumentText, DocumentLink, TrialDocCandidate, TrialLitState, PubMedMeta, DocumentCitation
 from ...db.session import session_scope
 
 logger = logging.getLogger(__name__)
@@ -25,90 +25,65 @@ class PubMedDBService:
         """Initialize the database service."""
         self.logger = logger
     
-    def store_rs_scores(
+    def update_document_rs_scores(
         self, 
-        trial_id: int, 
-        rs_scores: List[Dict[str, Any]]
+        documents_with_scores: List[Dict[str, Any]]
     ) -> Tuple[int, int]:
         """
-        Store R/S scores for documents.
+        Update documents with R/S scores directly.
         
         Args:
-            trial_id: Trial ID
-            rs_scores: List of R/S score records
+            documents_with_scores: List of documents with R/S score data
             
         Returns:
-            Tuple of (successful_inserts, failed_inserts)
+            Tuple of (successful_updates, failed_updates)
         """
         successful = 0
         failed = 0
         
         with session_scope() as session:
-            for score_record in rs_scores:
+            for doc_data in documents_with_scores:
                 try:
-                    # If doc_id is None, try to look it up by PMID
-                    doc_id = score_record.get('doc_id')
-                    if doc_id is None and score_record.get('pmid'):
-                        # Look up document by PMID
-                        document = session.query(Document).filter(
-                            Document.pmid == score_record['pmid']
-                        ).first()
-                        if document:
-                            doc_id = document.doc_id
-                        else:
-                            self.logger.warning(f"Document with PMID {score_record['pmid']} not found in database")
-                            failed += 1
-                            continue
+                    # Look up document by PMID or doc_id
+                    doc_id = doc_data.get('doc_id')
+                    pmid = doc_data.get('pmid')
                     
-                    if doc_id is None:
-                        self.logger.warning(f"No doc_id available for R/S score: {score_record}")
+                    if doc_id:
+                        document = session.query(Document).filter(Document.doc_id == doc_id).first()
+                    elif pmid:
+                        document = session.query(Document).filter(Document.pmid == pmid).first()
+                    else:
+                        self.logger.warning(f"No doc_id or pmid available for R/S score update: {doc_data}")
                         failed += 1
                         continue
                     
-                    # Check if record already exists
-                    existing = session.query(DocRSScore).filter(
-                        DocRSScore.trial_id == trial_id,
-                        DocRSScore.doc_id == doc_id
-                    ).first()
+                    if not document:
+                        self.logger.warning(f"Document not found for R/S score update: {doc_data}")
+                        failed += 1
+                        continue
                     
-                    if existing:
-                        # Update existing record
-                        existing.R_score = Decimal(str(score_record['R_score']))
-                        existing.R_tier = score_record['R_tier']
-                        existing.S_score = Decimal(str(score_record['S_score']))
-                        existing.S_tier = score_record['S_tier']
-                        existing.R_components_jsonb = score_record.get('R_components_jsonb')
-                        existing.S_components_jsonb = score_record.get('S_components_jsonb')
-                        existing.decided_at = datetime.now(timezone.utc)
-                        self.logger.debug(f"Updated R/S score for trial {trial_id}, doc {doc_id}")
-                    else:
-                        # Create new record
-                        rs_score = DocRSScore(
-                            trial_id=trial_id,
-                            doc_id=doc_id,
-                            R_score=Decimal(str(score_record['R_score'])),
-                            R_tier=score_record['R_tier'],
-                            S_score=Decimal(str(score_record['S_score'])),
-                            S_tier=score_record['S_tier'],
-                            R_components_jsonb=score_record.get('R_components_jsonb'),
-                            S_components_jsonb=score_record.get('S_components_jsonb'),
-                            decided_at=datetime.now(timezone.utc)
-                        )
-                        session.add(rs_score)
-                        self.logger.debug(f"Created R/S score for trial {trial_id}, doc {doc_id}")
+                    # Update document with R/S scores
+                    document.r_score = Decimal(str(doc_data['r_score'])) if doc_data.get('r_score') is not None else None
+                    document.r_tier = doc_data.get('r_tier')
+                    document.s_score = Decimal(str(doc_data['s_score'])) if doc_data.get('s_score') is not None else None
+                    document.s_tier = doc_data.get('s_tier')
+                    document.r_components_jsonb = doc_data.get('r_components_jsonb')
+                    document.s_components_jsonb = doc_data.get('s_components_jsonb')
+                    document.rs_decided_at = doc_data.get('rs_decided_at', datetime.now(timezone.utc))
                     
+                    self.logger.debug(f"Updated R/S scores for document {document.doc_id}")
                     successful += 1
                     
                 except (IntegrityError, SQLAlchemyError) as e:
                     failed += 1
-                    self.logger.error(f"Failed to store R/S score for trial {trial_id}, doc {score_record.get('doc_id', 'unknown')}: {e}")
+                    self.logger.error(f"Failed to update R/S scores for document {doc_data.get('doc_id', 'unknown')}: {e}")
                     continue
                 except Exception as e:
                     failed += 1
-                    self.logger.error(f"Unexpected error storing R/S score: {e}")
+                    self.logger.error(f"Unexpected error updating R/S scores: {e}")
                     continue
         
-        self.logger.info(f"Stored R/S scores: {successful} successful, {failed} failed")
+        self.logger.info(f"Updated R/S scores: {successful} successful, {failed} failed")
         return successful, failed
     
     def store_trial_doc_candidates(
@@ -279,39 +254,42 @@ class PubMedDBService:
             self.logger.error(f"Failed to get trial lit state for trial {trial_id}: {e}")
             return None
     
-    def get_document_rs_scores(self, trial_id: int) -> List[Dict[str, Any]]:
+    def get_documents_with_rs_scores(self, trial_id: int) -> List[Dict[str, Any]]:
         """
-        Get R/S scores for documents in a trial.
+        Get documents with R/S scores for a trial.
         
         Args:
             trial_id: Trial ID
             
         Returns:
-            List of R/S score records
+            List of documents with R/S scores
         """
         try:
             with session_scope() as session:
-                rs_scores = session.query(DocRSScore).filter(
-                    DocRSScore.trial_id == trial_id
+                documents = session.query(Document).join(DocumentLink).filter(
+                    DocumentLink.trial_id == trial_id
                 ).all()
                 
                 return [
                     {
-                        'trial_id': score.trial_id,
-                        'doc_id': score.doc_id,
-                        'R_score': float(score.R_score),
-                        'R_tier': score.R_tier,
-                        'S_score': float(score.S_score),
-                        'S_tier': score.S_tier,
-                        'R_components_jsonb': score.R_components_jsonb,
-                        'S_components_jsonb': score.S_components_jsonb,
-                        'decided_at': score.decided_at.isoformat() if score.decided_at else None
+                        'doc_id': doc.doc_id,
+                        'pmid': doc.pmid,
+                        'title': doc.title,
+                        'processing_stage': doc.processing_stage,
+                        'status': doc.status,
+                        'r_score': float(doc.r_score) if doc.r_score else None,
+                        'r_tier': doc.r_tier,
+                        's_score': float(doc.s_score) if doc.s_score else None,
+                        's_tier': doc.s_tier,
+                        'r_components_jsonb': doc.r_components_jsonb,
+                        's_components_jsonb': doc.s_components_jsonb,
+                        'rs_decided_at': doc.rs_decided_at.isoformat() if doc.rs_decided_at else None
                     }
-                    for score in rs_scores
+                    for doc in documents
                 ]
                 
         except Exception as e:
-            self.logger.error(f"Failed to get R/S scores for trial {trial_id}: {e}")
+            self.logger.error(f"Failed to get documents with R/S scores for trial {trial_id}: {e}")
             return []
     
     def get_trial_doc_candidates(self, trial_id: int, stage: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -364,12 +342,14 @@ class PubMedDBService:
         """
         try:
             with session_scope() as session:
-                # Get all R/S scores for the trial
-                rs_scores = session.query(DocRSScore).filter(
-                    DocRSScore.trial_id == trial_id
+                # Get all documents with R/S scores for the trial
+                documents = session.query(Document).join(DocumentLink).filter(
+                    DocumentLink.trial_id == trial_id,
+                    Document.r_score.isnot(None),
+                    Document.s_score.isnot(None)
                 ).all()
                 
-                if not rs_scores:
+                if not documents:
                     return {
                         'best_S_Rge2': None,
                         'n_docs_seen': 0,
@@ -379,18 +359,18 @@ class PubMedDBService:
                     }
                 
                 # Calculate best S score among R≥2 documents
-                r2_plus_scores = [float(score.S_score) for score in rs_scores 
-                                 if score.R_tier in ['R2', 'R3']]
+                r2_plus_scores = [float(doc.s_score) for doc in documents 
+                                 if doc.r_tier in ['R2', 'R3']]
                 best_S_Rge2 = max(r2_plus_scores) if r2_plus_scores else None
                 
                 # Count documents
-                n_docs_seen = len(rs_scores)
-                n_docs_selected = len([score for score in rs_scores 
-                                     if score.S_tier in ['S2', 'S3']])
+                n_docs_seen = len(documents)
+                n_docs_selected = len([doc for doc in documents 
+                                     if doc.s_tier in ['S2', 'S3']])
                 
                 # Calculate p_short (probability of shortable)
-                shortable_docs = len([score for score in rs_scores 
-                                    if score.S_tier in ['S2', 'S3']])
+                shortable_docs = len([doc for doc in documents 
+                                    if doc.s_tier in ['S2', 'S3']])
                 p_short = shortable_docs / n_docs_seen if n_docs_seen > 0 else 0
                 
                 # Calculate uncertainty (P*(1-P))
@@ -528,11 +508,20 @@ class PubMedDBService:
                         existing.published_at = doc_data.get('published_at', existing.published_at)
                         existing.nct_id = doc_data.get('nct_id', existing.nct_id)
                         existing.status = 'discovered'
+                        # Update R/S scoring fields if provided
+                        if 'r_score' in doc_data:
+                            existing.r_score = doc_data.get('r_score')
+                            existing.r_tier = doc_data.get('r_tier')
+                            existing.s_score = doc_data.get('s_score')
+                            existing.s_tier = doc_data.get('s_tier')
+                            existing.r_components_jsonb = doc_data.get('r_components_jsonb')
+                            existing.s_components_jsonb = doc_data.get('s_components_jsonb')
+                            existing.rs_decided_at = doc_data.get('rs_decided_at')
                         self.logger.debug(f"Updated document for PMID {pmid}")
                     else:
                         # Create new document
                         document = Document(
-                            source_type='Paper',
+                            source_type='Paper',  # Use 'Paper' to match database constraint
                             pmid=pmid,
                             title=doc_data.get('title'),
                             publisher=doc_data.get('fulljournalname'),
@@ -540,7 +529,15 @@ class PubMedDBService:
                             nct_id=doc_data.get('nct_id'),
                             content_type='abstract',  # Will be updated to 'fulltext' in OA stage
                             status='discovered',
-                            discovered_at=datetime.now(timezone.utc)
+                            discovered_at=datetime.now(timezone.utc),
+                            # R/S scoring fields
+                            r_score=doc_data.get('r_score'),
+                            r_tier=doc_data.get('r_tier'),
+                            s_score=doc_data.get('s_score'),
+                            s_tier=doc_data.get('s_tier'),
+                            r_components_jsonb=doc_data.get('r_components_jsonb'),
+                            s_components_jsonb=doc_data.get('s_components_jsonb'),
+                            rs_decided_at=doc_data.get('rs_decided_at')
                         )
                         session.add(document)
                         session.flush()  # Get the doc_id

@@ -667,6 +667,15 @@ class Document(Base):
     sha256: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     publisher: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     processing_stage: Mapped[str] = mapped_column(String(20), nullable=False, server_default='raw')
+    
+    # R/S Scoring fields (folded from doc_rs_scores table)
+    r_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(5,4), nullable=True)
+    r_tier: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    s_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(5,4), nullable=True)
+    s_tier: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    r_components_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    s_components_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    rs_decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     text: Mapped[Optional["DocumentText"]] = relationship(back_populates="document", uselist=False, cascade="all, delete-orphan")
@@ -680,7 +689,6 @@ class Document(Base):
     derived_spans: Mapped[List["DerivedSpan"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     # Trials are linked through DocumentLink table
     # trials: Mapped[List["Trial"]] = relationship(back_populates="documents")
-    rs_scores: Mapped[List["DocRSScore"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     trial_candidates: Mapped[List["TrialDocCandidate"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     pubmed_meta: Mapped[Optional["PubMedMeta"]] = relationship(back_populates="document", uselist=False, cascade="all, delete-orphan")
     pmc_meta: Mapped[Optional["PmcMeta"]] = relationship(back_populates="document", uselist=False, cascade="all, delete-orphan")
@@ -697,7 +705,11 @@ class Document(Base):
         Index("ix_documents_processing_stage", "processing_stage"),
         CheckConstraint("source_type::text = ANY (ARRAY['PR','IR','SEC','Registry','Abstract','Poster','Paper','FDA','Patent']::text[])", name='ck_documents_source_type'),
         CheckConstraint("status::text = ANY (ARRAY['discovered','fetched','parsed','linked','failed']::text[])", name='ck_documents_status'),
-        CheckConstraint("processing_stage::text = ANY (ARRAY['raw'::text, 'processed'::text])", name='ck_documents_processing_stage')
+        CheckConstraint("processing_stage::text = ANY (ARRAY['raw'::text, 'processed'::text])", name='ck_documents_processing_stage'),
+        CheckConstraint("r_score IS NULL OR (r_score >= 0 AND r_score <= 1)", name='ck_documents_r_score_range'),
+        CheckConstraint("s_score IS NULL OR (s_score >= 0 AND s_score <= 1)", name='ck_documents_s_score_range'),
+        CheckConstraint("r_tier IS NULL OR r_tier IN ('R0','R1','R2','R3')", name='ck_documents_r_tier'),
+        CheckConstraint("s_tier IS NULL OR s_tier IN ('S0','S1','S2','S3')", name='ck_documents_s_tier')
     )
 
 
@@ -975,35 +987,6 @@ class AssetAlias(Base):
 # ---------------------------------------------------------------------------
 # PubMed Literature System Models
 # ---------------------------------------------------------------------------
-
-class DocRSScore(Base):
-    """R/S scoring for documents per trial."""
-    __tablename__ = "doc_rs_scores"
-
-    trial_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    R_score: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
-    R_tier: Mapped[str] = mapped_column(Text, nullable=False)
-    S_score: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
-    S_tier: Mapped[str] = mapped_column(Text, nullable=False)
-    R_components_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
-    S_components_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
-    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-
-    # Relationships
-    trial: Mapped["Trial"] = relationship(back_populates=None)
-    document: Mapped["Document"] = relationship(back_populates="rs_scores")
-
-    __table_args__ = (
-        PrimaryKeyConstraint('trial_id', 'doc_id'),
-        ForeignKeyConstraint(['trial_id'], ['trials.trial_id'], ondelete='CASCADE'),
-        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
-        CheckConstraint("R_score >= 0 AND R_score <= 1", name='ck_doc_rs_scores_R_score_range'),
-        CheckConstraint("S_score >= 0 AND S_score <= 1", name='ck_doc_rs_scores_S_score_range'),
-        CheckConstraint("R_tier::text = ANY (ARRAY['R0','R1','R2','R3']::text[])", name='ck_doc_rs_scores_R_tier'),
-        CheckConstraint("S_tier::text = ANY (ARRAY['S0','S1','S2','S3']::text[])", name='ck_doc_rs_scores_S_tier')
-    )
-
 
 class TrialDocCandidate(Base):
     """Trial-document relationships by processing stage."""

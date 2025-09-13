@@ -282,50 +282,70 @@ class AbstractProcessor:
         trial_indication: str, 
         trial_nct: Optional[str]
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """Compute R/S scores for documents."""
+        """Compute R/S scores for documents and store them directly in document records."""
         try:
             # This would integrate with the R/S scoring system
             # For now, return documents as-is with placeholder scores
             documents_scored = []
-            rs_scores = []
             
             for doc in documents:
                 # Placeholder R/S scoring logic
                 r_score = 0.5  # Would be computed based on relevance
                 s_score = 0.3  # Would be computed based on shortability
                 
+                # Determine R/S tiers
+                r_tier = self._determine_r_tier(r_score)
+                s_tier = self._determine_s_tier(s_score)
+                
+                # Add R/S scores directly to document
                 doc['r_score'] = r_score
+                doc['r_tier'] = r_tier
                 doc['s_score'] = s_score
-                doc['rs_tier'] = self._determine_rs_tier(r_score, s_score)
+                doc['s_tier'] = s_tier
+                doc['r_components_jsonb'] = {'placeholder': 'R components would go here'}
+                doc['s_components_jsonb'] = {'placeholder': 'S components would go here'}
+                doc['rs_decided_at'] = datetime.now(timezone.utc)
                 
                 documents_scored.append(doc)
-                
-                # Create R/S score record
-                score_record = {
-                    'trial_id': trial_id,
-                    'pmid': doc.get('pmid'),
-                    'r_score': r_score,
-                    's_score': s_score,
-                    'rs_tier': doc['rs_tier']
-                }
-                rs_scores.append(score_record)
             
-            return documents_scored, rs_scores
+            # Store R/S scores directly in documents using the updated DB service
+            if documents_scored:
+                successful, failed = self.db_service.update_document_rs_scores(documents_scored)
+                logger.info(f"Stored R/S scores for {successful} documents, {failed} failed")
+            
+            return documents_scored, []  # Return empty rs_scores list since scores are now in documents
             
         except Exception as e:
             logger.error(f"Error computing R/S scores: {e}")
             return documents, []
     
-    def _determine_rs_tier(self, r_score: float, s_score: float) -> str:
-        """Determine R/S tier based on scores."""
-        if r_score >= self.min_r_score and s_score >= self.min_s_score:
-            return "R1S1"
-        elif r_score >= self.min_r_score:
-            return "R1S0"
-        elif s_score >= self.min_s_score:
-            return "R0S1"
+    def _determine_r_tier(self, r_score: float) -> str:
+        """Determine R tier based on score."""
+        if r_score >= 0.8:
+            return "R3"
+        elif r_score >= 0.6:
+            return "R2"
+        elif r_score >= 0.4:
+            return "R1"
         else:
-            return "R0S0"
+            return "R0"
+    
+    def _determine_s_tier(self, s_score: float) -> str:
+        """Determine S tier based on score."""
+        if s_score >= 0.8:
+            return "S3"
+        elif s_score >= 0.6:
+            return "S2"
+        elif s_score >= 0.4:
+            return "S1"
+        else:
+            return "S0"
+    
+    def _determine_rs_tier(self, r_score: float, s_score: float) -> str:
+        """Determine combined R/S tier based on scores (legacy method)."""
+        r_tier = self._determine_r_tier(r_score)
+        s_tier = self._determine_s_tier(s_score)
+        return f"{r_tier}{s_tier}"
     
     async def _select_documents(self, documents: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """Select/drop documents based on R/S tiers."""
@@ -334,9 +354,11 @@ class AbstractProcessor:
             dropped_docs = []
             
             for doc in documents:
-                rs_tier = doc.get('rs_tier', 'R0S0')
+                r_tier = doc.get('r_tier', 'R0')
+                s_tier = doc.get('s_tier', 'S0')
                 
-                if rs_tier in ['R1S1', 'R1S0', 'R0S1']:
+                # Select documents with R>=1 or S>=1 (any meaningful relevance or shortability)
+                if r_tier in ['R1', 'R2', 'R3'] or s_tier in ['S1', 'S2', 'S3']:
                     selected_docs.append(doc)
                 else:
                     dropped_docs.append(doc)

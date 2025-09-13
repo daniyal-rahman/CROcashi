@@ -32,7 +32,7 @@ from sqlalchemy import text
 
 # Import our modules
 from ncfd.db.session import session_scope, get_engine
-from ncfd.db.models import Base, Trial, Company, Document, Study, DocumentLink, TrialDocCandidate, DocRSScore
+from ncfd.db.models import Base, Trial, Company, Document, Study, DocumentLink, TrialDocCandidate
 from ncfd.pipeline.orchestrator import UnifiedPipelineOrchestrator
 from ncfd.pipeline.pubmed_pipeline import PubMedPipeline
 
@@ -273,7 +273,6 @@ def clear_test_database():
     logger.info("Clearing test database...")
     with session_scope() as session:
         # Delete in order to respect foreign key constraints
-        session.execute(text("DELETE FROM doc_rs_scores"))
         session.execute(text("DELETE FROM trial_doc_candidates"))
         session.execute(text("DELETE FROM document_links"))
         session.execute(text("DELETE FROM document_entities"))
@@ -326,7 +325,7 @@ def query_trials_from_db(session: Session) -> List[Dict[str, Any]]:
                 doc = session.query(Document).filter(
                     Document.doc_id == link.doc_id
                 ).first()
-                if doc and doc.source_type == "PubMed":
+                if doc and doc.source_type == "Paper":
                     trial_data["pubmed_documents"].append({
                         "doc_id": doc.doc_id,
                         "pmid": doc.pmid,
@@ -492,7 +491,9 @@ def print_results(trials_data: List[Dict[str, Any]], pubmed_result: Dict[str, An
     total_docs = sum(trial['documents_count'] for trial in trials_data)
     print(f"  • Total documents linked: {total_docs}")
     total_pubmed = sum(len(trial['pubmed_documents']) for trial in trials_data)
+    trials_with_docs = sum(1 for trial in trials_data if trial['documents_count'] > 0)
     print(f"  • Total PubMed documents: {total_pubmed}")
+    print(f"  • Trials with document links: {trials_with_docs}")
 
 
 def main():

@@ -43,7 +43,7 @@ from sqlalchemy import text, inspect
 
 # Import our modules
 from ncfd.db.session import session_scope, get_engine, reset_engine
-from ncfd.db.models import Base, Trial, Company, Document, Study, DocumentLink, TrialDocCandidate, DocRSScore
+from ncfd.db.models import Base, Trial, Company, Document, Study, DocumentLink, TrialDocCandidate
 from ncfd.pipeline.orchestrator import PipelineOrchestrator
 from ncfd.ingest.pubmed import RetrievalProcessor, AbstractProcessor
 from ncfd.config import get_config
@@ -320,8 +320,9 @@ class ComprehensiveCassavaTest:
             self.results["errors"].append(f"Test execution failed: {str(e)}")
             raise
         finally:
-            # Cleanup
-            await self._cleanup_database()
+            # Cleanup - COMMENTED OUT TO PRESERVE DATA FOR INSPECTION
+            # await self._cleanup_database()
+            logger.info("🧹 Database cleanup SKIPPED - data preserved for inspection")
     
     async def _setup_database(self):
         """Setup test database with clean state."""
@@ -368,7 +369,7 @@ class ComprehensiveCassavaTest:
             
             # Delete in order to respect foreign key constraints
             tables_to_clear = [
-                "doc_rs_scores", "trial_doc_candidates", "document_links",
+                "trial_doc_candidates", "document_links",
                 "document_entities", "document_citations", "document_text",
                 "pubmed_meta", "pmc_meta", "documents", "studies",
                 "trial_versions", "trials", "company_aliases", "companies",
@@ -540,13 +541,13 @@ class ComprehensiveCassavaTest:
                 # Run PubMed pipeline for the main trial only
                 logger.info(f"Running PubMed pipeline for main trial {main_trial.nct_id} (ID: {main_trial.trial_id})...")
                 logger.info(f"Using comprehensive search terms: {len(comprehensive_asset_names)} assets, {len(comprehensive_indications)} indications")
-                logger.error(f"DEBUG: About to start PubMed pipeline phase")
+                logger.debug(f"About to start PubMed pipeline phase")
                 
                 total_documents = 0
                 total_links = 0
                 
                 # Run retrieval processing
-                logger.error(f"DEBUG: About to call execute_retrieval for trial {main_trial.trial_id}")
+                logger.debug(f"About to call execute_retrieval for trial {main_trial.trial_id}")
                 retrieval_result = await retrieval_processor.execute_retrieval(
                     trial_id=main_trial.trial_id,
                     asset_aliases=comprehensive_asset_names,
@@ -569,6 +570,11 @@ class ComprehensiveCassavaTest:
                     trial_indication="Alzheimer's disease",
                     trial_nct=main_trial.nct_id
                 )
+                
+                # Promote trial-doc candidates to document links
+                logger.info("Promoting trial-doc candidates to document links...")
+                promoted_count = self._promote_candidates_to_links(main_trial.trial_id, main_trial.nct_id)
+                logger.info(f"Promoted {promoted_count} trial-doc candidates to document links")
                 
                 # Count documents from results
                 total_documents = retrieval_result.documents_discovered
@@ -608,12 +614,20 @@ class ComprehensiveCassavaTest:
                 elif processed_docs_count == 0:
                     status = "success"  # Documents found is good enough for this test
                 
+                # Count PubMed documents (documents with source_type='Paper' that are linked to trials)
+                pubmed_docs_count = 0
+                for link in session.query(DocumentLink).filter(DocumentLink.trial_id == main_trial.trial_id).all():
+                    doc = session.query(Document).filter(Document.doc_id == link.doc_id).first()
+                    if doc and doc.source_type == "Paper":
+                        pubmed_docs_count += 1
+                
                 self.results["pubmed_processing"] = {
                     "status": status,
                     "main_trial": main_trial.nct_id,
                     "trials_processed": 1,  # Only processing the main trial
                     "documents_created": doc_count,
                     "document_links": doc_links,
+                    "pubmed_documents": pubmed_docs_count,
                     "retrieval_documents": retrieval_docs_count,
                     "processed_documents": processed_docs_count,
                     "retrieval_metrics": {},
@@ -857,14 +871,9 @@ class ComprehensiveCassavaTest:
             result.pubmed_result = pubmed_results
             
             # Step 5: Study card generation
-            # COMMENTED OUT: Only running PubMed pipeline for now
-            # logger.info("Step 5: Running study card generation")
-            # study_card_results = await orchestrator.run_study_card_generation(public_trials)
-            # result.study_card_result = study_card_results
-            
-            # Mark skipped phases as skipped instead of unknown
-            self.results.setdefault("pubmed_processing", {"status": "skipped"})
-            self.results.setdefault("study_card_generation", {"status": "skipped"})
+            logger.info("Step 5: Running study card generation")
+            study_card_results = await orchestrator.run_study_card_generation(public_trials)
+            result.study_card_result = study_card_results
             
             # Step 6: Update metrics
             result.trials_matched_to_companies = len(matched_trials)
@@ -1040,6 +1049,57 @@ class ComprehensiveCassavaTest:
         print("\n" + "="*80)
         print("Test completed!")
     
+    def _promote_candidates_to_links(self, trial_id: int, nct_id: str) -> int:
+        """Promote trial-doc candidates to document links."""
+        promoted_count = 0
+        
+        with session_scope() as session:
+            # Get all trial-doc candidates for this trial
+            candidates = session.query(TrialDocCandidate).filter(
+                TrialDocCandidate.trial_id == trial_id
+            ).all()
+            
+            # Get trial info for company_id
+            trial = session.query(Trial).filter(Trial.trial_id == trial_id).first()
+            if not trial:
+                logger.warning(f"Trial {trial_id} not found")
+                return 0
+            
+            company_id = trial.sponsor_company_id
+            
+            for candidate in candidates:
+                # Check if document link already exists
+                existing_link = session.query(DocumentLink).filter(
+                    DocumentLink.doc_id == candidate.doc_id,
+                    DocumentLink.trial_id == trial_id
+                ).first()
+                
+                if existing_link:
+                    continue  # Already linked
+                
+                # Create document link
+                try:
+                    link = DocumentLink(
+                        doc_id=candidate.doc_id,
+                        nct_id=nct_id,
+                        trial_id=trial_id,
+                        asset_id=None,  # We don't have asset mapping in this test
+                        company_id=company_id,
+                        link_type='trial_document',
+                        confidence=0.8,  # Default confidence
+                        heuristics={'stage': candidate.stage},
+                        evidence_json={'promoted_from_candidate': True}
+                    )
+                    session.add(link)
+                    promoted_count += 1
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to create link for doc {candidate.doc_id}: {e}")
+            
+            session.commit()
+        
+        return promoted_count
+
     async def _cleanup_database(self):
         """Clean up test database."""
         logger.info("🧹 Cleaning up test database...")
