@@ -297,11 +297,11 @@ class RetrievalProcessor:
             logger.info(f"Rate limiting & retries summary:")
             logger.info(f"  esearch_calls={len(query_tiers)}, efetch_calls=0, retries={rate_limit_info['consecutive_failures']}, total_api_time={execution_time:.1f}s")
             
-            logger.info(f"Retrieval processing completed in {execution_time:.2f}s: {len(final_documents)} documents (stored for human verification)")
+            logger.info(f"Retrieval processing completed in {execution_time:.2f}s: {len(scored_documents)} documents (stored for human verification)")
             
             return RetrievalResult(
                 success=True,
-                documents=final_documents,
+                documents=scored_documents,
                 query_metadata={
                     'multi_tier_queries': len(query_tiers),
                     'ctgov_queries': len(ctgov_queries),
@@ -313,8 +313,8 @@ class RetrievalProcessor:
                     'final_documents': len(final_documents),
                     'execution_time': execution_time
                 },
-                documents_discovered=len(final_documents),
-                documents_mapped=len(final_documents),
+                documents_discovered=len(scored_documents),
+                documents_mapped=len(scored_documents),
                 pmids_found=len(all_pmids),
                 session_id=session_id
             )

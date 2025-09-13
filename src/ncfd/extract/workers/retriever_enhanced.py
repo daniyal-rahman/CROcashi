@@ -83,6 +83,8 @@ class EnhancedRetriever(BaseWorker):
                     
                     trial_id = trial_context.get('trial_id')
                     nct_id = trial_context.get('nct_id')
+                    logger.info(f"DEBUG: trial_context = {trial_context}")
+                    logger.info(f"DEBUG: trial_id = {trial_id}, nct_id = {nct_id}")
                     
                     # Query documents linked to this trial
                     linked_docs = []
@@ -99,7 +101,20 @@ class EnhancedRetriever(BaseWorker):
                             linked_docs = session.query(Document).join(
                                 DocumentLink, Document.doc_id == DocumentLink.doc_id
                             ).filter(DocumentLink.trial_id == trial_id_int).all()
-                            logger.debug(f"Found {len(linked_docs)} documents linked to trial_id {trial_id_int}")
+                            logger.info(f"DEBUG: Found {len(linked_docs)} documents linked to trial_id {trial_id_int}")
+                            
+                            # If no documents found, try TrialDocCandidate table (PubMed pipeline)
+                            if not linked_docs:
+                                from ...db.models import TrialDocCandidate
+                                trial_doc_candidates = session.query(Document).join(
+                                    TrialDocCandidate, Document.doc_id == TrialDocCandidate.doc_id
+                                ).filter(
+                                    TrialDocCandidate.trial_id == trial_id_int,
+                                    TrialDocCandidate.stage.in_(['U1_discovery', 'U1_abstract']),
+                                    TrialDocCandidate.selected == True
+                                ).all()
+                                logger.info(f"DEBUG: Found {len(trial_doc_candidates)} documents via TrialDocCandidate for trial_id {trial_id_int}")
+                                linked_docs.extend(trial_doc_candidates)
                             
                             # If no documents found, try processed documents (PubMed pipeline)
                             if not linked_docs:
@@ -126,13 +141,19 @@ class EnhancedRetriever(BaseWorker):
                         ).filter(DocumentLink.nct_id == nct_id).all()
                         logger.debug(f"Found {len(linked_docs)} documents linked to nct_id {nct_id}")
                     
-                    # Convert to DocumentCards with standardized doc_id format
+                    # Convert to DocumentCards using database doc_id for prioritization matching
+                    # Only create DocumentCard objects for documents that have abstracts
                     for doc in linked_docs:
-                        # Use standardized doc_id format per docs/ids.md
-                        standardized_doc_id = self._get_standardized_doc_id(doc)
-                        
+                        # Check if document has abstract text
+                        doc_text = session.query(DocumentText).filter(DocumentText.doc_id == doc.doc_id).first()
+                        if not doc_text or not doc_text.abstract_text or len(doc_text.abstract_text.strip()) == 0:
+                            logger.debug(f"Skipping document {doc.doc_id} - no abstract text available")
+                            continue
+                            
+                        # Use database doc_id (integer) for prioritization matching
+                        # The standardized format is used elsewhere, but here we need the integer for matching
                         doc_card = DocumentCard(
-                            doc_id=standardized_doc_id,
+                            doc_id=doc.doc_id,  # Use integer doc_id for prioritization matching
                             doc_type="Paper",
                             title=doc.title or f"Document for {nct_id}",
                             year=doc.published_at.year if doc.published_at else 2023

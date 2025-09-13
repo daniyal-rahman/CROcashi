@@ -1,10 +1,10 @@
 {
   "test_info": {
-    "start_time": "2025-09-13T20:00:24.556169+00:00",
+    "start_time": "2025-09-13T20:35:37.636249+00:00",
     "test_name": "Comprehensive Cassava Pipeline Test",
     "version": "1.0",
-    "end_time": "2025-09-13T20:00:46.035314+00:00",
-    "duration_seconds": 21.479145
+    "end_time": "2025-09-13T20:35:51.241871+00:00",
+    "duration_seconds": 13.605622
   },
   "database_setup": {
     "status": "success",
@@ -54,15 +54,15 @@
     "retrieval_metrics": {},
     "document_details": [
       {
-        "pmid": "39009358",
-        "title": "Scientist who worked on Cassava's Alzheimer drug simufilam charged with fraud.",
+        "pmid": "39239266",
+        "title": "Expression of concern: Simufilam suppresses overactive mTOR and restores its sensitivity to insulin ...",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
       },
       {
-        "pmid": "39239266",
-        "title": "Expression of concern: Simufilam suppresses overactive mTOR and restores its sensitivity to insulin ...",
+        "pmid": "39009358",
+        "title": "Scientist who worked on Cassava's Alzheimer drug simufilam charged with fraud.",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
@@ -82,8 +82,8 @@
         "guardrails_passed": false
       },
       {
-        "pmid": "37457922",
-        "title": "Simufilam suppresses overactive mTOR and restores its sensitivity to insulin in Alzheimer's disease ...",
+        "pmid": "38215913",
+        "title": "Navigating the dementia landscape: Biomarkers and emerging therapies.",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
@@ -96,15 +96,15 @@
         "guardrails_passed": false
       },
       {
-        "pmid": "38215913",
-        "title": "Navigating the dementia landscape: Biomarkers and emerging therapies.",
+        "pmid": "28438486",
+        "title": "PTI-125 binds and reverses an altered conformation of filamin A to reduce Alzheimer's disease pathog...",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
       },
       {
-        "pmid": "28438486",
-        "title": "PTI-125 binds and reverses an altered conformation of filamin A to reduce Alzheimer's disease pathog...",
+        "pmid": "32920628",
+        "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients.",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
@@ -117,8 +117,8 @@
         "guardrails_passed": false
       },
       {
-        "pmid": "32920628",
-        "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients.",
+        "pmid": "40141124",
+        "title": "Comment on Wang et al. Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's...",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
@@ -170,8 +170,8 @@
   },
   "orchestrator_testing": {
     "status": "success",
-    "execution_id": "cassava_test_1757793624",
-    "total_processing_time": 9.757518,
+    "execution_id": "cassava_test_1757795737",
+    "total_processing_time": 6.542193,
     "ctgov_result": {
       "success": false,
       "trials_processed": 0

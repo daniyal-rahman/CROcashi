@@ -258,6 +258,9 @@ class StudyCardPipeline:
             
             # Stage 1.5: Apply document prioritization and rate limiting
             logger.info("Stage 1.5: Applying document prioritization and rate limiting")
+            logger.info(f"DEBUG: Passing {len(result.document_cards)} document_cards to prioritization")
+            for i, doc_card in enumerate(result.document_cards):
+                logger.info(f"DEBUG: document_cards[{i}] = {doc_card.doc_id}")
             prioritized_docs, rate_stats = await self._apply_document_prioritization(
                 int(trial_id), result.document_cards, raw_doc_texts, trial_context
             )
@@ -529,7 +532,7 @@ class StudyCardPipeline:
                     TrialDocCandidate, Document.doc_id == TrialDocCandidate.doc_id
                 ).filter(
                     TrialDocCandidate.trial_id == trial_id,
-                    TrialDocCandidate.stage.in_(['U1_discovery', 'U1_abstract']),  # Accept both stages
+                    TrialDocCandidate.stage == 'U1_abstract',  # Only U1_abstract stage has abstracts and R/S scores
                     TrialDocCandidate.selected == True
                 ).all()
                 
@@ -547,7 +550,8 @@ class StudyCardPipeline:
                 
                 # Convert to processing candidates with prioritization
                 candidates = []
-                for doc, doc_text in documents:
+                logger.info(f"DEBUG: Processing {len(documents)} documents from database query")
+                for i, (doc, doc_text) in enumerate(documents):
                     # Check text availability
                     has_full_text = bool(doc_text and doc_text.fulltext_text and len(doc_text.fulltext_text.strip()) > 0)
                     has_abstract = bool(doc_text and doc_text.abstract_text and len(doc_text.abstract_text.strip()) > 0)
@@ -557,6 +561,11 @@ class StudyCardPipeline:
                         doc.r_score, doc.r_tier, doc.s_score, doc.s_tier,
                         has_full_text, has_abstract
                     )
+                    
+                    logger.info(f"DEBUG: Document {i+1}: doc_id={doc.doc_id}, priority={priority}, has_text={has_full_text or has_abstract}")
+                    
+                    # DEBUG: Log prioritization details
+                    logger.info(f"DEBUG: Doc {doc.doc_id} (PMID {doc.pmid}): R={doc.r_score} ({doc.r_tier}), S={doc.s_score} ({doc.s_tier}), has_full_text={has_full_text}, has_abstract={has_abstract}, priority={priority}")
                     
                     # Calculate processing score
                     processing_score = self._calculate_processing_score(
@@ -598,7 +607,9 @@ class StudyCardPipeline:
                 for candidate in selected_candidates:
                     # Find matching document card from original retrieval
                     matching_doc_card = None
+                    logger.info(f"DEBUG: Looking for doc_id {candidate['doc_id']} in {len(document_cards)} document_cards")
                     for doc_card in document_cards:
+                        logger.info(f"DEBUG: Checking doc_card.doc_id = {doc_card.doc_id}")
                         if doc_card.doc_id == candidate['doc_id']:
                             matching_doc_card = doc_card
                             break
@@ -725,6 +736,9 @@ class StudyCardPipeline:
         medium_priority = [c for c in candidates if c['priority'] == 'MEDIUM']
         low_priority = [c for c in candidates if c['priority'] == 'LOW']
         fallback_priority = [c for c in candidates if c['priority'] == 'FALLBACK']
+        
+        # DEBUG: Log priority counts
+        logger.info(f"DEBUG: Priority counts - HIGH: {len(high_priority)}, MEDIUM: {len(medium_priority)}, LOW: {len(low_priority)}, FALLBACK: {len(fallback_priority)}")
         
         selected = []
         

@@ -11,12 +11,13 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, asdict
 
-from ..client import PubMedClient
-from ..mapper import PubMedMapper
-from ..db_service import PubMedDBService, get_db_service
-from ....db.session import session_scope
+from .client import PubMedClient
+from .mapper import PubMedMapper
+from .db_service import PubMedDBService, get_db_service
+from ...db.session import session_scope
+from ...db.models import Document
 # Dual persistence service removed - using simplified approach
-from ....extract.abstract_features import AbstractFeatureExtractor
+from ...extract.abstract_features import AbstractFeatureExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ class ProcessingResult:
     documents_selected: int
     documents_dropped: int
     execution_time: float
+    abstracts_stored: int = 0
     error_message: Optional[str] = None
     processed_documents: Optional[List[Dict[str, Any]]] = None
     rs_scores: Optional[List[Dict[str, Any]]] = None
@@ -114,6 +116,7 @@ class AbstractProcessor:
                     success=True,
                     documents_processed=0,
                     abstracts_fetched=0,
+                    abstracts_stored=0,
                     entities_extracted=0,
                     documents_scored=0,
                     documents_selected=0,
@@ -150,6 +153,54 @@ class AbstractProcessor:
             # Step 8: Select/drop documents based on R/S tiers
             selected_docs, dropped_docs = await self._select_documents(documents_scored)
             
+            # Store abstracts in database for all documents that have abstracts
+            abstracts_stored = 0
+            abstracts_failed = 0
+            if documents_with_entities:  # Use documents that have abstracts
+                try:
+                    # Extract abstracts from documents for database storage
+                    abstracts_dict = {}
+                    for doc in documents_with_entities:
+                        pmid = doc.get('pmid')
+                        abstract = doc.get('abstract')
+                        if pmid and abstract:
+                            abstracts_dict[pmid] = abstract
+                    
+                    successful, failed = self.db_service.store_abstracts(documents_with_entities, abstracts_dict)
+                    abstracts_stored = successful
+                    abstracts_failed = failed
+                    logger.info(f"Stored {successful} abstracts to database, {failed} failed")
+                except Exception as e:
+                    logger.error(f"Failed to store abstracts to database: {e}")
+                    abstracts_failed = len(abstracts_dict) if 'abstracts_dict' in locals() else 0
+            
+            # Update TrialDocCandidate records from U1_discovery to U1_abstract stage
+            candidates_updated = 0
+            candidates_failed = 0
+            if documents_with_entities:  # Use documents that have abstracts
+                try:
+                    # Prepare candidate data for stage progression
+                    candidates_data = []
+                    for doc in documents_with_entities:
+                        pmid = doc.get('pmid')
+                        if pmid:
+                            candidates_data.append({
+                                'pmid': pmid,
+                                'stage': 'U1_abstract',  # Update stage from U1_discovery
+                                'selected': True,  # Mark as selected after abstract processing
+                                'dropped_reason': None,
+                                'notes': 'Selected after abstract processing and R/S scoring'
+                            })
+                    
+                    if candidates_data:
+                        successful, failed = self.db_service.store_trial_doc_candidates(trial_id, candidates_data)
+                        candidates_updated = successful
+                        candidates_failed = failed
+                        logger.info(f"Updated {successful} trial-doc candidates to U1_abstract stage, {failed} failed")
+                except Exception as e:
+                    logger.error(f"Failed to update trial-doc candidates: {e}")
+                    candidates_failed = len(candidates_data) if 'candidates_data' in locals() else 0
+            
             # Store only processed documents (filtered for LLM processing)
             if selected_docs:
                 # Mark documents as processed using simplified approach
@@ -159,7 +210,6 @@ class AbstractProcessor:
                     if pmid:
                         # Get document ID from database
                         with session_scope() as session:
-                            from ....db.models import Document
                             db_doc = session.query(Document).filter(Document.pmid == pmid).first()
                             if db_doc:
                                 doc_ids.append(db_doc.doc_id)
@@ -177,6 +227,7 @@ class AbstractProcessor:
                 success=True,
                 documents_processed=len(documents),
                 abstracts_fetched=abstracts_fetched,
+                abstracts_stored=abstracts_stored,
                 entities_extracted=total_entities,
                 documents_scored=len(documents_scored),
                 documents_selected=len(selected_docs),
@@ -192,6 +243,7 @@ class AbstractProcessor:
                 success=False,
                 documents_processed=0,
                 abstracts_fetched=0,
+                abstracts_stored=0,
                 entities_extracted=0,
                 documents_scored=0,
                 documents_selected=0,

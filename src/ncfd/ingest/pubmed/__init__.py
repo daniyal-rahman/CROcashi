@@ -14,7 +14,7 @@ from .normalization import AssetIndicationNormalizer
 
 # New retrieval system components
 from .retrieval import RetrievalProcessor, RetrievalResult
-from .processing import AbstractProcessor, ProcessingResult
+from .abstract_processor import AbstractProcessor, ProcessingResult
 # Dual persistence pipeline removed - using simplified approach
 
 __all__ = [
