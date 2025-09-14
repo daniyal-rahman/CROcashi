@@ -215,7 +215,7 @@ studycard_stage:
   delay_between_batches: 5
   
   # Document prioritization and rate limiting
-  max_documents_per_trial: 2
+  max_documents_per_trial: 20
   max_documents_per_batch: 5
   enable_fallback_processing: true
   max_fallback_documents: 5

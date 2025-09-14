@@ -9,19 +9,13 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 
 from ...models.gate_assessment import GateAssessment
-from ...models.evidence_span import EvidenceSpan
+from ...models.evidence_field import EvidenceField
 from ..base_llm_worker import BaseLLMWorker
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class GateField:
-    """A field in the gate assessment with its evidence quote."""
-    field_name: str
-    value: Any
-    evidence_quote: str
-    confidence: float = 0.8
+# Use common EvidenceField instead of GateField
 
 
 class LLMGateAssessmentGenerator(BaseLLMWorker):
@@ -45,7 +39,7 @@ class LLMGateAssessmentGenerator(BaseLLMWorker):
         Returns:
             {
                 "gate_assessments": List[GateAssessment],
-                "field_quotes": List[GateField],
+                "field_quotes": List[EvidenceField],
                 "success": bool,
                 "error_message": Optional[str]
             }
@@ -105,33 +99,23 @@ For each gate assessment, provide:
 2. A direct quote from the document that supports this assessment
 3. Your confidence in the assessment (0.0-1.0)
 
-Evaluate the following key gates:
+Evaluate the following key gates (based on actual gate definitions):
 
-**Efficacy Gates:**
-- primary_endpoint_success: Did the trial meet its primary endpoint? (PASS/FAIL/UNCLEAR)
-- statistical_significance: Is the result statistically significant? (PASS/FAIL/UNCLEAR)
-- clinical_significance: Is the result clinically meaningful? (PASS/FAIL/UNCLEAR)
-- effect_size_adequate: Is the effect size adequate? (PASS/FAIL/UNCLEAR)
+**G1: Alpha-Meltdown (S1 & S2)**
+- alpha_meltdown: Did the trial have endpoint changes post-registration AND is underpowered? (PASS/FAIL/UNCLEAR)
+- Look for: endpoint modifications, protocol amendments, underpowered sample sizes
 
-**Safety Gates:**
-- safety_acceptable: Is the safety profile acceptable? (PASS/FAIL/UNCLEAR)
-- adverse_events_manageable: Are adverse events manageable? (PASS/FAIL/UNCLEAR)
-- no_unexpected_safety_signals: No unexpected safety signals? (PASS/FAIL/UNCLEAR)
+**G2: Analysis-Gaming (S3 & S4)**  
+- analysis_gaming: Did the trial show subgroup-only wins without multiplicity adjustment AND ITT/PP dropout asymmetry? (PASS/FAIL/UNCLEAR)
+- Look for: subgroup analyses, missing multiplicity corrections, dropout patterns
 
-**Quality Gates:**
-- study_quality_adequate: Is the study quality adequate? (PASS/FAIL/UNCLEAR)
-- methodology_sound: Is the methodology sound? (PASS/FAIL/UNCLEAR)
-- data_quality_acceptable: Is the data quality acceptable? (PASS/FAIL/UNCLEAR)
+**G3: Plausibility (S5 & (S7 | S6))**
+- plausibility: Does the trial claim implausible effect sizes AND use single-arm design or multiple interims without alpha spending? (PASS/FAIL/UNCLEAR)
+- Look for: unrealistic effect sizes, single-arm studies, multiple looks without correction
 
-**Regulatory Gates:**
-- regulatory_requirements_met: Are regulatory requirements met? (PASS/FAIL/UNCLEAR)
-- endpoints_appropriate: Are the endpoints appropriate for regulatory approval? (PASS/FAIL/UNCLEAR)
-- population_appropriate: Is the study population appropriate? (PASS/FAIL/UNCLEAR)
-
-**Commercial Gates:**
-- commercial_viability: Is the commercial viability demonstrated? (PASS/FAIL/UNCLEAR)
-- competitive_advantage: Does it show competitive advantage? (PASS/FAIL/UNCLEAR)
-- market_opportunity: Is there a clear market opportunity? (PASS/FAIL/UNCLEAR)
+**G4: p-Hacking (S8 & (S1 | S3))**
+- p_hacking: Does the trial have p-values near 0.05 AND endpoint changes or subgroup-only wins? (PASS/FAIL/UNCLEAR)
+- Look for: p-values around 0.05, endpoint modifications, subgroup fishing
 
 For each gate, also provide:
 - rationale: Brief explanation of the assessment
@@ -175,9 +159,42 @@ Only include gates where you found clear evidence in the document. If a gate can
             gate_assessments = []
             field_quotes = []
             
+            # Map gate names to database format (G1, G2, G3, G4)
+            # These correspond to the actual gate definitions in src/ncfd/signals/gates.py
+            gate_name_mapping = {
+                "alpha_meltdown": "G1",  # S1 & S2: endpoint change + underpowered
+                "analysis_gaming": "G2",  # S3 & S4: subgroup-only win + ITT/PP dropout asymmetry
+                "plausibility": "G3",     # S5 & (S7 | S6): implausible effect + single-arm/multiple interims
+                "p_hacking": "G4",        # S8 & (S1 | S3): p-value cusp + endpoint/subgroup changes
+                # Legacy mappings for backward compatibility
+                "primary_endpoint_success": "G1",
+                "statistical_significance": "G2", 
+                "clinical_significance": "G3",
+                "effect_size_adequate": "G4"
+            }
+            
+            # Track which gate IDs we've used to ensure uniqueness
+            used_gate_ids = set()
+            
             for gate_data in result.get("gate_assessments", []):
+                gate_name = gate_data.get("gate_name", "")
+                db_gate_id = gate_name_mapping.get(gate_name, "G1")  # Default to G1 if not mapped
+                
+                # Ensure unique gate IDs - if we've already used this ID, try the next one
+                original_gate_id = db_gate_id
+                counter = 1
+                while db_gate_id in used_gate_ids:
+                    # Try G1, G2, G3, G4 in order
+                    db_gate_id = f"G{counter}"
+                    counter += 1
+                    if counter > 4:  # Only G1-G4 are allowed
+                        db_gate_id = "G1"  # Fallback to G1
+                        break
+                
+                used_gate_ids.add(db_gate_id)
+                
                 gate_assessment = GateAssessment(
-                    gate_id=gate_data.get("gate_name", ""),
+                    gate_id=db_gate_id,
                     status=gate_data.get("assessment", "UNCERTAIN"),
                     rationale=[gate_data.get("rationale", "")],
                     assessment_notes=[gate_data.get("key_findings", ""), gate_data.get("concerns", "")],
@@ -187,7 +204,7 @@ Only include gates where you found clear evidence in the document. If a gate can
                 gate_assessments.append(gate_assessment)
             
             for quote_data in result.get("field_quotes", []):
-                field_quotes.append(GateField(
+                field_quotes.append(EvidenceField(
                     field_name=f"{quote_data.get('gate_name', '')}_{quote_data.get('field_name', '')}",
                     value=quote_data.get("value"),
                     evidence_quote=quote_data.get("evidence_quote", ""),
@@ -308,9 +325,18 @@ Only include gates where you found clear evidence in the document. If a gate can
             
             # Parse the response
             result = response.content
+            logger.info(f"DEBUG: LLM raw response type: {type(result)}")
+            logger.info(f"DEBUG: LLM raw response content: {str(result)[:500]}...")
+            
             if isinstance(result, str):
-                import json
-                result = json.loads(result)
+                try:
+                    import json
+                    result = json.loads(result)
+                    logger.info(f"DEBUG: Parsed JSON successfully, field_quotes count: {len(result.get('field_quotes', []))}")
+                except json.JSONDecodeError as e:
+                    logger.error(f"DEBUG: JSON parsing failed: {e}")
+                    logger.error(f"DEBUG: Raw response: {result}")
+                    return {}
             
             return result
             

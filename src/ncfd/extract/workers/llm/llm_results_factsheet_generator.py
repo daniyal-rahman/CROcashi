@@ -9,27 +9,21 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 
 from ...models.results_factsheet import ResultsFactsheet
-from ...models.evidence_span import EvidenceSpan
-from ..base_llm_worker import BaseLLMWorker
+from ...models.evidence_field import EvidenceField
+from .base_llm_generator import BaseLLMGenerator
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class ResultsField:
-    """A field in the results factsheet with its evidence quote."""
-    field_name: str
-    value: Any
-    evidence_quote: str
-    confidence: float = 0.8
+# Use common EvidenceField instead of ResultsField
 
 
-class LLMResultsFactsheetGenerator(BaseLLMWorker):
+class LLMResultsFactsheetGenerator(BaseLLMGenerator):
     """Generates ResultsFactsheet directly with evidence quotes."""
     
     def __init__(self, model_name: str = "gpt-4o-mini"):
-        super().__init__(model_name)
-        self.logger = logging.getLogger(__name__)
+        super().__init__("LLMResultsFactsheetGenerator", "1.0.0")
+        self.model_name = model_name
     
     async def process(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -45,7 +39,7 @@ class LLMResultsFactsheetGenerator(BaseLLMWorker):
         Returns:
             {
                 "results_factsheet": ResultsFactsheet,
-                "field_quotes": List[ResultsField],
+                "field_quotes": List[EvidenceField],
                 "success": bool,
                 "error_message": Optional[str]
             }
@@ -100,6 +94,26 @@ class LLMResultsFactsheetGenerator(BaseLLMWorker):
                 "success": False,
                 "error_message": str(e)
             }
+    
+    def _get_data_key(self) -> str:
+        """Return the key for the main data in the LLM response."""
+        return "results_data"
+    
+    async def _extract_with_llm(self, doc_text: str, trial_context: Dict[str, Any], prompt: str) -> Dict[str, Any]:
+        """Extract results factsheet data using LLM with the given prompt."""
+        return await self._extract_results_factsheet_with_llm(doc_text, trial_context, prompt)
+    
+    def _build_standard_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
+        """Build the standard prompt for the first attempt."""
+        return self._build_standard_results_prompt(doc_text, trial_context)
+    
+    def _build_simplified_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
+        """Build a simplified prompt for the second attempt."""
+        return self._build_simplified_results_prompt(doc_text, trial_context)
+    
+    def _build_minimal_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
+        """Build a minimal prompt for the third attempt."""
+        return self._build_minimal_results_prompt(doc_text, trial_context)
     
     async def _generate_results_with_quotes(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> tuple:
         """Generate results factsheet data with evidence quotes for each field."""
@@ -198,18 +212,22 @@ Only include fields where you found clear evidence in the document. If a field i
         try:
             # Use the LLM extraction method instead of direct client call
             result = await self._extract_results_factsheet_with_llm(doc_text, trial_context)
+            logger.info(f"DEBUG: LLM extraction result keys: {list(result.keys())}")
+            logger.info(f"DEBUG: LLM extraction result field_quotes: {result.get('field_quotes', [])}")
             
             results_data = result.get("results_data", {})
             field_quotes = []
             
             for quote_data in result.get("field_quotes", []):
-                field_quotes.append(ResultsField(
+                logger.info(f"DEBUG: Processing quote_data: {quote_data}")
+                field_quotes.append(EvidenceField(
                     field_name=quote_data.get("field_name", ""),
                     value=quote_data.get("value"),
                     evidence_quote=quote_data.get("evidence_quote", ""),
                     confidence=quote_data.get("confidence", 0.8)
                 ))
             
+            logger.info(f"DEBUG: Generated {len(field_quotes)} field quotes")
             return results_data, field_quotes
             
         except Exception as e:
@@ -217,10 +235,73 @@ Only include fields where you found clear evidence in the document. If a field i
             return {}, []
     
     async def _extract_results_factsheet_with_llm(self, doc_text: str, trial_context: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract results factsheet using LLM with evidence quotes."""
-        try:
-            # Prepare the prompt
-            prompt = f"""
+        """Extract results factsheet using LLM with evidence quotes and retry logic."""
+        
+        # Try multiple times with different approaches
+        for attempt in range(3):
+            try:
+                if attempt == 0:
+                    # First attempt: Standard prompt
+                    prompt = self._build_standard_prompt(doc_text, trial_context)
+                elif attempt == 1:
+                    # Second attempt: Simplified prompt
+                    prompt = self._build_simplified_prompt(doc_text, trial_context)
+                else:
+                    # Third attempt: Minimal prompt
+                    prompt = self._build_minimal_prompt(doc_text, trial_context)
+                
+                logger.info(f"DEBUG: Attempt {attempt + 1} - Making LLM call")
+                
+                # Make LLM call
+                response = await self.call_llm(
+                    messages=[prompt],
+                    temperature=0.1,
+                    max_tokens=2000,
+                    json_output=True
+                )
+                
+                # Parse the response
+                result = response.content
+                logger.info(f"DEBUG: LLM raw response type: {type(result)}")
+                logger.info(f"DEBUG: LLM raw response content: {str(result)[:500]}...")
+                
+                if isinstance(result, str):
+                    try:
+                        import json
+                        result = json.loads(result)
+                        field_quotes_count = len(result.get('field_quotes', []))
+                        logger.info(f"DEBUG: Parsed JSON successfully, field_quotes count: {field_quotes_count}")
+                        
+                        # If we got field quotes, return the result
+                        if field_quotes_count > 0:
+                            logger.info(f"DEBUG: Success on attempt {attempt + 1} with {field_quotes_count} field quotes")
+                            return result
+                        else:
+                            logger.warning(f"DEBUG: Attempt {attempt + 1} returned 0 field quotes, retrying...")
+                            continue
+                            
+                    except json.JSONDecodeError as e:
+                        logger.error(f"DEBUG: JSON parsing failed on attempt {attempt + 1}: {e}")
+                        logger.error(f"DEBUG: Raw response: {result}")
+                        continue
+                
+                # If we got here, we have a valid result but no field quotes
+                logger.warning(f"DEBUG: Attempt {attempt + 1} returned valid JSON but 0 field quotes, retrying...")
+                continue
+                
+            except Exception as e:
+                logger.error(f"DEBUG: Attempt {attempt + 1} failed: {e}")
+                if attempt == 2:  # Last attempt
+                    raise e
+                continue
+        
+        # If all attempts failed to get field quotes, return empty result
+        logger.warning("DEBUG: All attempts failed to generate field quotes, returning empty result")
+        return {"results_data": {}, "field_quotes": []}
+    
+    def _build_standard_prompt(self, doc_text: str, trial_context: Dict[str, Any]) -> str:
+        """Build standard prompt for results extraction."""
+        return f"""
 You are a clinical trial results expert. Extract results information from this clinical trial document and provide evidence quotes for each field you fill.
 
 Document Text:
@@ -300,23 +381,69 @@ Respond in JSON format:
 
 Only include fields where you found clear evidence in the document. If a field is not mentioned, omit it from both the results_data and field_quotes.
 """
+    
+    def _build_simplified_prompt(self, doc_text: str, trial_context: Dict[str, Any]) -> str:
+        """Build simplified prompt for results extraction."""
+        return f"""
+Extract key results from this clinical trial document. Focus on finding specific findings, outcomes, or measurements.
 
-            # Make LLM call
-            response = await self.call_llm(
-                messages=[prompt],
-                temperature=0.1,
-                max_tokens=2000,
-                json_output=True
-            )
-            
-            # Parse the response
-            result = response.content
-            if isinstance(result, str):
-                import json
-                result = json.loads(result)
-            
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"LLM results factsheet extraction failed: {e}")
-            return {}
+Document Text:
+{doc_text[:3000]}
+
+Trial Context:
+- Disease: {trial_context.get('disease', 'Unknown')}
+- Intervention: {trial_context.get('intervention', 'Unknown')}
+
+Return JSON with this structure:
+{{
+    "results_data": {{
+        "results": [
+            {{
+                "metric": "description of what was measured",
+                "value": "the actual result or finding",
+                "units": "units if applicable",
+                "confidence": 0.9
+            }}
+        ]
+    }},
+    "field_quotes": [
+        {{
+            "field_name": "metric_name",
+            "value": "the result value",
+            "evidence_quote": "exact quote from document supporting this result",
+            "confidence": 0.9
+        }}
+    ]
+}}
+
+IMPORTANT: You must provide at least 2-3 field_quotes with evidence_quote from the document.
+"""
+    
+    def _build_minimal_prompt(self, doc_text: str, trial_context: Dict[str, Any]) -> str:
+        """Build minimal prompt for results extraction."""
+        return f"""
+Find key findings in this text and provide quotes that support them.
+
+Text: {doc_text[:2000]}
+
+Return JSON:
+{{
+    "results_data": {{}},
+    "field_quotes": [
+        {{
+            "field_name": "finding_1",
+            "value": "what was found",
+            "evidence_quote": "quote from text",
+            "confidence": 0.8
+        }},
+        {{
+            "field_name": "finding_2", 
+            "value": "another finding",
+            "evidence_quote": "another quote from text",
+            "confidence": 0.8
+        }}
+    ]
+}}
+
+Provide at least 2 field_quotes with evidence_quote from the text.
+"""

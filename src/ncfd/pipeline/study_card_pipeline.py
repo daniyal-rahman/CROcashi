@@ -193,8 +193,8 @@ class StudyCardPipeline:
         if len(result.document_cards) < min_documents:
             errors.append(f"Insufficient documents analyzed: {len(result.document_cards)} < {min_documents}")
         
-        # Check quotes (estimate from LLM artifacts)
-        quote_count = len(result.llm_artifacts.get('quotes', []))
+        # Check quotes (from evidence spans)
+        quote_count = len(result.evidence_spans)
         if quote_count < min_quotes:
             errors.append(f"Insufficient quotes extracted: {quote_count} < {min_quotes}")
         
@@ -269,34 +269,81 @@ class StudyCardPipeline:
             result.document_cards = prioritized_docs['document_cards']
             raw_doc_texts = prioritized_docs['raw_doc_texts']
             
-            logger.info(f"Document prioritization applied: {len(result.document_cards)} documents selected from {rate_stats['total_candidates']} candidates")
             logger.info(f"Prioritization stats: {rate_stats}")
             
             # Stage 2: Direct LLM processing using our working components
             logger.info("Stage 2: Direct LLM processing")
             
             # Process each document with our working LLM components
-            for doc_card in result.document_cards:
+            logger.info(f"🔍 STARTING LLM PROCESSING for {len(result.document_cards)} documents")
+            for i, doc_card in enumerate(result.document_cards):
                 doc_text = raw_doc_texts.get(doc_card.doc_id, "")
-                if doc_text:
-                    # Use our working LLM components with concurrency control
-                    try:
-                        from ncfd.llm.concurrency_manager import concurrency_manager
+                logger.info(f"🔍 PROCESSING DOCUMENT {i+1}/{len(result.document_cards)}: doc_id={doc_card.doc_id}")
+                logger.info(f"   📄 Doc text length: {len(doc_text) if doc_text else 0} characters")
+                logger.info(f"   📄 Doc text preview: {doc_text[:200] if doc_text else 'NO TEXT'}...")
+                logger.info(f"   🔑 Available raw_doc_texts keys: {list(raw_doc_texts.keys())}")
+                
+                if not doc_text:
+                    logger.error(f"❌ ERROR: No text available for document {doc_card.doc_id}")
+                    continue
+                
+                # Use our working LLM components with concurrency control
+                try:
+                    from ncfd.llm.concurrency_manager import concurrency_manager
+                    
+                    # Method card generation
+                    method_data = {
+                        "raw_doc_text": doc_text,
+                        "doc_id": doc_card.doc_id,
+                        "trial_context": trial_context
+                    }
+                    method_result = await concurrency_manager.execute_with_concurrency_control(
+                        self.llm_method_generator.process, method_data
+                    )
+                    logger.info(f"DEBUG: Method result for doc {doc_card.doc_id}: success={method_result.get('success')}, has_method_card={bool(method_result.get('method_card'))}, field_quotes_count={len(method_result.get('field_quotes', []))}")
+                    
+                    # Log detailed method card output
+                    if method_result.get("method_card"):
+                        method_card = method_result["method_card"]
+                        logger.info(f"📋 METHOD CARD GENERATED for doc {doc_card.doc_id}:")
+                        logger.info(f"   Design Archetype: {getattr(method_card, 'design_archetype', 'N/A')}")
+                        logger.info(f"   Population Description: {str(getattr(method_card, 'population_description', 'N/A'))[:100]}...")
+                        logger.info(f"   Primary Endpoint: {str(getattr(method_card, 'primary_endpoint', 'N/A'))[:100]}...")
+                        logger.info(f"   Sample Size: {getattr(method_card, 'sample_size', 'N/A')}")
+                        logger.info(f"   Alpha Level: {getattr(method_card, 'alpha_level', 'N/A')}")
+                    
+                    # Log detailed field quotes
+                    field_quotes = method_result.get('field_quotes', [])
+                    if field_quotes:
+                        logger.info(f"📝 METHOD FIELD QUOTES ({len(field_quotes)} quotes):")
+                        for i, quote in enumerate(field_quotes):
+                            logger.info(f"   Quote {i+1}: {quote.field_name} = {str(quote.value)[:50]}...")
+                            logger.info(f"      Evidence: {quote.evidence_quote[:100]}...")
+                            logger.info(f"      Confidence: {quote.confidence}")
+                    
+                    if method_result.get("success") and method_result.get("method_card"):
+                        result.method_card = method_result["method_card"]
                         
-                        # Method card generation
-                        method_data = {
-                            "raw_doc_text": doc_text,
-                            "doc_id": doc_card.doc_id,
-                            "trial_context": trial_context
-                        }
-                        method_result = await concurrency_manager.execute_with_concurrency_control(
-                            self.llm_method_generator.process, method_data
-                        )
-                        if method_result.get("success") and method_result.get("method_card"):
-                            result.method_card = method_result["method_card"]
-                            # Save method card to database
-                            await self._save_method_card_to_db(method_result["method_card"])
-                            logger.info(f"Method card generated for document {doc_card.doc_id}")
+                        # Collect field quotes as evidence spans
+                        field_quotes = method_result.get("field_quotes", [])
+                        for quote in field_quotes:
+                            evidence_span = EvidenceSpan(
+                                doc_id=str(doc_card.doc_id),
+                                quote=quote.evidence_quote,
+                                section="Methods",
+                                confidence=quote.confidence
+                            )
+                            result.evidence_spans.append(evidence_span)
+                        
+                        # Store LLM artifacts
+                        result.llm_artifacts[f"method_card_{doc_card.doc_id}"] = method_result
+                        
+                        # Save method card to database
+                        await self._save_method_card_to_db(method_result["method_card"])
+                        
+                        # Save quotes to database
+                        await self._save_quotes_to_db(field_quotes, doc_card.doc_id, trial_id)
+                        logger.info(f"Method card generated for document {doc_card.doc_id} with {len(field_quotes)} quotes")
                         
                         # Results factsheet generation
                         results_data = {
@@ -307,11 +354,51 @@ class StudyCardPipeline:
                         results_result = await concurrency_manager.execute_with_concurrency_control(
                             self.llm_results_generator.process, results_data
                         )
+                        logger.info(f"DEBUG: Results result for doc {doc_card.doc_id}: success={results_result.get('success')}, has_results_factsheet={bool(results_result.get('results_factsheet'))}, field_quotes_count={len(results_result.get('field_quotes', []))}")
+                        
+                        # Log detailed results factsheet output
+                        if results_result.get("results_factsheet"):
+                            results_factsheet = results_result["results_factsheet"]
+                            logger.info(f"📊 RESULTS FACTSHEET GENERATED for doc {doc_card.doc_id}:")
+                            logger.info(f"   Primary Outcome: {str(getattr(results_factsheet, 'primary_outcome', 'N/A'))[:100]}...")
+                            logger.info(f"   Secondary Outcomes: {str(getattr(results_factsheet, 'secondary_outcomes', 'N/A'))[:100]}...")
+                            logger.info(f"   Statistical Method: {getattr(results_factsheet, 'statistical_method', 'N/A')}")
+                            logger.info(f"   Effect Size: {getattr(results_factsheet, 'effect_size', 'N/A')}")
+                            logger.info(f"   P-Value: {getattr(results_factsheet, 'p_value', 'N/A')}")
+                            logger.info(f"   Confidence Interval: {getattr(results_factsheet, 'confidence_interval', 'N/A')}")
+                        
+                        # Log detailed field quotes
+                        field_quotes = results_result.get('field_quotes', [])
+                        if field_quotes:
+                            logger.info(f"📝 RESULTS FIELD QUOTES ({len(field_quotes)} quotes):")
+                            for i, quote in enumerate(field_quotes):
+                                logger.info(f"   Quote {i+1}: {quote.field_name} = {str(quote.value)[:50]}...")
+                                logger.info(f"      Evidence: {quote.evidence_quote[:100]}...")
+                                logger.info(f"      Confidence: {quote.confidence}")
+                        
                         if results_result.get("success") and results_result.get("results_factsheet"):
                             result.results_factsheet = results_result["results_factsheet"]
+                            
+                            # Collect field quotes as evidence spans
+                            field_quotes = results_result.get("field_quotes", [])
+                            for quote in field_quotes:
+                                evidence_span = EvidenceSpan(
+                                    doc_id=str(doc_card.doc_id),
+                                    quote=quote.evidence_quote,
+                                    section="Results",
+                                    confidence=quote.confidence
+                                )
+                                result.evidence_spans.append(evidence_span)
+                            
+                            # Store LLM artifacts
+                            result.llm_artifacts[f"results_factsheet_{doc_card.doc_id}"] = results_result
+                            
                             # Save results factsheet to database
                             await self._save_results_factsheet_to_db(results_result["results_factsheet"])
-                            logger.info(f"Results factsheet generated for document {doc_card.doc_id}")
+                            
+                            # Save quotes to database
+                            await self._save_quotes_to_db(field_quotes, doc_card.doc_id, trial_id)
+                            logger.info(f"Results factsheet generated for document {doc_card.doc_id} with {len(field_quotes)} quotes")
                         
                         # Gate assessment generation
                         gate_data = {
@@ -322,17 +409,95 @@ class StudyCardPipeline:
                         gate_result = await concurrency_manager.execute_with_concurrency_control(
                             self.llm_gate_generator.process, gate_data
                         )
-                        if gate_result.get("success") and gate_result.get("gate_assessment"):
-                            result.gate_assessments.append(gate_result["gate_assessment"])
-                            # Save gate assessment to database
-                            await self._save_gate_assessment_to_db(gate_result["gate_assessment"], trial_context.get("trial_id"))
-                            logger.info(f"Gate assessment generated for document {doc_card.doc_id}")
+                        logger.info(f"DEBUG: Gate result for doc {doc_card.doc_id}: success={gate_result.get('success')}, has_gate_assessments={bool(gate_result.get('gate_assessments'))}, field_quotes_count={len(gate_result.get('field_quotes', []))}")
+                        
+                        # Log detailed gate assessments output
+                        if gate_result.get("gate_assessments"):
+                            gate_assessments = gate_result["gate_assessments"]
+                            logger.info(f"🚪 GATE ASSESSMENTS GENERATED for doc {doc_card.doc_id}:")
+                            for i, gate in enumerate(gate_assessments):
+                                logger.info(f"   Gate {i+1}: {getattr(gate, 'gate_id', 'Unknown')}")
+                                logger.info(f"      Status: {getattr(gate, 'status', 'N/A')}")
+                                logger.info(f"      Confidence: {getattr(gate, 'confidence_in_assessment', 'N/A')}")
+                                logger.info(f"      Rationale: {'; '.join(getattr(gate, 'rationale', []))[:100]}...")
+                        
+                        # Log detailed field quotes
+                        field_quotes = gate_result.get('field_quotes', [])
+                        if field_quotes:
+                            logger.info(f"📝 GATE FIELD QUOTES ({len(field_quotes)} quotes):")
+                            for i, quote in enumerate(field_quotes):
+                                logger.info(f"   Quote {i+1}: {quote.field_name} = {str(quote.value)[:50]}...")
+                                logger.info(f"      Evidence: {quote.evidence_quote[:100]}...")
+                                logger.info(f"      Confidence: {quote.confidence}")
+                        
+                        # FIXED: Use gate_assessments (plural) instead of gate_assessment (singular)
+                        if gate_result.get("success") and gate_result.get("gate_assessments"):
+                            result.gate_assessments.extend(gate_result["gate_assessments"])
                             
-                    except Exception as e:
-                        logger.warning(f"LLM processing failed for document {doc_card.doc_id}: {e}")
-                        result.warnings.append(f"LLM processing failed for document {doc_card.doc_id}: {e}")
+                            # Collect field quotes as evidence spans
+                            field_quotes = gate_result.get("field_quotes", [])
+                            for quote in field_quotes:
+                                evidence_span = EvidenceSpan(
+                                    doc_id=str(doc_card.doc_id),
+                                    quote=quote.evidence_quote,
+                                    section="Gates",
+                                    confidence=quote.confidence
+                                )
+                                result.evidence_spans.append(evidence_span)
+                            
+                            # Store LLM artifacts
+                            result.llm_artifacts[f"gate_assessments_{doc_card.doc_id}"] = gate_result
+                            
+                            # Save gate assessments to database
+                            for gate_assessment in gate_result["gate_assessments"]:
+                                await self._save_gate_assessment_to_db(gate_assessment, trial_context.get("trial_id"))
+                            
+                            # Save quotes to database
+                            await self._save_quotes_to_db(field_quotes, doc_card.doc_id, trial_id)
+                            logger.info(f"Gate assessments generated for document {doc_card.doc_id} with {len(field_quotes)} quotes")
+                            
+                except Exception as e:
+                    logger.warning(f"LLM processing failed for document {doc_card.doc_id}: {e}")
+                    result.warnings.append(f"LLM processing failed for document {doc_card.doc_id}: {e}")
             
             logger.info("Direct LLM processing completed")
+            
+            # Log comprehensive summary of all generated artifacts
+            logger.info("🎯 STUDY CARD PIPELINE SUMMARY:")
+            logger.info(f"   📄 Documents Processed: {len(result.document_cards)}")
+            logger.info(f"   📋 Method Cards Generated: {1 if result.method_card else 0}")
+            logger.info(f"   📊 Results Factsheets Generated: {1 if result.results_factsheet else 0}")
+            logger.info(f"   🚪 Gate Assessments Generated: {len(result.gate_assessments)}")
+            logger.info(f"   📝 Total Evidence Spans: {len(result.evidence_spans)}")
+            logger.info(f"   🔧 LLM Artifacts Stored: {len(result.llm_artifacts)}")
+            
+            # Add warnings for empty artifacts
+            if not result.method_card:
+                logger.warning("⚠️  WARNING: No method card generated!")
+            if not result.results_factsheet:
+                logger.warning("⚠️  WARNING: No results factsheet generated!")
+            if not result.gate_assessments:
+                logger.warning("⚠️  WARNING: No gate assessments generated!")
+            if not result.evidence_spans:
+                logger.warning("⚠️  WARNING: No evidence spans generated!")
+            if not result.llm_artifacts:
+                logger.warning("⚠️  WARNING: No LLM artifacts stored!")
+            
+            # Log detailed evidence spans summary
+            if result.evidence_spans:
+                logger.info("📝 EVIDENCE SPANS BREAKDOWN:")
+                section_counts = {}
+                for span in result.evidence_spans:
+                    section = span.section
+                    section_counts[section] = section_counts.get(section, 0) + 1
+                for section, count in section_counts.items():
+                    logger.info(f"   {section}: {count} quotes")
+            
+            # Log LLM artifacts summary
+            if result.llm_artifacts:
+                logger.info("🔧 LLM ARTIFACTS SUMMARY:")
+                for artifact_key, artifact_data in result.llm_artifacts.items():
+                    logger.info(f"   {artifact_key}: {type(artifact_data).__name__}")
             
             # Stage: Quality Gate Validation
             logger.info("Final Stage: Quality gate validation")
@@ -356,7 +521,14 @@ class StudyCardPipeline:
                     logger.warning(f"Quality gate violations detected but configured to continue for trial {trial_id}")
                     result.warnings.extend([f"Quality gate warning: {error}" for error in quality_errors])
             else:
-                logger.info("Study card passed quality gate validation")
+                logger.info("✅ Study card passed quality gate validation")
+                logger.info("🎉 QUALITY GATE VALIDATION DETAILS:")
+                logger.info(f"   📄 Documents Analyzed: {len(result.document_cards)} (≥ 1 required)")
+                logger.info(f"   📝 Quotes Extracted: {len(result.evidence_spans)} (≥ 3 required)")
+                logger.info(f"   📋 Method Card: {'✅ Generated' if result.method_card else '❌ Missing'}")
+                logger.info(f"   📊 Results Factsheet: {'✅ Generated' if result.results_factsheet else '❌ Missing'}")
+                logger.info(f"   🚪 Gate Assessments: {'✅ Generated' if result.gate_assessments else '❌ Missing'}")
+                logger.info(f"   🔧 LLM Artifacts: {len(result.llm_artifacts)} (≥ 1 required)")
             
             # Complete the pipeline
             result.success = True
@@ -410,7 +582,7 @@ class StudyCardPipeline:
                     'doc_id': method_card.doc_id,
                     'design_archetype': getattr(method_card, 'design_archetype', None),
                     'is_blinded': getattr(method_card, 'is_blinded', None),
-                    'analysis_set': getattr(method_card, 'analysis_set', None),
+                    'analysis_set': json.dumps(getattr(method_card, 'analysis_set', None)) if getattr(method_card, 'analysis_set', None) is not None else None,
                     'population_description': getattr(method_card, 'population_description', None),
                     'stratification_factors': json.dumps(getattr(method_card, 'stratification_factors', [])),
                     'covariate_adjustment': json.dumps(getattr(method_card, 'covariate_adjustment', [])),
@@ -479,31 +651,66 @@ class StudyCardPipeline:
             logger.error(f"Failed to save results factsheet to database: {e}")
     
     async def _save_gate_assessment_to_db(self, gate_assessment, trial_id):
-        """Save gate assessment to database."""
+        """Save gate assessment to database with upsert to handle unique constraint violations."""
         try:
             from ncfd.db.session import session_scope
             from sqlalchemy import text
             
             with session_scope() as session:
-                # Insert gate assessment into database
+                # Use upsert to handle unique constraint violations
                 session.execute(text("""
                     INSERT INTO gates (
                         trial_id, g_id, fired_bool, supporting_s_ids, lr_used, rationale_text
                     ) VALUES (
                         :trial_id, :g_id, :fired_bool, :supporting_s_ids, :lr_used, :rationale_text
                     )
+                    ON CONFLICT (trial_id, g_id) DO UPDATE SET
+                        fired_bool = EXCLUDED.fired_bool,
+                        supporting_s_ids = EXCLUDED.supporting_s_ids,
+                        lr_used = EXCLUDED.lr_used,
+                        rationale_text = EXCLUDED.rationale_text
                 """), {
                     'trial_id': trial_id,
-                    'g_id': getattr(gate_assessment, 'g_id', 'G1'),
-                    'fired_bool': getattr(gate_assessment, 'fired_bool', False),
-                    'supporting_s_ids': getattr(gate_assessment, 'supporting_s_ids', None),
-                    'lr_used': getattr(gate_assessment, 'lr_used', None),
-                    'rationale_text': getattr(gate_assessment, 'rationale_text', None)
+                    'g_id': getattr(gate_assessment, 'gate_id', 'G1'),
+                    'fired_bool': getattr(gate_assessment, 'status', 'UNCERTAIN') == 'PASS',
+                    'supporting_s_ids': None,  # Not available in GateAssessment model
+                    'lr_used': None,  # Not available in GateAssessment model
+                    'rationale_text': '; '.join(getattr(gate_assessment, 'rationale', [])) if getattr(gate_assessment, 'rationale', []) else None
                 })
                 session.commit()
-                logger.info(f"Gate assessment saved to database for trial_id: {trial_id}")
+                logger.info(f"Gate assessment upserted to database for trial_id: {trial_id}, gate_id: {getattr(gate_assessment, 'gate_id', 'G1')}, status: {getattr(gate_assessment, 'status', 'UNCERTAIN')}")
         except Exception as e:
             logger.error(f"Failed to save gate assessment to database: {e}")
+    
+    async def _save_quotes_to_db(self, field_quotes, doc_id, trial_id):
+        """Save field quotes to evidence_spans table."""
+        try:
+            from ncfd.db.session import session_scope
+            from sqlalchemy import text
+            
+            if not field_quotes:
+                logger.info(f"No field quotes to save for doc_id: {doc_id}")
+                return
+            
+            with session_scope() as session:
+                # Insert quotes into evidence_spans table
+                for quote in field_quotes:
+                    session.execute(text("""
+                        INSERT INTO evidence_spans (
+                            doc_id, quote, section, confidence, created_at, updated_at
+                        ) VALUES (
+                            :doc_id, :quote, :section, :confidence, NOW(), NOW()
+                        )
+                    """), {
+                        'doc_id': str(doc_id),  # Convert to string as per table schema
+                        'quote': getattr(quote, 'evidence_quote', ''),
+                        'section': getattr(quote, 'section', 'Unknown'),
+                        'confidence': getattr(quote, 'confidence', 0.8)
+                    })
+                session.commit()
+                logger.info(f"Saved {len(field_quotes)} quotes to evidence_spans table for doc_id: {doc_id}, trial_id: {trial_id}")
+        except Exception as e:
+            logger.error(f"Failed to save quotes to database: {e}")
     
     
     async def _apply_document_prioritization(self, trial_id: int, document_cards: List, raw_doc_texts: Dict, trial_context: Dict[str, Any]) -> Tuple[Dict, Dict]:
@@ -616,14 +823,19 @@ class StudyCardPipeline:
                     
                     if matching_doc_card:
                         prioritized_doc_cards.append(matching_doc_card)
-                        # Use full text if available, otherwise use abstract
-                        if candidate['has_full_text'] and candidate['fulltext_text']:
+                        # Always prioritize EnhancedRetriever's raw text first (it has the full retrieved text)
+                        if candidate['doc_id'] in raw_doc_texts and raw_doc_texts[candidate['doc_id']]:
+                            prioritized_raw_texts[candidate['doc_id']] = raw_doc_texts[candidate['doc_id']]
+                            logger.info(f"DEBUG: Using EnhancedRetriever text for doc_id {candidate['doc_id']} (length: {len(raw_doc_texts[candidate['doc_id']])})")
+                        elif candidate['has_full_text'] and candidate['fulltext_text']:
                             prioritized_raw_texts[candidate['doc_id']] = candidate['fulltext_text']
+                            logger.info(f"DEBUG: Using database fulltext for doc_id {candidate['doc_id']} (length: {len(candidate['fulltext_text'])})")
                         elif candidate['has_abstract'] and candidate['abstract_text']:
                             prioritized_raw_texts[candidate['doc_id']] = candidate['abstract_text']
+                            logger.info(f"DEBUG: Using database abstract for doc_id {candidate['doc_id']} (length: {len(candidate['abstract_text'])})")
                         else:
-                            # Fallback to original raw text
-                            prioritized_raw_texts[candidate['doc_id']] = raw_doc_texts.get(candidate['doc_id'], "")
+                            prioritized_raw_texts[candidate['doc_id']] = ""
+                            logger.warning(f"DEBUG: No text available for doc_id {candidate['doc_id']}")
                 
                 logger.info(f"Document prioritization applied: {len(prioritized_doc_cards)} documents selected from {len(candidates)} candidates")
                 

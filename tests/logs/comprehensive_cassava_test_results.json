@@ -1,10 +1,10 @@
 {
   "test_info": {
-    "start_time": "2025-09-13T20:35:37.636249+00:00",
+    "start_time": "2025-09-14T01:26:11.999154+00:00",
     "test_name": "Comprehensive Cassava Pipeline Test",
     "version": "1.0",
-    "end_time": "2025-09-13T20:35:51.241871+00:00",
-    "duration_seconds": 13.605622
+    "end_time": "2025-09-14T01:30:45.937806+00:00",
+    "duration_seconds": 273.938652
   },
   "database_setup": {
     "status": "success",
@@ -103,15 +103,8 @@
         "guardrails_passed": false
       },
       {
-        "pmid": "32920628",
-        "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients.",
-        "retrieval_tier": "Unknown",
-        "policy_engine_passed": false,
-        "guardrails_passed": false
-      },
-      {
-        "pmid": "37762230",
-        "title": "Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's Disease.",
+        "pmid": "37457922",
+        "title": "Simufilam suppresses overactive mTOR and restores its sensitivity to insulin in Alzheimer's disease ...",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
@@ -119,6 +112,13 @@
       {
         "pmid": "40141124",
         "title": "Comment on Wang et al. Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's...",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "37762230",
+        "title": "Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's Disease.",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
@@ -144,8 +144,8 @@
         "trial_id": 2,
         "nct_id": "NCT05515666",
         "success": false,
-        "document_cards": 0,
-        "evidence_spans": 0,
+        "document_cards": 1,
+        "evidence_spans": 8,
         "claims": 0,
         "method_cards": 0,
         "results_factsheets": 0,
@@ -156,13 +156,7 @@
         "gates": [],
         "conclusions": [],
         "errors": [
-          "Quality gate: Insufficient documents analyzed: 0 < 1",
-          "Quality gate: Insufficient quotes extracted: 0 < 3",
-          "Quality gate: Insufficient evidence spans: 0 < 3",
-          "Quality gate: Method section missing - no method card generated",
-          "Quality gate: Results section missing - no results factsheet generated",
-          "Quality gate: Gates section missing - no gate assessments generated",
-          "Quality gate: Insufficient LLM artifacts: 0 < 1"
+          "Quality gate: Gates section missing - no gate assessments generated"
         ],
         "warnings": []
       }
@@ -170,8 +164,8 @@
   },
   "orchestrator_testing": {
     "status": "success",
-    "execution_id": "cassava_test_1757795737",
-    "total_processing_time": 6.542193,
+    "execution_id": "cassava_test_1757813172",
+    "total_processing_time": 123.902814,
     "ctgov_result": {
       "success": false,
       "trials_processed": 0
@@ -181,7 +175,7 @@
       "documents_processed": 18
     },
     "study_card_result": {
-      "success": false,
+      "success": true,
       "gate_candidates": 0
     },
     "errors": [],

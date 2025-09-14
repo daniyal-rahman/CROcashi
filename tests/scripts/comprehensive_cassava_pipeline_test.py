@@ -260,9 +260,9 @@ class ComprehensiveCassavaTest:
             
             # Study card configuration
             "study_card": {
-                "max_docs_per_trial": 100,
+                "max_documents_per_trial": 3,  # Limit to 3 documents for comprehensive testing
                 "store_json_snapshots": True,
-                "llm_timeout_seconds": 180,
+                "llm_timeout_seconds": 60,  # Reduce timeout for testing
                 "retrieval_timeout_seconds": 90,
                 "retriever": {
                     "auto_span_generation": True,
@@ -693,7 +693,11 @@ class ComprehensiveCassavaTest:
                     "indication": trial.indication,
                     "interventions": trial.intervention_types,
                     "primary_endpoint": trial.primary_endpoint_text,
-                    "is_pivotal": trial.is_pivotal
+                    "is_pivotal": trial.is_pivotal,
+                    # Add fields expected by LLM prompts
+                    "disease": trial.indication or "Unknown",
+                    "intervention": trial.intervention_types or "Unknown",
+                    "study_type": "RCT"  # Default to RCT
                 }
                 
                 # Run study card pipeline

@@ -23,7 +23,7 @@ from .entity_pack_builder import EntityPackBuilder, EntityPack
 from .query_builder import MultiTierQueryBuilder, QueryTier
 from .policy_engine import RetrievalPolicy
 from .document_scorer import AdvancedDocumentScorer, ScoringResult
-from .guardrails import GuardrailsSystem
+from .guardrails import GuardrailsSystem, GuardrailConfig
 from .ctgov_discovery import CTgovIntegration
 from ..client import PubMedClient
 from ..db_service import PubMedDBService
@@ -57,7 +57,8 @@ class RetrievalProcessor:
         self.query_builder = MultiTierQueryBuilder(config)
         self.policy_engine = RetrievalPolicy(config.get('policy_config', {}))
         self.document_scorer = AdvancedDocumentScorer(config.get('scoring_config', {}))
-        self.guardrails = GuardrailsSystem(config.get('guardrails_config', {}))
+        guardrails_config_dict = config.get('guardrails_config', {})
+        self.guardrails = GuardrailsSystem(GuardrailConfig(**guardrails_config_dict))
         self.ctgov_integration = CTgovIntegration(config.get('ctgov_config', {}))
         # Initialize PubMed client with individual parameters
         client_config = config.get('client_config', {})
@@ -403,7 +404,13 @@ class RetrievalProcessor:
             validated_docs = []
             for pmid in pmids:
                 validation_result = self.policy_engine.validate_document({'pmid': pmid}, entity_pack)
-                if validation_result.get('passed', True):  # Default to pass if validation unclear
+                # Use attribute access for PolicyResult object
+                if hasattr(validation_result, 'passed') and validation_result.passed:
+                    validated_docs.append({'pmid': pmid, 'policy_engine_passed': True})
+                elif hasattr(validation_result, 'get') and validation_result.get('passed', True):
+                    validated_docs.append({'pmid': pmid, 'policy_engine_passed': True})
+                else:
+                    # Default to pass if validation unclear
                     validated_docs.append({'pmid': pmid, 'policy_engine_passed': True})
             
             logger.info(f"Policy engine applied to {len(pmids)} documents: {len(validated_docs)} passed")

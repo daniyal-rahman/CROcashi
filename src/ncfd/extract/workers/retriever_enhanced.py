@@ -42,7 +42,9 @@ class EnhancedRetriever(BaseWorker):
             # Get raw document text for each document
             raw_doc_texts = {}
             for doc_card in document_cards:
-                raw_text = self._get_raw_document_text(doc_card.doc_id)
+                # Convert doc_id to string if it's an integer
+                doc_id_str = str(doc_card.doc_id) if isinstance(doc_card.doc_id, int) else doc_card.doc_id
+                raw_text = self._get_raw_document_text(doc_id_str)
                 if raw_text:
                     raw_doc_texts[doc_card.doc_id] = raw_text
             
@@ -150,12 +152,29 @@ class EnhancedRetriever(BaseWorker):
                             logger.debug(f"Skipping document {doc.doc_id} - no abstract text available")
                             continue
                             
+                        # Simple document type classification
+                        title = doc.title or f"Document for {nct_id}"
+                        abstract = doc_text.abstract_text or ""
+                        
+                        # Skip non-trial papers (reviews, mechanistic studies, etc.)
+                        non_trial_keywords = [
+                            "review", "mechanism", "preclinical", "in vitro", "in vivo", 
+                            "animal model", "cell line", "molecular", "pathway", "signaling"
+                        ]
+                        
+                        is_non_trial = any(keyword in title.lower() or keyword in abstract.lower() 
+                                          for keyword in non_trial_keywords)
+                        
+                        if is_non_trial:
+                            logger.debug(f"Skipping non-trial document {doc.doc_id}: {title[:50]}...")
+                            continue
+                        
                         # Use database doc_id (integer) for prioritization matching
                         # The standardized format is used elsewhere, but here we need the integer for matching
                         doc_card = DocumentCard(
                             doc_id=doc.doc_id,  # Use integer doc_id for prioritization matching
                             doc_type="Paper",
-                            title=doc.title or f"Document for {nct_id}",
+                            title=title,
                             year=doc.published_at.year if doc.published_at else 2023
                         )
                         
@@ -380,6 +399,10 @@ class EnhancedRetriever(BaseWorker):
         """Resolve external document ID to internal doc_id."""
         if not external_doc_id:
             return None
+        
+        # Handle plain integer doc_id (from database)
+        if external_doc_id.isdigit():
+            return int(external_doc_id)
         
         if ':' in external_doc_id:
             source, identifier = external_doc_id.split(':', 1)
