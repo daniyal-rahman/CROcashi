@@ -7,7 +7,7 @@ This document outlines the coding standards and best practices for the CROcashi 
 ### 1. Timezone Handling
 - **ALWAYS** use `datetime.now(timezone.utc)` instead of `datetime.now()`
 - **NEVER** use naive datetime objects in production code
-- Use the `datetime_utils` module for consistent handling
+- Use `datetime.now(timezone.utc)` for all datetime operations
 
 ```python
 # ✅ Correct

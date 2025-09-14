@@ -12,8 +12,6 @@ from datetime import date, datetime, timezone
 from typing import List, Optional, Dict, Any, Set
 from enum import Enum
 
-# Alias for timezone.utc for convenience
-UTC = timezone.utc
 
 
 class TrialPhase(Enum):
@@ -205,7 +203,7 @@ class ComprehensiveTrialFields:
     
     # Raw data for change detection
     raw_jsonb: Optional[Dict[str, Any]] = None
-    extracted_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    extracted_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -217,7 +215,7 @@ class Change:
     change_type: str  # ADDED, REMOVED, MODIFIED
     significance: str  # HIGH, MEDIUM, LOW
     description: str
-    detected_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    detected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -230,7 +228,7 @@ class TrialChangeSummary:
     significant_changes: List[Change] = field(default_factory=list)
     change_count: int = 0
     significant_change_count: int = 0
-    detected_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    detected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     def __post_init__(self):
         """Calculate change counts after initialization."""
@@ -255,7 +253,7 @@ class IngestionResult:
     warnings: List[str] = field(default_factory=list)
     processing_time_seconds: float = 0.0
     run_id: Optional[str] = None
-    completed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    completed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -269,7 +267,7 @@ class DataQualityMetrics:
     missing_endpoints: int = 0
     missing_enrollment: int = 0
     quality_score: float = 0.0
-    calculated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    calculated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     def __post_init__(self):
         """Calculate quality score after initialization."""

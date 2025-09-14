@@ -84,7 +84,6 @@ def main():
         print("="*80)
         print("Please fix the above issues to ensure consistent timezone handling.")
         print("Use datetime.now(timezone.utc) for all datetime operations.")
-        print("Consider using the datetime_utils module for consistent handling.")
         return 1
     
     print("✅ All datetime usage looks good!")

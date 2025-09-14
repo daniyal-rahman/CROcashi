@@ -8,7 +8,6 @@ Handles discovery, abstract processing, and R/S scoring.
 
 import asyncio
 import argparse
-import logging
 import os
 import sys
 import yaml
@@ -18,23 +17,22 @@ from pathlib import Path
 src_path = Path(__file__).parent.parent / 'src'
 sys.path.insert(0, str(src_path))
 
+from ncfd.logging import setup_logging, get_logger, LogContext, EventTaxonomy
 from ncfd.ingest.pubmed.client import PubMedClient
 from ncfd.ingest.pubmed.mapper import PubMedMapper
 from ncfd.ingest.pubmed.queue_service import TaskQueueService
 from ncfd.ingest.pubmed.u1_worker import U1Worker
 
 
-def setup_logging(env: str):
-    """Setup logging configuration."""
-    level = logging.DEBUG if env == 'dev' else logging.INFO
+def setup_worker_logging(env: str):
+    """Setup structured logging configuration for worker."""
+    level = "DEBUG" if env == 'dev' else "INFO"
     
-    logging.basicConfig(
+    return setup_logging(
         level=level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(f'logs/u1_worker_{env}.log')
-        ]
+        log_file=f'logs/u1_worker_{env}.log',
+        console=True,
+        json_format=True
     )
 
 
@@ -49,7 +47,12 @@ def load_config(env: str, config_path: str = None) -> dict:
         with open(config_file, 'r') as f:
             return yaml.safe_load(f)
     else:
-        print(f"Warning: Config file {config_file} not found, using defaults")
+        logger = get_logger(__name__)
+        logger.warn(
+            EventTaxonomy.MONITORING_ALERT,
+            f"Config file {config_file} not found, using defaults",
+            config_file=config_file
+        )
         return {}
 
 
@@ -64,21 +67,38 @@ async def main():
     parser.add_argument('--worker-id', help='Custom worker ID')
     args = parser.parse_args()
     
-    # Setup logging
-    setup_logging(args.env)
-    logger = logging.getLogger(__name__)
+    # Setup structured logging
+    setup_worker_logging(args.env)
+    logger = get_logger(__name__)
     
-    logger.info(f"Starting PubMed U1+ Worker (env: {args.env})")
+    # Set up execution context
+    with LogContext(
+        run_id=f"worker_{os.getpid()}",
+        flow_id="pubmed_u1_worker",
+        env=args.env
+    ):
+        logger.info(
+            EventTaxonomy.TASK_STARTED,
+            f"Starting PubMed U1+ Worker (env: {args.env})",
+            worker_id=args.worker_id or f"u1_worker_{args.env}_{os.getpid()}",
+            env=args.env,
+            max_tasks=args.max_tasks
+        )
     
-    # Load configuration
-    config = load_config(args.env, args.config)
-    
-    # Validate required environment variables
-    required_env_vars = ['DATABASE_URL']
-    missing_vars = [var for var in required_env_vars if not os.getenv(var)]
-    if missing_vars:
-        logger.error(f"Missing required environment variables: {missing_vars}")
-        sys.exit(1)
+        # Load configuration
+        config = load_config(args.env, args.config)
+        
+        # Validate required environment variables
+        required_env_vars = ['DATABASE_URL']
+        missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+        if missing_vars:
+            logger.error(
+                EventTaxonomy.ERROR_CRITICAL,
+                f"Missing required environment variables: {missing_vars}",
+                missing_vars=missing_vars,
+                required_vars=required_env_vars
+            )
+            sys.exit(1)
     
     # Initialize components
     try:

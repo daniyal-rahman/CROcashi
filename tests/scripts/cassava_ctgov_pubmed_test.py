@@ -234,7 +234,7 @@ def store_trial_in_db(session: Session, trial_data: Dict[str, Any]) -> int:
         existing_trial.has_results = trial_data.get("has_results", False)
         existing_trial.intervention_types = trial_data.get("interventions")
         existing_trial.updated_at = datetime.now(timezone.utc)
-        existing_trial.current_sha256 = f"ctgov_{trial_data['nct_id']}_{datetime.now().timestamp()}"
+        existing_trial.current_sha256 = f"ctgov_{trial_data['nct_id']}_{datetime.now(timezone.utc).timestamp()}"
         return existing_trial.trial_id
     
     # Create new trial
@@ -251,7 +251,7 @@ def store_trial_in_db(session: Session, trial_data: Dict[str, Any]) -> int:
         last_update_posted_date=parse_date(trial_data.get("last_update_posted")),
         has_results=trial_data.get("has_results", False),
         intervention_types=trial_data.get("interventions"),
-        current_sha256=f"ctgov_{trial_data['nct_id']}_{datetime.now().timestamp()}",
+        current_sha256=f"ctgov_{trial_data['nct_id']}_{datetime.now(timezone.utc).timestamp()}",
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc)
     )

@@ -530,6 +530,21 @@ class StudyCardPipeline:
                 logger.info(f"   🚪 Gate Assessments: {'✅ Generated' if result.gate_assessments else '❌ Missing'}")
                 logger.info(f"   🔧 LLM Artifacts: {len(result.llm_artifacts)} (≥ 1 required)")
             
+            # Stage: Decision Record Generation
+            logger.info("Final Stage: Decision record generation")
+            decision_record = await self._generate_decision_record(result, trial_context)
+            result.decision_record = decision_record
+            
+            if decision_record:
+                logger.info("🎯 DECISION RECORD GENERATED:")
+                logger.info(f"   Decision: {decision_record.decision}")
+                logger.info(f"   Posterior Success: {decision_record.posterior_success}")
+                logger.info(f"   Gates Assessed: {len(decision_record.gates)}")
+                logger.info(f"   Risk Factors: {len(decision_record.risk_factors)}")
+                logger.info(f"   Mitigation Strategies: {len(decision_record.mitigation_strategies)}")
+            else:
+                logger.warning("⚠️ No decision record generated")
+            
             # Complete the pipeline
             result.success = True
             result.end_time = datetime.now(timezone.utc)
@@ -1017,4 +1032,107 @@ class StudyCardPipeline:
             "date_window": trial_context.get("date_window", "2020-2024")
         }
         return self.retriever.process(inputs)
+    
+    async def _generate_decision_record(self, result: StudyCardPipelineResult, trial_context: Dict[str, Any]) -> Optional[DecisionRecord]:
+        """Generate a comprehensive decision record from gate assessments and other artifacts."""
+        try:
+            from ..extract.models.decision_record import DecisionRecord
+            
+            # Create decision record
+            decision_record = DecisionRecord(
+                trial_id=result.trial_id,
+                decision_date=datetime.now(timezone.utc).isoformat(),
+                decision_maker="StudyCardPipeline",
+                review_committee="AutomatedAnalysis"
+            )
+            
+            # Add gate assessments
+            for gate_assessment in result.gate_assessments:
+                # Convert gate status to probability
+                p_gate = self._convert_gate_status_to_probability(gate_assessment.status)
+                
+                decision_record.add_gate_assessment(
+                    gate_id=gate_assessment.gate_id,
+                    status=gate_assessment.status,
+                    p_gate=p_gate,
+                    rationale=gate_assessment.rationale[0] if gate_assessment.rationale else ""
+                )
+            
+            # Calculate overall success probability
+            if decision_record.gates:
+                overall_success = decision_record.calculate_overall_success()
+                if overall_success is not None:
+                    decision_record.set_posterior_success(overall_success)
+            
+            # Generate comprehensive analysis using synthesis components
+            await self._generate_comprehensive_analysis(decision_record, result, trial_context)
+            
+            # Update decision based on gate assessments
+            decision_record._update_decision_from_gates()
+            
+            logger.info(f"Generated decision record with {len(decision_record.gates)} gates, decision: {decision_record.decision}")
+            return decision_record
+            
+        except Exception as e:
+            logger.error(f"Failed to generate decision record: {e}")
+            return None
+    
+    def _convert_gate_status_to_probability(self, status: str) -> float:
+        """Convert gate status to probability score."""
+        status_mapping = {
+            "PASS": 0.9,      # High confidence pass
+            "FAIL": 0.1,      # High confidence fail  
+            "UNCERTAIN": 0.5  # Neutral/uncertain
+        }
+        return status_mapping.get(status, 0.5)
+    
+    async def _generate_comprehensive_analysis(self, decision_record: DecisionRecord, result: StudyCardPipelineResult, trial_context: Dict[str, Any]) -> None:
+        """Generate comprehensive analysis using synthesis components."""
+        try:
+            # Use EvidenceConstrainedSynthesizer for narrative generation
+            from ..synthesis import EvidenceConstrainedSynthesizer
+            
+            synthesizer = EvidenceConstrainedSynthesizer()
+            
+            # Generate risk factors from gate assessments
+            risk_factors = []
+            for gate_assessment in result.gate_assessments:
+                if gate_assessment.status == "FAIL":
+                    risk_factors.append(f"Gate {gate_assessment.gate_id} failed: {gate_assessment.rationale[0] if gate_assessment.rationale else 'No rationale provided'}")
+                elif gate_assessment.status == "UNCERTAIN":
+                    risk_factors.append(f"Gate {gate_assessment.gate_id} uncertain: {gate_assessment.rationale[0] if gate_assessment.rationale else 'No rationale provided'}")
+            
+            # Add risk factors to decision record
+            for risk in risk_factors:
+                decision_record.add_risk_factor(risk)
+            
+            # Generate mitigation strategies
+            mitigation_strategies = []
+            if decision_record.failed_gates > 0:
+                mitigation_strategies.append("Request additional data or clarification for failed gates")
+                mitigation_strategies.append("Consider alternative endpoints or analysis approaches")
+            if decision_record.uncertain_gates > 0:
+                mitigation_strategies.append("Conduct additional analysis for uncertain gates")
+                mitigation_strategies.append("Seek expert review for ambiguous findings")
+            
+            # Add mitigation strategies
+            for strategy in mitigation_strategies:
+                decision_record.add_mitigation_strategy(strategy)
+            
+            # Generate decision rationale
+            rationale_parts = []
+            if decision_record.failed_gates > 0:
+                rationale_parts.append(f"{decision_record.failed_gates} gate(s) failed, indicating significant concerns")
+            if decision_record.uncertain_gates > 0:
+                rationale_parts.append(f"{decision_record.uncertain_gates} gate(s) uncertain, requiring additional analysis")
+            if decision_record.passed_gates > 0:
+                rationale_parts.append(f"{decision_record.passed_gates} gate(s) passed, indicating positive signals")
+            
+            if rationale_parts:
+                decision_record.add_decision_rationale("; ".join(rationale_parts))
+            
+            logger.info(f"Generated comprehensive analysis: {len(risk_factors)} risk factors, {len(mitigation_strategies)} mitigation strategies")
+            
+        except Exception as e:
+            logger.error(f"Failed to generate comprehensive analysis: {e}")
     

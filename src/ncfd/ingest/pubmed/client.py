@@ -9,7 +9,7 @@ import hashlib
 import json
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any
 import re
 import xml.etree.ElementTree as ET
@@ -17,7 +17,21 @@ import xml.etree.ElementTree as ET
 import aiohttp
 from aiohttp import ClientTimeout
 
-logger = logging.getLogger(__name__)
+from ...logging import get_logger, EventTaxonomy
+
+logger = get_logger(__name__)
+
+
+def _make_logging_safe(obj: Any) -> Any:
+    """Convert objects to be safe for JSON serialization in logging."""
+    if hasattr(obj, 'isoformat'):  # datetime object
+        return obj.isoformat()
+    elif isinstance(obj, (dict, list)):
+        return str(obj)[:200]  # Truncate large objects
+    elif obj is None:
+        return None
+    else:
+        return str(obj)
 
 
 class PubMedClient:
@@ -99,6 +113,121 @@ class PubMedClient:
             params['api_key'] = self.api_key
         return params
     
+    def _normalize_params(self, params: Dict[str, Any]) -> Dict[str, str]:
+        """
+        Normalize request parameters for PubMed E-utilities.
+        
+        Converts all values to strings that PubMed expects.
+        
+        Args:
+            params: Raw parameters dictionary
+            
+        Returns:
+            Normalized parameters dictionary with string values
+        """
+        normalized = {}
+        
+        for key, value in params.items():
+            if value is None:
+                continue  # Skip None values
+            elif hasattr(value, 'strftime'):  # datetime or date object
+                # Convert to E-utilities format (YYYY/MM/DD)
+                normalized[key] = value.strftime('%Y/%m/%d')
+            elif isinstance(value, bool):
+                # Convert bool to "y"/"n"
+                normalized[key] = 'y' if value else 'n'
+            elif isinstance(value, (list, tuple)):
+                # Convert lists to comma-separated strings
+                normalized[key] = ','.join(str(item) for item in value)
+            else:
+                # Convert everything else to string
+                normalized[key] = str(value)
+        
+        return normalized
+    
+    def _calculate_reldate_days(self, months: int) -> int:
+        """
+        Calculate reldate parameter for PubMed E-utilities.
+        
+        Args:
+            months: Number of months for recency window
+            
+        Returns:
+            Number of days for reldate parameter
+        """
+        # Use 30.44 days per month (365.25/12) for accuracy
+        return int(months * 30.44)
+    
+    async def esearch_with_recency(
+        self,
+        query: str,
+        recency_months: int = 18,
+        max_results: int = 100,
+        sort: str = "relevance",
+        use_history: bool = False,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Execute PubMed ESearch query with recency filter using reldate.
+        
+        Args:
+            query: PubMed search query
+            recency_months: Number of months for recency window (default: 18)
+            max_results: Maximum number of results to return
+            sort: Sort order
+            use_history: Whether to use history for large result sets
+            **kwargs: Additional query parameters
+            
+        Returns:
+            Search results with PMIDs and count
+        """
+        # Add reldate parameter for recency filtering
+        kwargs['reldate'] = self._calculate_reldate_days(recency_months)
+        kwargs['datetype'] = 'pdat'  # Publication date
+        
+        return await self.esearch(
+            query=query,
+            max_results=max_results,
+            sort=sort,
+            use_history=use_history,
+            **kwargs
+        )
+    
+    async def esearch_all_with_recency(
+        self,
+        query: str,
+        recency_months: int = 18,
+        max_results: int = 500,
+        sort: str = "relevance",
+        use_history: bool = True,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Execute PubMed ESearch query with pagination and recency filter.
+        
+        Args:
+            query: PubMed search query
+            recency_months: Number of months for recency window (default: 18)
+            max_results: Maximum number of results to return
+            sort: Sort order
+            use_history: Whether to use history for large result sets
+            **kwargs: Additional query parameters
+            
+        Returns:
+            Complete search results with PMIDs, count, and history info
+        """
+        # Add reldate parameter for recency filtering
+        kwargs['reldate'] = self._calculate_reldate_days(recency_months)
+        kwargs['datetype'] = 'pdat'  # Publication date
+        
+        return await self.esearch_all(
+            query=query,
+            max_results=max_results,
+            sort=sort,
+            use_history=use_history,
+            **kwargs
+        )
+    
     async def _rate_limit(self):
         """Ensure rate limiting is respected with proper locking."""
         async with self._rate_limit_lock:
@@ -112,7 +241,7 @@ class PubMedClient:
     def _check_circuit_breaker(self):
         """Check if circuit breaker is open."""
         if self.circuit_breaker_open:
-            if datetime.now() < self.circuit_breaker_open_until:
+            if datetime.now(timezone.utc) < self.circuit_breaker_open_until:
                 raise Exception("Circuit breaker is open - too many consecutive failures")
             else:
                 self.circuit_breaker_open = False
@@ -123,8 +252,14 @@ class PubMedClient:
         self.consecutive_failures += 1
         if self.consecutive_failures >= self.circuit_breaker_threshold:
             self.circuit_breaker_open = True
-            self.circuit_breaker_open_until = datetime.now() + timedelta(minutes=1)
-            logger.warning(f"Circuit breaker opened after {self.consecutive_failures} consecutive failures")
+            self.circuit_breaker_open_until = datetime.now(timezone.utc) + timedelta(minutes=1)
+            logger.warn(
+                EventTaxonomy.MONITORING_ALERT,
+                f"Circuit breaker opened after {self.consecutive_failures} consecutive failures",
+                consecutive_failures=self.consecutive_failures,
+                circuit_breaker_threshold=self.circuit_breaker_threshold,
+                circuit_breaker_open_until=self.circuit_breaker_open_until.isoformat() if self.circuit_breaker_open_until else None
+            )
     
     def _record_success(self):
         """Record a successful request."""
@@ -153,16 +288,30 @@ class PubMedClient:
         self._check_circuit_breaker()
         await self._rate_limit()
         
+        # Normalize parameters to ensure all values are JSON-safe strings
+        normalized_params = self._normalize_params(params)
+        
+        # Additional safety: ensure all params are strings and safe for aiohttp
+        safe_params = {}
+        for key, value in normalized_params.items():
+            safe_params[str(key)] = str(value) if value is not None else None
+        
         for attempt in range(self.max_retries):
             try:
                 if not self.session:
                     raise Exception("Client session not initialized")
                     
-                async with self.session.get(url, params=params) as response:
+                async with self.session.get(url, params=safe_params) as response:
                     if response.status == 429:  # Too Many Requests
                         retry_after_s = response.headers.get('Retry-After')
                         sleep_s = self._parse_retry_after(retry_after_s) if retry_after_s else 60
-                        logger.warning(f"429 received; sleeping {sleep_s}s")
+                        logger.warn(
+                            EventTaxonomy.PUBMED_EFETCH_ERROR,
+                            f"Rate limit hit (429); sleeping {sleep_s}s",
+                            sleep_seconds=sleep_s,
+                            retry_attempt=attempt,
+                            max_retries=self.max_retries
+                        )
                         await asyncio.sleep(sleep_s)
                         # Continue loop without extra backoff for this attempt
                         continue
@@ -176,7 +325,13 @@ class PubMedClient:
                             self._record_success()
                             return result
                         except json.JSONDecodeError as e:
-                            logger.error(f"Failed to parse JSON response: {e}")
+                            logger.error(
+                                EventTaxonomy.PUBMED_EFETCH_ERROR,
+                                f"Failed to parse JSON response: {e}",
+                                err_type=type(e).__name__,
+                                err_msg=str(e),
+                                response_text=response_text[:500] if response_text else None
+                            )
                             logger.debug(f"Response text: {text[:500]}...")
                             raise
                     else:
@@ -190,7 +345,14 @@ class PubMedClient:
                     self._record_failure()
                     if attempt < self.max_retries - 1:
                         wait_time = self.backoff_base ** attempt
-                        logger.warning(f"Rate limited, retrying in {wait_time}s (attempt {attempt + 1}/{self.max_retries})")
+                        logger.warn(
+                            EventTaxonomy.PUBMED_EFETCH_ERROR,
+                            f"Rate limited, retrying in {wait_time}s (attempt {attempt + 1}/{self.max_retries})",
+                            wait_time=wait_time,
+                            retry_attempt=attempt + 1,
+                            max_retries=self.max_retries,
+                            err_type="RateLimitError"
+                        )
                         await asyncio.sleep(wait_time)
                         continue
                     raise
@@ -198,7 +360,15 @@ class PubMedClient:
                     self._record_failure()
                     if attempt < self.max_retries - 1:
                         wait_time = self.backoff_base ** attempt
-                        logger.warning(f"Server error {e.status}, retrying in {wait_time}s (attempt {attempt + 1}/{self.max_retries})")
+                        logger.warn(
+                            EventTaxonomy.PUBMED_EFETCH_ERROR,
+                            f"Server error {e.status}, retrying in {wait_time}s (attempt {attempt + 1}/{self.max_retries})",
+                            wait_time=wait_time,
+                            retry_attempt=attempt + 1,
+                            max_retries=self.max_retries,
+                            err_type="ServerError",
+                            status_code=e.status
+                        )
                         await asyncio.sleep(wait_time)
                         continue
                     raise
@@ -208,7 +378,15 @@ class PubMedClient:
                 self._record_failure()
                 if attempt < self.max_retries - 1:
                     wait_time = self.backoff_base ** attempt
-                    logger.warning(f"Request failed, retrying in {wait_time}s (attempt {attempt + 1}/{self.max_retries}): {e}")
+                    logger.warn(
+                        EventTaxonomy.PUBMED_EFETCH_ERROR,
+                        f"Request failed, retrying in {wait_time}s (attempt {attempt + 1}/{self.max_retries}): {e}",
+                        wait_time=wait_time,
+                        retry_attempt=attempt + 1,
+                        max_retries=self.max_retries,
+                        err_type=type(e).__name__,
+                        err_msg=str(e)
+                    )
                     await asyncio.sleep(wait_time)
                     continue
                 raise
@@ -221,7 +399,8 @@ class PubMedClient:
         query: str, 
         max_results: int = 100,
         sort: str = "relevance",
-        use_history: bool = False
+        use_history: bool = False,
+        **kwargs
     ) -> Dict[str, Any]:
         """
         Execute PubMed ESearch query.
@@ -231,6 +410,8 @@ class PubMedClient:
             max_results: Maximum number of results to return
             sort: Sort order (relevance, pub_date, first_author, journal, title)
             use_history: Whether to use history for large result sets
+            **kwargs: Additional query parameters (mindate, maxdate, reldate, etc.)
+                     Datetime objects will be automatically converted to YYYY/MM/DD format
             
         Returns:
             Search results with PMIDs and count
@@ -247,8 +428,45 @@ class PubMedClient:
         if use_history:
             params['usehistory'] = 'y'
         
-        logger.info(f"Executing ESearch query: {query[:100]}...")
+        # Add additional query parameters
+        params.update(kwargs)
+        
+        # Create safe logging parameters
+        log_params = {
+            'query_preview': query[:200] if query else '',
+            'max_results': max_results,
+            'sort': sort,
+            'use_history': use_history
+        }
+        
+        # Add kwargs with safe serialization
+        for key, value in kwargs.items():
+            log_params[key] = _make_logging_safe(value)
+        
+        logger.info(
+            EventTaxonomy.PUBMED_SEARCH_START,
+            "Executing ESearch query",
+            **log_params
+        )
+        
+        start_time = time.time()
         result = await self._make_request(self.ESEARCH_URL, params)
+        duration_ms = int((time.time() - start_time) * 1000)
+        
+        # Extract result info
+        esearch_result = result.get('esearchresult', {})
+        count = int(esearch_result.get('count', 0))
+        pmids = esearch_result.get('idlist', [])
+        
+        logger.info(
+            EventTaxonomy.PUBMED_SEARCH_DONE,
+            f"ESearch completed: {count} results",
+            query=query,
+            returned_n=len(pmids),
+            total_count=count,
+            duration_ms=duration_ms,
+            pmids=pmids[:10] if pmids else []  # Log first 10 PMIDs
+        )
         
         if 'esearchresult' not in result:
             raise Exception(f"Unexpected ESearch response format: {result}")
@@ -260,7 +478,8 @@ class PubMedClient:
         query: str, 
         max_results: int = 500, 
         sort: str = "relevance", 
-        use_history: bool = True
+        use_history: bool = True,
+        **kwargs
     ) -> Dict[str, Any]:
         """
         Execute PubMed ESearch query with pagination to get all results.
@@ -270,6 +489,8 @@ class PubMedClient:
             max_results: Maximum number of results to return
             sort: Sort order
             use_history: Whether to use history for large result sets
+            **kwargs: Additional query parameters (mindate, maxdate, reldate, etc.)
+                     Datetime objects will be automatically converted to YYYY/MM/DD format
             
         Returns:
             Complete search results with PMIDs, count, and history info
@@ -287,7 +508,26 @@ class PubMedClient:
         if use_history:
             params['usehistory'] = 'y'
         
-        logger.info(f"Executing paginated ESearch query: {query[:100]}...")
+        # Add additional query parameters
+        params.update(kwargs)
+        
+        # Create safe logging parameters
+        log_params = {
+            'query_preview': query[:200] if query else '',
+            'max_results': max_results,
+            'sort': sort,
+            'use_history': use_history
+        }
+        
+        # Add kwargs with safe serialization
+        for key, value in kwargs.items():
+            log_params[key] = _make_logging_safe(value)
+        
+        logger.info(
+            EventTaxonomy.PUBMED_SEARCH_START,
+            "Executing paginated ESearch query",
+            **log_params
+        )
         
         ids = []
         webenv = None
@@ -343,8 +583,24 @@ class PubMedClient:
                 'retmode': 'json'
             })
             
-            logger.info(f"Fetching ESummary for {len(batch)} PMIDs")
+            logger.info(
+                EventTaxonomy.PUBMED_EFETCH_START,
+                f"Fetching ESummary for {len(batch)} PMIDs",
+                pmids_n=len(batch),
+                batch_pmids=batch[:5]  # Log first 5 PMIDs
+            )
+            
+            start_time = time.time()
             result = await self._make_request(self.ESUMMARY_URL, params)
+            duration_ms = int((time.time() - start_time) * 1000)
+            
+            logger.info(
+                EventTaxonomy.PUBMED_EFETCH_DONE,
+                f"ESummary fetch completed for {len(batch)} PMIDs",
+                pmids_n=len(batch),
+                duration_ms=duration_ms,
+                results_count=len(batch_results) if 'batch_results' in locals() else 0
+            )
             
             if 'result' in result:
                 data = result['result']
@@ -387,8 +643,26 @@ class PubMedClient:
                 'retmode': 'text'  # Force text mode for content
             })
             
-            logger.info(f"Fetching EFetch {rettype} for {len(batch)} PMIDs")
+            logger.info(
+                EventTaxonomy.PUBMED_EFETCH_START,
+                f"Fetching EFetch {rettype} for {len(batch)} PMIDs",
+                pmids_n=len(batch),
+                rettype=rettype,
+                batch_pmids=batch[:5]  # Log first 5 PMIDs
+            )
+            
+            start_time = time.time()
             result = await self._make_request(self.EFETCH_URL, params, expect_json=False)
+            duration_ms = int((time.time() - start_time) * 1000)
+            
+            logger.info(
+                EventTaxonomy.PUBMED_EFETCH_DONE,
+                f"EFetch {rettype} completed for {len(batch)} PMIDs",
+                pmids_n=len(batch),
+                rettype=rettype,
+                duration_ms=duration_ms,
+                results_count=len(content_map) if 'content_map' in locals() else 0
+            )
             
             # EFetch returns text content, not JSON
             if isinstance(result, str):
@@ -400,15 +674,15 @@ class PubMedClient:
         
         return all_results
     
-    async def efetch_abstracts_xml(self, pmids: List[str]) -> Dict[str, str]:
+    async def efetch_abstracts_xml(self, pmids: List[str]) -> Dict[str, Dict[str, Any]]:
         """
-        Fetch abstracts in XML format for more reliable parsing.
+        Fetch abstracts in XML format for more reliable parsing, including PMCID detection.
         
         Args:
             pmids: List of PubMed IDs
             
         Returns:
-            Dictionary mapping PMID to abstract text
+            Dictionary mapping PMID to document info (abstract, pmcid, has_free_full_text)
         """
         if not pmids:
             return {}
@@ -437,25 +711,26 @@ class PubMedClient:
         
         return all_results
     
-    def _parse_xml_response(self, xml_text: str, pmids: List[str]) -> Dict[str, str]:
+    
+    def _parse_xml_response(self, xml_text: str, pmids: List[str]) -> Dict[str, Dict[str, Any]]:
         """
-        Parse XML response to extract PMIDs and abstracts.
+        Parse XML response to extract PMIDs, abstracts, and PMCID information.
         
         Args:
             xml_text: Raw XML response
             pmids: List of PMIDs that were requested
             
         Returns:
-            Dictionary mapping PMID to abstract text
+            Dictionary mapping PMID to document info (abstract, pmcid, etc.)
         """
-        # Prefill output with empty strings for all requested PMIDs (O(1) lookup)
+        # Prefill output with empty data for all requested PMIDs
         pmid_set = set(pmids)
-        content_map = {pmid: "" for pmid in pmids}
+        content_map = {pmid: {"abstract": "", "pmcid": None, "has_free_full_text": False} for pmid in pmids}
         
         try:
             # Log XML root for debugging
             root = ET.fromstring(xml_text)
-            logger.info(f"XML root tag: {root.tag}")
+            logger.debug(f"XML root tag: {root.tag}")
             
             # Accept both possible XML structures
             articles = root.findall('.//PubmedArticle')
@@ -463,6 +738,8 @@ class PubMedClient:
                 articles = list(root)
             
             returned_pmids = set()
+            pmcid_count = 0
+            
             for article in articles:
                 pmid_elem = article.find('.//PMID')
                 if pmid_elem is not None and pmid_elem.text:
@@ -471,15 +748,29 @@ class PubMedClient:
                     if pmid in pmid_set:
                         # Extract abstract for this PMID
                         abstract_text = self._extract_full_abstract(article)
-                        if abstract_text:
-                            content_map[pmid] = abstract_text
+                        
+                        # Extract PMCID
+                        pmcid = self._extract_pmcid_from_article(article)
+                        
+                        # Determine if has free full text
+                        has_free_full_text = bool(pmcid)  # PMCID = free full text
+                        
+                        content_map[pmid] = {
+                            "abstract": abstract_text,
+                            "pmcid": pmcid,
+                            "has_free_full_text": has_free_full_text
+                        }
+                        
+                        if pmcid:
+                            pmcid_count += 1
             
             # Log missing PMIDs for debugging
             missing = pmid_set - returned_pmids
             if missing:
                 logger.warning(f"EFetch returned {len(returned_pmids)}/{len(pmids)} PMIDs; missing: {sorted(missing)[:10]}")
             
-            logger.info(f"Parsed XML response: {len([k for k, v in content_map.items() if v])}/{len(pmids)} PMIDs with abstracts")
+            abstract_count = len([k for k, v in content_map.items() if v["abstract"]])
+            logger.info(f"Parsed XML response: {abstract_count}/{len(pmids)} PMIDs with abstracts, {pmcid_count}/{len(pmids)} with PMCID")
             
         except ET.ParseError as e:
             logger.error(f"Failed to parse XML response: {e}")
@@ -609,6 +900,38 @@ class PubMedClient:
         
         # Normalize text for consistent downstream processing
         return self._normalize_text(abstract_text)
+    
+    def _extract_pmcid_from_article(self, article) -> Optional[str]:
+        """
+        Extract PMCID from PubMed article XML.
+        
+        Args:
+            article: XML element representing a PubmedArticle
+            
+        Returns:
+            PMCID string (e.g., "PMC12345678") or None if not found
+        """
+        # Look for ArticleId elements with IdType="pmc"
+        article_ids = article.findall('.//ArticleId')
+        for article_id in article_ids:
+            id_type = article_id.get('IdType', '').lower()
+            if id_type == 'pmc':
+                pmcid = article_id.text
+                if pmcid and pmcid.startswith('PMC'):
+                    return pmcid
+        
+        # Also check for ArticleIdList/ArticleId elements
+        article_id_list = article.find('.//ArticleIdList')
+        if article_id_list is not None:
+            for article_id in article_id_list.findall('.//ArticleId'):
+                id_type = article_id.get('IdType', '').lower()
+                if id_type == 'pmc':
+                    pmcid = article_id.text
+                    if pmcid and pmcid.startswith('PMC'):
+                        return pmcid
+        
+        return None
+    
     
     def _extract_other_abstract_by_language(self, article, language: Optional[str]) -> str:
         """
@@ -793,7 +1116,7 @@ class PubMedClient:
             return int(retry_after_header)
         except Exception:
             try:
-                return max(0, int((parsedate_to_datetime(retry_after_header) - datetime.utcnow()).total_seconds()))
+                return max(0, int((parsedate_to_datetime(retry_after_header) - datetime.now(timezone.utc)).total_seconds()))
             except Exception:
                 return 60
     

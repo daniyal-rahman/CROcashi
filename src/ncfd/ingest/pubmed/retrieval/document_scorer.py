@@ -431,13 +431,12 @@ class AdvancedDocumentScorer:
             
             # Parse publication date (simplified)
             # In real implementation, would use proper date parsing
-            import datetime
-            
+                        
             # Try to extract year from pubdate
             year_match = re.search(r'(\d{4})', pub_date)
             if year_match:
                 pub_year = int(year_match.group(1))
-                current_year = datetime.datetime.now().year
+                current_year = datetime.now(timezone.utc).year
                 
                 # Calculate recency bonus
                 years_ago = current_year - pub_year

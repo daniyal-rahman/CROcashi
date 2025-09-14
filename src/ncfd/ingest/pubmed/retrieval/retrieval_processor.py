@@ -196,40 +196,52 @@ class RetrievalProcessor:
             
             # Store RAW documents found during retrieval (before filtering)
             if all_pmids:
-                # Fetch metadata for documents to get real titles
+                # Fetch metadata and PMCID information in one call
                 async with self.client:
                     metadata_result = await self.client.esummary_batch(all_pmids)
+                    # Enhanced XML fetch that includes PMCID detection
+                    xml_result = await self.client.efetch_abstracts_xml(all_pmids)
                 
                 # Store documents directly using db_service
                 raw_documents = []
                 for pmid in all_pmids:
                     # Determine which query tier found this document
-                    # Find the tier that contains this pmid
                     query_tier = 'Unknown'
                     for tier_type, tier_pmids in tier_results.items():
                         if pmid in tier_pmids:
                             query_tier = tier_type
                             break
                     
-                    # Extract real title from metadata
+                    # Extract title from metadata
                     title = 'No title available'
                     if pmid in metadata_result:
                         metadata = metadata_result[pmid]
-                        # ESummary uses 'Title' field (capital T)
                         title = metadata.get('Title', metadata.get('title', 'No title available'))
                         if title and len(title) > 200:
                             title = title[:200] + '...'
-                        # Debug: log the actual metadata structure
-                        logger.debug(f"PMID {pmid} metadata keys: {list(metadata.keys())}")
-                        logger.debug(f"PMID {pmid} title: {title}")
+                    
+                    # Extract PMCID and full text status from XML result
+                    pmcid = None
+                    has_free_full_text = False
+                    
+                    if pmid in xml_result:
+                        xml_info = xml_result[pmid]
+                        pmcid = xml_info.get('pmcid')
+                        has_free_full_text = xml_info.get('has_free_full_text', False)
+                        
+                        # Log PMCID detection results
+                        if pmcid:
+                            logger.info(f"PMCID detected for PMID {pmid}: {pmcid}")
                     
                     raw_documents.append({
                         'pmid': pmid,
                         'title': title,
-                        'retrieval_tier': query_tier,  # Use actual tier value
+                        'pmcid': pmcid,
+                        'has_free_full_text': has_free_full_text,
+                        'retrieval_tier': query_tier,
                         'query_tier': query_tier,
-                        'policy_engine_passed': False,  # Not yet processed
-                        'guardrails_passed': False,     # Not yet processed
+                        'policy_engine_passed': False,
+                        'guardrails_passed': False,
                         'created_at': datetime.now(timezone.utc)
                     })
                 

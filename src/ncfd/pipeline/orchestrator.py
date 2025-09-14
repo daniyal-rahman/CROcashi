@@ -214,7 +214,11 @@ class PipelineOrchestrator:
             self.logger.info("Step 6: Running study card generation")
             study_card_results = self.run_study_card_generation(public_trials)
             
-            # Step 7: Update orchestration state
+            # Step 7: Independent LLM Analysis
+            self.logger.info("Step 7: Running independent LLM analysis")
+            independent_analysis_results = await self.run_independent_llm_analysis(public_trials)
+            
+            # Step 8: Update orchestration state
             self.logger.info("Step 7: Updating orchestration state")
             self._update_orchestration_state()
             
@@ -1399,6 +1403,111 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.error(f"Failed to reprioritize literature queue: {e}")
             return {'error': str(e)}
+    
+    async def run_independent_llm_analysis(self, trial_list: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        Run independent LLM analysis for filtered trial list.
+        
+        Args:
+            trial_list: List of trials to analyze
+            
+        Returns:
+            Analysis results for independent LLM analysis
+        """
+        self.logger.info(f"Starting independent LLM analysis for {len(trial_list)} trials")
+        
+        start_time = datetime.now(timezone.utc)
+        
+        try:
+            from ..synthesis import IndependentLLMAnalysis
+            
+            # Initialize the independent LLM analysis
+            independent_analysis = IndependentLLMAnalysis()
+            
+            # Process trials in parallel
+            results = []
+            for trial in trial_list:
+                try:
+                    result = await self._run_independent_analysis_for_trial(trial, independent_analysis)
+                    results.append(result)
+                except Exception as e:
+                    self.logger.error(f"Independent LLM analysis failed for trial {trial.get('trial_id')}: {e}")
+                    results.append({
+                        'trial_id': trial.get('trial_id'),
+                        'success': False,
+                        'error': str(e)
+                    })
+            
+            # Count successful results
+            successful_results = [r for r in results if r.get('success', False)]
+            failed_results = [r for r in results if not r.get('success', False)]
+            
+            end_time = datetime.now(timezone.utc)
+            
+            analysis_summary = {
+                'total_trials': len(trial_list),
+                'successful_analyses': len(successful_results),
+                'failed_analyses': len(failed_results),
+                'start_time': start_time,
+                'end_time': end_time,
+                'execution_time_seconds': (end_time - start_time).total_seconds(),
+                'results': results
+            }
+            
+            # Store result
+            self.current_execution.independent_analysis_result = analysis_summary
+            
+            self.logger.info(f"Independent LLM analysis completed: {len(successful_results)} successful, {len(failed_results)} failed")
+            return analysis_summary
+            
+        except Exception as e:
+            self.logger.error(f"Independent LLM analysis failed: {e}")
+            return {
+                'error': str(e),
+                'total_trials': len(trial_list),
+                'successful_analyses': 0,
+                'failed_analyses': len(trial_list)
+            }
+    
+    async def _run_independent_analysis_for_trial(self, trial: Dict[str, Any], independent_analysis: 'IndependentLLMAnalysis') -> Dict[str, Any]:
+        """Run independent LLM analysis for a single trial."""
+        try:
+            trial_id = trial['trial_id']
+            trial_data = trial.get('trial_data', {})
+            
+            # Extract trial information
+            nct_id = trial.get('nct_id', 'Unknown')
+            indication = trial_data.get('indication', 'Unknown')
+            phase = trial_data.get('phase', 'Unknown')
+            primary_endpoint = trial_data.get('primary_endpoint_text', 'Unknown')
+            
+            # Run independent LLM analysis
+            analysis_result = await independent_analysis.trigger_thinking_analysis(
+                trial_id=trial_id,
+                nct_id=nct_id,
+                indication=indication,
+                phase=phase,
+                primary_endpoint=primary_endpoint
+            )
+            
+            return {
+                'trial_id': trial_id,
+                'nct_id': nct_id,
+                'success': True,
+                'analysis_result': analysis_result,
+                'literature_review': analysis_result.get('literature_review', {}),
+                'independent_analysis': analysis_result.get('independent_analysis', {}),
+                'risk_assessment': analysis_result.get('risk_assessment', 'Unknown'),
+                'confidence_score': analysis_result.get('confidence_score', 0.0)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Independent analysis failed for trial {trial.get('trial_id')}: {e}")
+            return {
+                'trial_id': trial.get('trial_id'),
+                'success': False,
+                'error': str(e)
+            }
 
 
 # Create alias for backward compatibility

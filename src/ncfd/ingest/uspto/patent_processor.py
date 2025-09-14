@@ -63,7 +63,7 @@ class ProcessingStats:
     ownership_snapshots_created: int = 0
     
     # Timing
-    start_time: datetime = field(default_factory=lambda: datetime.now(UTC))
+    start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     end_time: Optional[datetime] = None
     total_duration_seconds: Optional[float] = None
     
@@ -73,7 +73,7 @@ class ProcessingStats:
     
     def finalize(self):
         """Finalize processing stats."""
-        self.end_time = datetime.now(UTC)
+        self.end_time = datetime.now(timezone.utc)
         if self.start_time:
             self.total_duration_seconds = (self.end_time - self.start_time).total_seconds()
     
@@ -261,7 +261,7 @@ class PatentProcessor:
                                     link_confidence=link.confidence_score,
                                     link_method=link.link_method,
                                     evidence_spans=link.evidence_spans,
-                                    created_at=datetime.now(UTC)
+                                    created_at=datetime.now(timezone.utc)
                                 )
                                 session.add(db_link)
                                 
@@ -336,7 +336,7 @@ class PatentProcessor:
                             ownership_percentage=period.ownership_percentage,
                             evidence_source="patent_assignment",
                             confidence_score=period.confidence_score,
-                            created_at=datetime.now(UTC)
+                            created_at=datetime.now(timezone.utc)
                         )
                         session.add(snapshot)
                         stats.ownership_snapshots_created += 1
@@ -352,7 +352,7 @@ class PatentProcessor:
                             ownership_percentage=current_owner.ownership_percentage,
                             evidence_source="current_analysis",
                             confidence_score=current_owner.confidence_score,
-                            created_at=datetime.now(UTC)
+                            created_at=datetime.now(timezone.utc)
                         )
                         session.add(current_snapshot)
                         stats.ownership_snapshots_created += 1
@@ -484,7 +484,7 @@ class PatentProcessor:
                             "assignee_resolution": assignee_resolution.__dict__ if assignee_resolution else None
                         },
                         source_url=assignment.source_url,
-                        created_at=datetime.now(UTC)
+                        created_at=datetime.now(timezone.utc)
                     )
                     session.add(db_assignment)
                     stats.assignments_stored += 1
@@ -516,7 +516,7 @@ class PatentProcessor:
                 "source_url": patent.source_url,
                 "is_pharmaceutical": patent.is_pharmaceutical
             },
-            created_at=datetime.now(UTC)
+            created_at=datetime.now(timezone.utc)
         )
     
     def _update_patent_record(self, existing: Patent, patent: PatentRecord):
@@ -531,7 +531,7 @@ class PatentProcessor:
         links.update({
             "title": patent.title,
             "abstract": patent.abstract,
-            "last_updated": datetime.now(UTC).isoformat(),
+            "last_updated": datetime.now(timezone.utc).isoformat(),
             "is_pharmaceutical": patent.is_pharmaceutical
         })
         existing.links_jsonb = links

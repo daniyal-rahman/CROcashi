@@ -194,7 +194,7 @@ class CTgovTrialDiscoverer:
         Returns:
             Discovery result with NCT IDs and trial information
         """
-        start_time = datetime.now()
+        start_time = datetime.now(timezone.utc)
         
         try:
             self.logger.info(f"Starting CT.gov trial discovery for entity pack: {entity_pack.entity_id}")
@@ -236,7 +236,7 @@ class CTgovTrialDiscoverer:
                 # Remove duplicates
                 linked_pmids = list(set(linked_pmids))
                 
-                discovery_time = (datetime.now() - start_time).total_seconds()
+                discovery_time = (datetime.now(timezone.utc) - start_time).total_seconds()
                 
                 self.logger.info(f"CT.gov discovery completed: {len(trial_info)} total trials "
                                f"({len(api_response.get('studies', []))} from term search + {len(nct_ids) - len(api_response.get('studies', []))} from NCT backfill), "
@@ -252,7 +252,7 @@ class CTgovTrialDiscoverer:
                 )
                 
         except Exception as e:
-            discovery_time = (datetime.now() - start_time).total_seconds()
+            discovery_time = (datetime.now(timezone.utc) - start_time).total_seconds()
             error_msg = f"CT.gov trial discovery failed: {str(e)}"
             self.logger.error(error_msg, exc_info=True)
             

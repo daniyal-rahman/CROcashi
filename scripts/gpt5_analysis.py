@@ -8,7 +8,7 @@ import sys
 import asyncio
 from pathlib import Path
 
-from ncfd.synthesis.gpt5_thinking_hook import GPT5ThinkingHook
+from ncfd.synthesis.independent_llm_analysis import IndependentLLMAnalysis, trigger_independent_llm_analysis_sync
 from ncfd.config import get_config
 
 
@@ -83,7 +83,7 @@ Examples:
         if args.verbose:
             print("🔄 Running GPT-5 thinking analysis...")
         
-        result = trigger_gpt5_analysis_sync(
+        result = trigger_independent_llm_analysis_sync(
             trial_id=args.trial_id,
             nct_id=args.nct_id,
             indication=args.indication,

@@ -1,12 +1,33 @@
 """
-Structured logging for NCFD pipeline.
+Legacy logging module - DEPRECATED.
+
+This module is deprecated in favor of the new structured logging system.
+Use ncfd.logging instead for all new code.
+
+The new system provides:
+- Structured logging with comprehensive schema
+- Canonical event taxonomy
+- IO tracing decorators
+- Context management
+- LLM-specific logging
+- Decision transparency logging
 """
 
-import logging
-import logging.handlers
-import os
-from pathlib import Path
+import warnings
 from typing import Optional, Dict, Any
+
+# Import new structured logging system
+from .logging import get_logger as get_structured_logger, setup_logging as setup_structured_logging
+from .logging import LogContext, set_context
+from .logging import EventTaxonomy
+from .logging import io_trace, llm_trace, parse_trace, validate_trace
+
+# Issue deprecation warning
+warnings.warn(
+    "ncfd.logging module is deprecated. Use ncfd.logging.structured_logger instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 
 def setup_logging(
@@ -14,72 +35,43 @@ def setup_logging(
     format_str: Optional[str] = None,
     log_file: Optional[str] = None,
     console: bool = True
-) -> logging.Logger:
+):
     """
+    DEPRECATED: Use ncfd.logging.setup_logging instead.
+    
     Setup structured logging for the application.
-    
-    Args:
-        level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        format_str: Log format string
-        log_file: Path to log file (optional)
-        console: Whether to log to console
-        
-    Returns:
-        Configured logger
     """
-    # Default format
-    if format_str is None:
-        format_str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    warnings.warn(
+        "setup_logging is deprecated. Use ncfd.logging.setup_logging instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     
-    # Create logger
-    logger = logging.getLogger("ncfd")
-    logger.setLevel(getattr(logging, level.upper()))
-    
-    # Clear existing handlers
-    logger.handlers.clear()
-    
-    # Create formatter
-    formatter = logging.Formatter(format_str)
-    
-    # Console handler
-    if console:
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        logger.addHandler(console_handler)
-    
-    # File handler
-    if log_file:
-        # Ensure log directory exists
-        log_path = Path(log_file)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Rotating file handler (10MB max, keep 5 files)
-        file_handler = logging.handlers.RotatingFileHandler(
-            log_file,
-            maxBytes=10*1024*1024,  # 10MB
-            backupCount=5
-        )
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-    
-    return logger
+    return setup_structured_logging(
+        level=level,
+        log_file=log_file,
+        console=console,
+        json_format=True
+    )
 
 
-def get_logger(name: str = "ncfd") -> logging.Logger:
+def get_logger(name: str = "ncfd"):
     """
+    DEPRECATED: Use ncfd.logging.get_logger instead.
+    
     Get a logger instance.
-    
-    Args:
-        name: Logger name
-        
-    Returns:
-        Logger instance
     """
-    return logging.getLogger(name)
+    warnings.warn(
+        "get_logger is deprecated. Use ncfd.logging.get_logger instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    
+    return get_structured_logger(name)
 
 
 def log_trial_event(
-    logger: logging.Logger,
+    logger,
     trial_id: str,
     stage: str,
     event: str,
@@ -87,62 +79,72 @@ def log_trial_event(
     level: str = "INFO"
 ):
     """
+    DEPRECATED: Use structured logger methods instead.
+    
     Log a trial-specific event with structured data.
-    
-    Args:
-        logger: Logger instance
-        trial_id: Trial identifier
-        stage: Pipeline stage
-        event: Event type
-        details: Additional details
-        level: Log level
     """
-    log_data = {
-        "trial_id": trial_id,
-        "stage": stage,
-        "event": event
-    }
+    warnings.warn(
+        "log_trial_event is deprecated. Use structured logger methods instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     
-    if details:
-        log_data.update(details)
+    # Convert to new format
+    kwargs = details or {}
+    kwargs.update({
+        'trial_id': trial_id,
+        'stage': stage
+    })
     
     log_method = getattr(logger, level.lower())
-    log_method(f"TRIAL_EVENT: {log_data}")
+    log_method(event, **kwargs)
 
 
 def log_stage_metrics(
-    logger: logging.Logger,
+    logger,
     stage: str,
     metrics: Dict[str, Any],
     level: str = "INFO"
 ):
     """
-    Log stage completion metrics.
+    DEPRECATED: Use structured logger methods instead.
     
-    Args:
-        logger: Logger instance
-        stage: Pipeline stage
-        metrics: Stage metrics
-        level: Log level
+    Log stage completion metrics.
     """
+    warnings.warn(
+        "log_stage_metrics is deprecated. Use structured logger methods instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    
+    # Convert to new format
+    kwargs = metrics.copy()
+    kwargs['stage'] = stage
+    
     log_method = getattr(logger, level.lower())
-    log_method(f"STAGE_METRICS: {stage} - {metrics}")
+    log_method(EventTaxonomy.STAGE_SUMMARY, **kwargs)
 
 
 def log_error_with_context(
-    logger: logging.Logger,
+    logger,
     error: Exception,
     context: Dict[str, Any],
     level: str = "ERROR"
 ):
     """
-    Log an error with context information.
+    DEPRECATED: Use structured logger methods instead.
     
-    Args:
-        logger: Logger instance
-        error: Exception that occurred
-        context: Context information
-        level: Log level
+    Log an error with context information.
     """
-    log_method = getattr(logger, level.lower())
-    log_method(f"ERROR: {error} - Context: {context}", exc_info=True)
+    warnings.warn(
+        "log_error_with_context is deprecated. Use structured logger methods instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    
+    # Use new error logging method
+    logger.log_error_with_context(
+        EventTaxonomy.ERROR_CRITICAL,
+        error,
+        context=context
+    )

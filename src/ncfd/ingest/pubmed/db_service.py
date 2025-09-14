@@ -508,6 +508,9 @@ class PubMedDBService:
                         existing.published_at = doc_data.get('published_at', existing.published_at)
                         existing.nct_id = doc_data.get('nct_id', existing.nct_id)
                         existing.status = 'discovered'
+                        # Update PMCID if provided
+                        if 'pmcid' in doc_data and doc_data['pmcid']:
+                            existing.pmcid = doc_data['pmcid']
                         # Update R/S scoring fields if provided
                         if 'r_score' in doc_data:
                             existing.r_score = doc_data.get('r_score')
@@ -527,6 +530,7 @@ class PubMedDBService:
                             publisher=doc_data.get('fulljournalname'),
                             published_at=doc_data.get('published_at'),
                             nct_id=doc_data.get('nct_id'),
+                            pmcid=doc_data.get('pmcid'),  # Store PMCID if available
                             content_type='abstract',  # Will be updated to 'fulltext' in OA stage
                             status='discovered',
                             discovered_at=datetime.now(timezone.utc),
@@ -572,6 +576,22 @@ class PubMedDBService:
                             )
                             session.add(citation)
                             self.logger.debug(f"Created citation for PMID {pmid}")
+                        
+                        # Store full text status provenance if available
+                        if 'has_free_full_text' in doc_data or 'free_full_text_sources' in doc_data:
+                            # Create a provenance record for full text status
+                            provenance_data = {
+                                'pmid': pmid,
+                                'has_free_full_text': doc_data.get('has_free_full_text', False),
+                                'free_full_text_sources': doc_data.get('free_full_text_sources', []),
+                                'pmcid': doc_data.get('pmcid'),
+                                'detection_method': 'pubmed_xml_parsing',
+                                'detected_at': datetime.now(timezone.utc).isoformat()
+                            }
+                            
+                            # Store in a JSONB field or create a separate provenance table
+                            # For now, we'll log this information
+                            self.logger.info(f"Full text status for PMID {pmid}: {provenance_data}")
                         
                         self.logger.info(f"DEBUG: Created document for PMID {pmid} with doc_id {document.doc_id}")
                         session.flush()  # Ensure the document is persisted

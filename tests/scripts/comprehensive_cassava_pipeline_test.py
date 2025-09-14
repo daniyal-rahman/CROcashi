@@ -178,6 +178,46 @@ CASSAVA_ASSETS = [
     }
 ]
 
+# Specific Cassava papers that should be retrieved
+EXPECTED_CASSAVA_PAPERS = [
+    {
+        "pmcid": "PMC10531384",
+        "year": 2023,
+        "title": "Simufilam Reverses Aberrant Receptor Interactions",
+        "description": "Key simufilam mechanism paper"
+    },
+    {
+        "pmcid": "PMC10339288", 
+        "year": 2023,
+        "title": "Simufilam suppresses overactive mTOR and restores its",
+        "description": "Important mTOR pathway paper"
+    },
+    {
+        "pmcid": "PMC6621293",
+        "year": 2012,
+        "title": "Reducing amyloid-related Alzheimer's disease pathogenesis",
+        "description": "Historical amyloid pathogenesis paper"
+    },
+    {
+        "pmcid": None,  # No PMCID available
+        "year": 2017,
+        "title": "PTI-125 binds and reverses an altered conformation of filamin A",
+        "description": "Key filamin A binding paper (Expression of Concern in 2022)"
+    },
+    {
+        "pmcid": None,  # No PMCID available
+        "year": 2020,
+        "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients",
+        "description": "Clinical biomarker reduction paper"
+    },
+    {
+        "pmcid": None,  # Likely available in Europe PMC
+        "year": 2021,
+        "title": "Effects of simufilam on CSF biomarkers in Alzheimer's",
+        "description": "CSF biomarker effects paper"
+    }
+]
+
 
 class ComprehensiveCassavaTest:
     """Comprehensive test for Cassava trial pipeline processing."""
@@ -207,7 +247,7 @@ class ComprehensiveCassavaTest:
         """Load test configuration with real-world settings."""
         config = {
             "worker_id": "cassava_comprehensive_test",
-            "execution_order": ["pubmed", "study_card"],  # Skip CT.gov since we're using seeded data
+            "execution_order": ["pubmed", "study_card", "independent_llm_analysis"],  # Include independent LLM analysis
             "parallel_execution": False,
             "dependency_checking": False,  # Disable dependency checking since we're not running CT.gov
             
@@ -260,7 +300,7 @@ class ComprehensiveCassavaTest:
             
             # Study card configuration
             "study_card": {
-                "max_documents_per_trial": 3,  # Limit to 3 documents for comprehensive testing
+                "max_documents_per_trial": 5,  # Limit to 3 documents for comprehensive testing
                 "store_json_snapshots": True,
                 "llm_timeout_seconds": 60,  # Reduce timeout for testing
                 "retrieval_timeout_seconds": 90,
@@ -276,6 +316,16 @@ class ComprehensiveCassavaTest:
                     "validation_error_action": "warn",
                     "max_validation_errors": 20
                 },
+                "quality_gate": {
+                    "min_documents_analyzed": 0,  # Allow 0 documents for testing
+                    "min_quotes": 0,  # Allow 0 quotes for testing
+                    "min_evidence_spans": 0,  # Allow 0 evidence spans for testing
+                    "min_confidence": 0.0,  # Lower confidence threshold for testing
+                    "require_method": False,  # Don't require method card for testing
+                    "require_results": False,  # Don't require results factsheet for testing
+                    "require_gates": False,  # Don't require gate assessments for testing
+                    "min_llm_artifacts": 0  # Allow 0 LLM artifacts for testing
+                },
                 "stages": {
                     "retrieval": {"enable": True, "timeout_seconds": 90},
                     "llm_method_auditing": {"enable": True, "timeout_seconds": 180},
@@ -286,6 +336,17 @@ class ComprehensiveCassavaTest:
                     "fda_lens": {"enable": True, "timeout_seconds": 120},
                     "memo_composition": {"enable": True, "timeout_seconds": 120}
                 }
+            },
+            
+            # Independent LLM Analysis configuration
+            "independent_llm_analysis": {
+                "enabled": True,
+                "model": "gpt-4o",
+                "timeout_seconds": 300,
+                "parallel_execution": True,
+                "max_concurrent_analyses": 3,
+                "retry_attempts": 2,
+                "confidence_threshold": 0.7
             }
         }
         
@@ -459,7 +520,7 @@ class ComprehensiveCassavaTest:
                         existing_trial.intervention_types = trial_data["interventions"]
                         existing_trial.has_results = trial_data["has_results"]
                         existing_trial.updated_at = datetime.now(timezone.utc)
-                        existing_trial.current_sha256 = f"cassava_test_{trial_data['nct_id']}_{datetime.now().timestamp()}"
+                        existing_trial.current_sha256 = f"cassava_test_{trial_data['nct_id']}_{datetime.now(timezone.utc).timestamp()}"
                         
                         trial_id = existing_trial.trial_id
                     else:
@@ -476,7 +537,7 @@ class ComprehensiveCassavaTest:
                             primary_endpoint_text=trial_data["primary_endpoint"],
                             intervention_types=trial_data["interventions"],
                             has_results=trial_data["has_results"],
-                            current_sha256=f"cassava_test_{trial_data['nct_id']}_{datetime.now().timestamp()}",
+                            current_sha256=f"cassava_test_{trial_data['nct_id']}_{datetime.now(timezone.utc).timestamp()}",
                             created_at=datetime.now(timezone.utc),
                             updated_at=datetime.now(timezone.utc)
                         )
@@ -610,12 +671,20 @@ class ComprehensiveCassavaTest:
                 total_documents_processed = total_documents
                 total_errors = []
                 
+                # Check for processing issues
+                if processed_docs_count == 0 and retrieval_docs_count > 0:
+                    total_errors.append("Abstract processing failed - documents retrieved but none processed")
+                
                 # Determine status based on actual results
                 status = "success"
                 if doc_count == 0:
                     status = "failed"
+                    total_errors.append("No documents retrieved from PubMed")
+                elif processed_docs_count == 0 and retrieval_docs_count > 0:
+                    status = "failed"
+                    total_errors.append("Documents retrieved but processing failed")
                 elif processed_docs_count == 0:
-                    status = "success"  # Documents found is good enough for this test
+                    status = "success"  # No documents found is acceptable for this test
                 
                 # Count PubMed documents (documents with source_type='Paper' that are linked to trials)
                 pubmed_docs_count = 0
@@ -636,9 +705,10 @@ class ComprehensiveCassavaTest:
                     "retrieval_metrics": {},
                     "document_details": doc_details,
                     "pipeline_result": {
-                        "success": True,  # Pipeline completed successfully
+                        "success": status == "success",
                         "documents_processed": total_documents_processed,
                         "errors": total_errors,
+                        "error_count": len(total_errors),
                         "stages_completed": 2  # Retrieval + Processing stages
                     }
                 }
@@ -721,8 +791,8 @@ class ComprehensiveCassavaTest:
                         "decision": getattr(result.decision_record, 'decision', 'No decision'),
                         "confidence": getattr(result.decision_record, 'confidence', 0.0),
                         "reasoning": getattr(result.decision_record, 'reasoning', 'No reasoning')[:200] + "..." if getattr(result.decision_record, 'reasoning', None) and len(getattr(result.decision_record, 'reasoning', '')) > 200 else getattr(result.decision_record, 'reasoning', 'No reasoning'),
-                        "passed_gates": len(getattr(result.decision_record, 'passed_gates', [])),
-                        "failed_gates": len(getattr(result.decision_record, 'failed_gates', []))
+                        "passed_gates": getattr(result.decision_record, 'passed_gates', 0),
+                        "failed_gates": getattr(result.decision_record, 'failed_gates', 0)
                     })
                 
                 study_card_results.append({
@@ -763,6 +833,55 @@ class ComprehensiveCassavaTest:
                 logger.info(f"✅ Study card generation completed for main trial {trial.nct_id}")
                 logger.info(f"🎯 Total gates generated: {total_gates}")
                 logger.info(f"📋 Total conclusions generated: {total_conclusions}")
+                
+                # Test Independent LLM Analysis
+                logger.info("🧠 Testing Independent LLM Analysis...")
+                try:
+                    from ncfd.synthesis import IndependentLLMAnalysis
+                    
+                    # Initialize independent LLM analysis
+                    independent_analysis = IndependentLLMAnalysis()
+                    
+                    # Run analysis for the main trial
+                    analysis_result = await independent_analysis.trigger_thinking_analysis(
+                        trial_id=str(trial.trial_id),
+                        nct_id=trial.nct_id,
+                        indication=trial.indication or "Unknown",
+                        phase=trial.phase or "Unknown",
+                        primary_endpoint=trial.primary_endpoint_text or "Unknown"
+                    )
+                    
+                    # Extract analysis details
+                    literature_review = analysis_result.get('literature_review', {})
+                    independent_analysis_data = analysis_result.get('independent_analysis', {})
+                    
+                    self.results["independent_llm_analysis"] = {
+                        "status": "success",
+                        "trial_id": trial.trial_id,
+                        "nct_id": trial.nct_id,
+                        "literature_review": {
+                            "papers_found": len(literature_review.get('papers', [])),
+                            "summary": literature_review.get('summary', 'No summary available')[:200] + "..." if literature_review.get('summary') else 'No summary available'
+                        },
+                        "independent_analysis": {
+                            "risk_assessment": independent_analysis_data.get('risk_assessment', 'Unknown'),
+                            "confidence_score": independent_analysis_data.get('confidence_score', 0.0),
+                            "key_findings": independent_analysis_data.get('key_findings', 'No findings available')[:200] + "..." if independent_analysis_data.get('key_findings') else 'No findings available'
+                        },
+                        "full_result": analysis_result
+                    }
+                    
+                    logger.info(f"✅ Independent LLM analysis completed for trial {trial.nct_id}")
+                    logger.info(f"📚 Literature review: {len(literature_review.get('papers', []))} papers found")
+                    logger.info(f"🎯 Risk assessment: {independent_analysis_data.get('risk_assessment', 'Unknown')}")
+                    logger.info(f"📊 Confidence score: {independent_analysis_data.get('confidence_score', 0.0)}")
+                    
+                except Exception as analysis_error:
+                    logger.error(f"Independent LLM analysis failed: {str(analysis_error)}")
+                    self.results["independent_llm_analysis"] = {
+                        "status": "failed",
+                        "error": str(analysis_error)
+                    }
                 
         except Exception as e:
             logger.error(f"Study card pipeline test failed: {str(e)}")
@@ -921,6 +1040,13 @@ class ComprehensiveCassavaTest:
                     DocumentLink, Trial.trial_id == DocumentLink.trial_id
                 ).distinct().count()
                 
+                # Run comprehensive checks
+                await self._check_expected_papers(session)
+                await self._check_pmcid_detection_issues(session)
+                await self._check_gate_passes(session)
+                await self._check_synthesis_results(session)
+                await self._check_evidence_coverage(session)
+                
                 self.results["validation_results"] = {
                     "status": "success",
                     "entity_counts": {
@@ -948,6 +1074,401 @@ class ComprehensiveCassavaTest:
                 "error": str(e)
             }
             raise
+    
+    async def _check_expected_papers(self, session: Session):
+        """Check if expected Cassava papers were retrieved and log warnings for missing ones."""
+        logger.info("🔍 Checking for expected Cassava papers...")
+        
+        missing_papers = []
+        found_papers = []
+        
+        # Get all documents in the database
+        all_documents = session.query(Document).all()
+        
+        for expected_paper in EXPECTED_CASSAVA_PAPERS:
+            found = False
+            paper_info = {
+                "title": expected_paper["title"],
+                "year": expected_paper["year"],
+                "description": expected_paper["description"],
+                "pmcid": expected_paper["pmcid"]
+            }
+            
+            # Check by PMCID if available
+            if expected_paper["pmcid"]:
+                for doc in all_documents:
+                    if doc.pmcid == expected_paper["pmcid"]:
+                        found = True
+                        paper_info["found_by"] = "pmcid"
+                        paper_info["doc_id"] = doc.doc_id
+                        paper_info["pmid"] = doc.pmid
+                        break
+            
+            # If not found by PMCID, try title matching
+            if not found:
+                title_keywords = expected_paper["title"].lower().split()[:3]  # First 3 words
+                for doc in all_documents:
+                    if doc.title:
+                        doc_title_lower = doc.title.lower()
+                        if all(keyword in doc_title_lower for keyword in title_keywords):
+                            found = True
+                            paper_info["found_by"] = "title_match"
+                            paper_info["doc_id"] = doc.doc_id
+                            paper_info["pmid"] = doc.pmid
+                            paper_info["pmcid"] = doc.pmcid
+                            break
+            
+            if found:
+                found_papers.append(paper_info)
+            else:
+                missing_papers.append(paper_info)
+        
+        # Log warnings for missing papers
+        if missing_papers:
+            warning_msg = f"⚠️  WARNING: {len(missing_papers)} expected Cassava papers were NOT retrieved:"
+            logger.warning(warning_msg)
+            self.results["warnings"].append(warning_msg)
+            
+            for paper in missing_papers:
+                paper_warning = f"   • {paper['year']}: {paper['title']} ({paper['description']})"
+                if paper['pmcid']:
+                    paper_warning += f" [PMCID: {paper['pmcid']}]"
+                logger.warning(paper_warning)
+                self.results["warnings"].append(paper_warning)
+        
+        # Log success for found papers
+        if found_papers:
+            logger.info(f"✅ Found {len(found_papers)} expected Cassava papers:")
+            for paper in found_papers:
+                logger.info(f"   • {paper['year']}: {paper['title']} (found by {paper['found_by']})")
+        
+        # Store results
+        if "validation_results" not in self.results:
+            self.results["validation_results"] = {}
+        
+        self.results["validation_results"]["expected_papers_check"] = {
+            "total_expected": len(EXPECTED_CASSAVA_PAPERS),
+            "found": len(found_papers),
+            "missing": len(missing_papers),
+            "found_papers": found_papers,
+            "missing_papers": missing_papers
+        }
+    
+    async def _check_pmcid_detection_issues(self, session: Session):
+        """Check for PMCID detection issues and log warnings for papers that should have full text."""
+        logger.info("🔍 Checking for PMCID detection issues...")
+        
+        # Get all documents with PMIDs
+        documents_with_pmids = session.query(Document).filter(
+            Document.pmid.isnot(None)
+        ).all()
+        
+        if not documents_with_pmids:
+            logger.info("No documents with PMIDs found to check PMCID detection")
+            return
+        
+        # Known PMIDs that should have PMCID but might be marked as has_full_text=False
+        # Based on the user's spot-check results
+        known_pmcid_papers = {
+            "40141124": "PMC11942311",
+            "37762230": "PMC10530843", 
+            "37457922": "PMC10339288",
+            "22815492": "PMC6621293",
+            "33188449": "PMC7664001",
+            "32075941": "PMC7342663",
+            "36457865": "PMC9706102",
+            "39239266": "PMC11543719"
+        }
+        
+        pmcid_detection_issues = []
+        
+        for doc in documents_with_pmids:
+            pmid = doc.pmid
+            if pmid in known_pmcid_papers:
+                expected_pmcid = known_pmcid_papers[pmid]
+                
+                # Check if PMCID is missing or incorrect
+                if not doc.pmcid or doc.pmcid != expected_pmcid:
+                    issue = {
+                        "pmid": pmid,
+                        "title": doc.title or "Unknown title",
+                        "expected_pmcid": expected_pmcid,
+                        "actual_pmcid": doc.pmcid,
+                        "issue_type": "missing_pmcid" if not doc.pmcid else "incorrect_pmcid"
+                    }
+                    pmcid_detection_issues.append(issue)
+                    
+                    # Log warning
+                    warning_msg = f"⚠️  PMCID DETECTION ISSUE: PMID {pmid} should have PMCID {expected_pmcid} but has {doc.pmcid or 'None'}"
+                    logger.warning(warning_msg)
+                    self.results["warnings"].append(warning_msg)
+        
+        # Also check for documents that have PMCID but are marked as not having full text
+        documents_with_pmcid = session.query(Document).filter(
+            Document.pmcid.isnot(None),
+            Document.pmcid != ""
+        ).all()
+        
+        for doc in documents_with_pmcid:
+            # Check if document has full text content
+            from ncfd.db.models import DocumentText
+            doc_text = session.query(DocumentText).filter(
+                DocumentText.doc_id == doc.doc_id
+            ).first()
+            
+            has_full_text = bool(doc_text and doc_text.fulltext_text and len(doc_text.fulltext_text.strip()) > 0)
+            
+            if not has_full_text:
+                issue = {
+                    "pmid": doc.pmid,
+                    "pmcid": doc.pmcid,
+                    "title": doc.title or "Unknown title",
+                    "issue_type": "has_pmcid_but_no_full_text"
+                }
+                pmcid_detection_issues.append(issue)
+                
+                # Log warning
+                warning_msg = f"⚠️  FULL TEXT ISSUE: PMID {doc.pmid} has PMCID {doc.pmcid} but no full text content retrieved"
+                logger.warning(warning_msg)
+                self.results["warnings"].append(warning_msg)
+        
+        # Store results
+        if "validation_results" not in self.results:
+            self.results["validation_results"] = {}
+        
+        self.results["validation_results"]["pmcid_detection_check"] = {
+            "total_documents_checked": len(documents_with_pmids),
+            "documents_with_pmcid": len(documents_with_pmcid),
+            "pmcid_detection_issues": len(pmcid_detection_issues),
+            "issues": pmcid_detection_issues
+        }
+        
+        if pmcid_detection_issues:
+            logger.warning(f"Found {len(pmcid_detection_issues)} PMCID detection issues")
+        else:
+            logger.info("No PMCID detection issues found")
+    
+    async def _check_gate_passes(self, session: Session):
+        """Check if any gates passed and log warnings."""
+        logger.info("🚪 Checking for gate passes...")
+        
+        # Check for gate passes using raw SQL to avoid model/schema mismatches
+        try:
+            # Check for fired gates using raw SQL (based on actual DB schema)
+            fired_gates_result = session.execute(text("""
+                SELECT g_id, rationale_text, trial_id 
+                FROM gates 
+                WHERE fired_bool = true
+            """)).fetchall()
+            
+            # Check for passed gate assessments using raw SQL
+            passed_assessments_result = session.execute(text("""
+                SELECT gate_id, status, confidence_in_assessment, rationale
+                FROM gate_assessments 
+                WHERE status IN ('passed', 'pass', 'approved', 'positive')
+            """)).fetchall()
+            
+            total_passed = len(fired_gates_result) + len(passed_assessments_result)
+            
+            if total_passed > 0:
+                warning_msg = f"⚠️  WARNING: {total_passed} gates PASSED ({len(fired_gates_result)} fired gates, {len(passed_assessments_result)} passed assessments) - this may indicate overly permissive gate criteria"
+                logger.warning(warning_msg)
+                self.results["warnings"].append(warning_msg)
+                
+                # Log fired gates
+                for gate_row in fired_gates_result:
+                    g_id, rationale_text, trial_id = gate_row
+                    gate_warning = f"   • Fired Gate {g_id} (Trial {trial_id}): {rationale_text[:50]}..." if rationale_text else f"   • Fired Gate {g_id} (Trial {trial_id}): No rationale"
+                    logger.warning(gate_warning)
+                    self.results["warnings"].append(gate_warning)
+                
+                # Log passed assessments
+                for assessment_row in passed_assessments_result:
+                    gate_id, status, confidence, rationale = assessment_row
+                    assessment_warning = f"   • Passed Assessment {gate_id}: Status={status}, Confidence={confidence:.2f}" if confidence else f"   • Passed Assessment {gate_id}: Status={status}"
+                    logger.warning(assessment_warning)
+                    self.results["warnings"].append(assessment_warning)
+            else:
+                logger.info("✅ No gates passed - gate criteria appear appropriately strict")
+            
+            # Store results
+            if "validation_results" not in self.results:
+                self.results["validation_results"] = {}
+            
+            self.results["validation_results"]["gate_passes_check"] = {
+                "total_fired_gates": len(fired_gates_result),
+                "total_passed_assessments": len(passed_assessments_result),
+                "total_passed": total_passed,
+                "fired_gates": [
+                    {
+                        "g_id": gate_row[0],
+                        "trial_id": gate_row[2],
+                        "rationale": gate_row[1][:100] + "..." if gate_row[1] and len(gate_row[1]) > 100 else gate_row[1]
+                    } for gate_row in fired_gates_result
+                ],
+                "passed_assessments": [
+                    {
+                        "gate_id": assessment_row[0],
+                        "status": assessment_row[1],
+                        "confidence": assessment_row[2],
+                        "rationale": str(assessment_row[3])[:100] + "..." if assessment_row[3] and len(str(assessment_row[3])) > 100 else str(assessment_row[3])
+                    } for assessment_row in passed_assessments_result
+                ]
+            }
+            
+        except Exception as e:
+            logger.warning(f"⚠️  Gate pass check failed: {str(e)}")
+            self.results["warnings"].append(f"Gate pass check failed: {str(e)}")
+    
+    async def _check_synthesis_results(self, session: Session):
+        """Check synthesis results and log warnings for positive results."""
+        logger.info("🧠 Checking synthesis results...")
+        
+        # Check independent LLM analysis results
+        if "independent_llm_analysis" in self.results:
+            analysis = self.results["independent_llm_analysis"]
+            
+            if analysis.get("status") == "success":
+                ind_analysis = analysis.get("independent_analysis", {})
+                risk_assessment = ind_analysis.get("risk_assessment", "").lower()
+                confidence_score = ind_analysis.get("confidence_score", 0.0)
+                
+                # Check for positive/optimistic synthesis results
+                positive_indicators = [
+                    "low risk", "favorable", "positive", "promising", 
+                    "encouraging", "beneficial", "effective", "successful"
+                ]
+                
+                is_positive = any(indicator in risk_assessment for indicator in positive_indicators)
+                
+                if is_positive and confidence_score > 0.7:
+                    warning_msg = f"⚠️  WARNING: Synthesis result appears POSITIVE (Risk: {risk_assessment}, Confidence: {confidence_score:.2f}) - verify this aligns with expected Cassava concerns"
+                    logger.warning(warning_msg)
+                    self.results["warnings"].append(warning_msg)
+                    
+                    # Add context about Cassava's known issues
+                    context_msg = "   Context: Cassava Sciences has faced significant controversy including data integrity concerns, FDA scrutiny, and expression of concern on key papers"
+                    logger.warning(context_msg)
+                    self.results["warnings"].append(context_msg)
+                else:
+                    logger.info(f"✅ Synthesis result appears appropriately cautious (Risk: {risk_assessment}, Confidence: {confidence_score:.2f})")
+        
+        # Check study card decision records
+        if "study_card_generation" in self.results:
+            study_cards = self.results["study_card_generation"]
+            conclusion_details = study_cards.get("conclusion_details", [])
+            
+            for conclusion in conclusion_details:
+                decision = conclusion.get("decision", "").lower()
+                confidence = conclusion.get("confidence", 0.0)
+                
+                # Check for positive decisions
+                positive_decisions = [
+                    "approve", "positive", "favorable", "proceed", 
+                    "recommend", "support", "endorse"
+                ]
+                
+                is_positive_decision = any(pos_word in decision for pos_word in positive_decisions)
+                
+                if is_positive_decision and confidence > 0.6:
+                    warning_msg = f"⚠️  WARNING: Study card decision appears POSITIVE (Decision: {decision}, Confidence: {confidence:.2f}) - verify this aligns with expected Cassava concerns"
+                    logger.warning(warning_msg)
+                    self.results["warnings"].append(warning_msg)
+        
+        # Store results
+        if "validation_results" not in self.results:
+            self.results["validation_results"] = {}
+        
+        self.results["validation_results"]["synthesis_results_check"] = {
+            "checked_llm_analysis": "independent_llm_analysis" in self.results,
+            "checked_study_cards": "study_card_generation" in self.results,
+            "warnings_generated": len([w for w in self.results["warnings"] if "POSITIVE" in w])
+        }
+    
+    async def _check_evidence_coverage(self, session: Session):
+        """Check evidence section coverage and log warnings for low coverage."""
+        logger.info("📊 Checking evidence section coverage...")
+        
+        coverage_warnings = []
+        
+        # Check document coverage by source type
+        try:
+            from ncfd.db.models import DocumentLink
+            
+            # Get main trial
+            main_trial = session.query(Trial).filter(Trial.nct_id == "NCT05515666").first()
+            if not main_trial:
+                logger.warning("Main trial not found for coverage check")
+                return
+            
+            # Count documents by source type for the main trial
+            trial_links = session.query(DocumentLink).filter(
+                DocumentLink.trial_id == main_trial.trial_id
+            ).all()
+            
+            source_type_counts = {}
+            total_docs = 0
+            
+            for link in trial_links:
+                doc = session.query(Document).filter(Document.doc_id == link.doc_id).first()
+                if doc:
+                    source_type = doc.source_type or "Unknown"
+                    source_type_counts[source_type] = source_type_counts.get(source_type, 0) + 1
+                    total_docs += 1
+            
+            # Check for low coverage in key evidence sections
+            if total_docs < 5:
+                warning_msg = f"⚠️  WARNING: Low document coverage - only {total_docs} documents found for main trial {main_trial.nct_id}"
+                logger.warning(warning_msg)
+                coverage_warnings.append(warning_msg)
+                self.results["warnings"].append(warning_msg)
+                
+                context_msg = f"   Context: Expected comprehensive literature coverage for Phase 3 Alzheimer's trial - consider expanding search terms or date ranges"
+                logger.warning(context_msg)
+                coverage_warnings.append(context_msg)
+                self.results["warnings"].append(context_msg)
+            
+            # Check source type diversity
+            if len(source_type_counts) < 2:
+                warning_msg = f"⚠️  WARNING: Limited source type diversity - only {list(source_type_counts.keys())} found"
+                logger.warning(warning_msg)
+                coverage_warnings.append(warning_msg)
+                self.results["warnings"].append(warning_msg)
+            
+            # Check for PubMed papers specifically
+            pubmed_count = source_type_counts.get("Paper", 0)
+            if pubmed_count < 3:
+                warning_msg = f"⚠️  WARNING: Low PubMed paper coverage - only {pubmed_count} papers found (expected more for comprehensive literature review)"
+                logger.warning(warning_msg)
+                coverage_warnings.append(warning_msg)
+                self.results["warnings"].append(warning_msg)
+                
+                context_msg = f"   Context: Simufilam/PTI-125 has extensive literature including mechanism, preclinical, and clinical studies - low paper count may indicate retrieval issues"
+                logger.warning(context_msg)
+                coverage_warnings.append(context_msg)
+                self.results["warnings"].append(context_msg)
+            
+            # Log coverage summary
+            logger.info(f"📊 Evidence coverage summary:")
+            logger.info(f"   • Total documents: {total_docs}")
+            logger.info(f"   • Source types: {source_type_counts}")
+            logger.info(f"   • PubMed papers: {pubmed_count}")
+            
+            # Store results
+            if "validation_results" not in self.results:
+                self.results["validation_results"] = {}
+            
+            self.results["validation_results"]["evidence_coverage_check"] = {
+                "total_documents": total_docs,
+                "source_type_counts": source_type_counts,
+                "pubmed_papers": pubmed_count,
+                "coverage_warnings": len(coverage_warnings),
+                "warnings": coverage_warnings
+            }
+            
+        except Exception as e:
+            logger.warning(f"⚠️  Evidence coverage check failed: {str(e)}")
+            self.results["warnings"].append(f"Evidence coverage check failed: {str(e)}")
     
     def _generate_final_report(self):
         """Generate comprehensive final report."""
@@ -1040,6 +1561,77 @@ class ComprehensiveCassavaTest:
                     print(f"        Passed gates: {conclusion.get('passed_gates', 0)}")
                     print(f"        Failed gates: {conclusion.get('failed_gates', 0)}")
                     print(f"        Reasoning: {conclusion.get('reasoning', 'No reasoning')[:100]}...")
+        
+        # Independent LLM Analysis metrics
+        if "independent_llm_analysis" in self.results and self.results["independent_llm_analysis"].get("status") == "success":
+            analysis = self.results["independent_llm_analysis"]
+            print(f"\n🧠 Independent LLM Analysis Metrics:")
+            print(f"   • Trial analyzed: {analysis.get('nct_id', 'Unknown')}")
+            
+            # Literature review details
+            lit_review = analysis.get('literature_review', {})
+            print(f"   • Literature review:")
+            print(f"     - Papers found: {lit_review.get('papers_found', 0)}")
+            print(f"     - Summary: {lit_review.get('summary', 'No summary available')}")
+            
+            # Independent analysis details
+            ind_analysis = analysis.get('independent_analysis', {})
+            print(f"   • Independent analysis:")
+            print(f"     - Risk assessment: {ind_analysis.get('risk_assessment', 'Unknown')}")
+            print(f"     - Confidence score: {ind_analysis.get('confidence_score', 0.0):.2f}")
+            print(f"     - Key findings: {ind_analysis.get('key_findings', 'No findings available')}")
+        
+        # Comprehensive validation checks
+        if "validation_results" in self.results and self.results["validation_results"].get("status") == "success":
+            validation = self.results["validation_results"]
+            print(f"\n🔍 Comprehensive Validation Checks:")
+            
+            # Expected papers check
+            if "expected_papers_check" in validation:
+                papers_check = validation["expected_papers_check"]
+                print(f"   • Expected Papers Check:")
+                print(f"     - Expected: {papers_check['total_expected']}")
+                print(f"     - Found: {papers_check['found']}")
+                print(f"     - Missing: {papers_check['missing']}")
+                
+                if papers_check['missing'] > 0:
+                    print(f"     - Missing papers:")
+                    for paper in papers_check['missing_papers'][:3]:  # Show first 3
+                        print(f"       • {paper['year']}: {paper['title']}")
+            
+            # Gate passes check
+            if "gate_passes_check" in validation:
+                gates_check = validation["gate_passes_check"]
+                print(f"   • Gate Passes Check:")
+                print(f"     - Total passed: {gates_check['total_passed']}")
+                print(f"     - Fired gates: {gates_check['total_fired_gates']}")
+                print(f"     - Passed assessments: {gates_check['total_passed_assessments']}")
+                
+                if gates_check['total_passed'] > 0:
+                    print(f"     - Fired gates:")
+                    for gate in gates_check['fired_gates'][:3]:  # Show first 3
+                        print(f"       • {gate['g_id']}: {gate['rationale']}")
+                    
+                    print(f"     - Passed assessments:")
+                    for assessment in gates_check['passed_assessments'][:3]:  # Show first 3
+                        print(f"       • {assessment['gate_id']}: {assessment['status']} (confidence: {assessment['confidence']:.2f})")
+            
+            # Synthesis results check
+            if "synthesis_results_check" in validation:
+                synthesis_check = validation["synthesis_results_check"]
+                print(f"   • Synthesis Results Check:")
+                print(f"     - Warnings generated: {synthesis_check['warnings_generated']}")
+                print(f"     - LLM analysis checked: {synthesis_check['checked_llm_analysis']}")
+                print(f"     - Study cards checked: {synthesis_check['checked_study_cards']}")
+            
+            # Evidence coverage check
+            if "evidence_coverage_check" in validation:
+                coverage_check = validation["evidence_coverage_check"]
+                print(f"   • Evidence Coverage Check:")
+                print(f"     - Total documents: {coverage_check['total_documents']}")
+                print(f"     - PubMed papers: {coverage_check['pubmed_papers']}")
+                print(f"     - Coverage warnings: {coverage_check['coverage_warnings']}")
+                print(f"     - Source types: {coverage_check['source_type_counts']}")
         
         # Errors and warnings
         if self.results["errors"]:

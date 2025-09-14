@@ -8,7 +8,7 @@ import sys
 import asyncio
 from pathlib import Path
 
-from ncfd.synthesis.gpt5_thinking_hook import GPT5ThinkingHook
+from ncfd.synthesis.independent_llm_analysis import IndependentLLMAnalysis, trigger_independent_llm_analysis_sync
 from ncfd.config import get_config
 
 
@@ -51,7 +51,7 @@ async def run_async_example():
     print()
     
     # Initialize GPT-5 thinking hook
-    hook = GPT5ThinkingHook(api_key)
+    hook = IndependentLLMAnalysis(api_key)
     
     try:
         print("🔄 Step 1: Literature Review Agent")
@@ -175,7 +175,7 @@ def run_sync_example():
         print("🔄 Running complete GPT-5 analysis...")
         
         # Run complete analysis
-        result = trigger_gpt5_analysis_sync(
+        result = trigger_independent_llm_analysis_sync(
             trial_id=trial_data["trial_id"],
             nct_id=trial_data["nct_id"],
             indication=trial_data["indication"],

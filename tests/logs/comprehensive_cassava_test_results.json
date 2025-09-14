@@ -1,10 +1,10 @@
 {
   "test_info": {
-    "start_time": "2025-09-14T01:26:11.999154+00:00",
+    "start_time": "2025-09-14T04:36:28.593509+00:00",
     "test_name": "Comprehensive Cassava Pipeline Test",
     "version": "1.0",
-    "end_time": "2025-09-14T01:30:45.937806+00:00",
-    "duration_seconds": 273.938652
+    "end_time": "2025-09-14T04:38:57.293830+00:00",
+    "duration_seconds": 148.700321
   },
   "database_setup": {
     "status": "success",
@@ -46,20 +46,13 @@
     "status": "success",
     "main_trial": "NCT05515666",
     "trials_processed": 1,
-    "documents_created": 20,
-    "document_links": 20,
-    "pubmed_documents": 20,
-    "retrieval_documents": 20,
-    "processed_documents": 16,
+    "documents_created": 18,
+    "document_links": 18,
+    "pubmed_documents": 18,
+    "retrieval_documents": 18,
+    "processed_documents": 15,
     "retrieval_metrics": {},
     "document_details": [
-      {
-        "pmid": "39239266",
-        "title": "Expression of concern: Simufilam suppresses overactive mTOR and restores its sensitivity to insulin ...",
-        "retrieval_tier": "Unknown",
-        "policy_engine_passed": false,
-        "guardrails_passed": false
-      },
       {
         "pmid": "39009358",
         "title": "Scientist who worked on Cassava's Alzheimer drug simufilam charged with fraud.",
@@ -68,8 +61,8 @@
         "guardrails_passed": false
       },
       {
-        "pmid": "36934371",
-        "title": "Assessing preparedness for Alzheimer disease-modifying therapies in Australasian health care systems...",
+        "pmid": "39239266",
+        "title": "Expression of concern: Simufilam suppresses overactive mTOR and restores its sensitivity to insulin ...",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
@@ -77,13 +70,6 @@
       {
         "pmid": "34295950",
         "title": "Altered filamin A enables amyloid beta-induced tau hyperphosphorylation and neuroinflammation in Alz...",
-        "retrieval_tier": "Unknown",
-        "policy_engine_passed": false,
-        "guardrails_passed": false
-      },
-      {
-        "pmid": "38215913",
-        "title": "Navigating the dementia landscape: Biomarkers and emerging therapies.",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
@@ -103,13 +89,6 @@
         "guardrails_passed": false
       },
       {
-        "pmid": "37457922",
-        "title": "Simufilam suppresses overactive mTOR and restores its sensitivity to insulin in Alzheimer's disease ...",
-        "retrieval_tier": "Unknown",
-        "policy_engine_passed": false,
-        "guardrails_passed": false
-      },
-      {
         "pmid": "40141124",
         "title": "Comment on Wang et al. Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's...",
         "retrieval_tier": "Unknown",
@@ -122,12 +101,34 @@
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
+      },
+      {
+        "pmid": "37457922",
+        "title": "Simufilam suppresses overactive mTOR and restores its sensitivity to insulin in Alzheimer's disease ...",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "32920628",
+        "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients.",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "38215913",
+        "title": "Navigating the dementia landscape: Biomarkers and emerging therapies.",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
       }
     ],
     "pipeline_result": {
       "success": true,
-      "documents_processed": 20,
+      "documents_processed": 18,
       "errors": [],
+      "error_count": 0,
       "stages_completed": 2
     }
   },
@@ -136,43 +137,57 @@
     "main_trial": "NCT05515666",
     "trials_processed": 1,
     "total_gates_generated": 0,
-    "total_conclusions_generated": 0,
+    "total_conclusions_generated": 1,
     "gate_details": [],
-    "conclusion_details": [],
+    "conclusion_details": [
+      {
+        "decision": "UNCERTAIN",
+        "confidence": 0.0,
+        "reasoning": "No reasoning",
+        "passed_gates": 0,
+        "failed_gates": 0
+      }
+    ],
     "results": [
       {
         "trial_id": 2,
         "nct_id": "NCT05515666",
-        "success": false,
+        "success": true,
         "document_cards": 1,
-        "evidence_spans": 8,
+        "evidence_spans": 4,
         "claims": 0,
         "method_cards": 0,
         "results_factsheets": 0,
         "gate_candidates": 0,
         "gate_specs": 0,
         "gate_assessments": 0,
-        "decision_record": false,
+        "decision_record": true,
         "gates": [],
-        "conclusions": [],
-        "errors": [
-          "Quality gate: Gates section missing - no gate assessments generated"
+        "conclusions": [
+          {
+            "decision": "UNCERTAIN",
+            "confidence": 0.0,
+            "reasoning": "No reasoning",
+            "passed_gates": 0,
+            "failed_gates": 0
+          }
         ],
+        "errors": [],
         "warnings": []
       }
     ]
   },
   "orchestrator_testing": {
     "status": "success",
-    "execution_id": "cassava_test_1757813172",
-    "total_processing_time": 123.902814,
+    "execution_id": "cassava_test_1757824588",
+    "total_processing_time": 63.882005,
     "ctgov_result": {
       "success": false,
       "trials_processed": 0
     },
     "pubmed_result": {
       "success": true,
-      "documents_processed": 18
+      "documents_processed": 16
     },
     "study_card_result": {
       "success": true,
@@ -186,7 +201,7 @@
     "entity_counts": {
       "companies": 1,
       "trials": 4,
-      "documents": 20,
+      "documents": 18,
       "studies": 0
     },
     "relationships": {
@@ -199,5 +214,72 @@
     }
   },
   "errors": [],
-  "warnings": []
+  "warnings": [
+    "\u26a0\ufe0f  WARNING: 1 expected Cassava papers were NOT retrieved:",
+    "   \u2022 2021: Effects of simufilam on CSF biomarkers in Alzheimer's (CSF biomarker effects paper)",
+    "\u26a0\ufe0f  PMCID DETECTION ISSUE: PMID 39239266 should have PMCID PMC11543719 but has PMC11375796",
+    "\u26a0\ufe0f  PMCID DETECTION ISSUE: PMID 37762230 should have PMCID PMC10530843 but has PMC10531384",
+    "\u26a0\ufe0f  PMCID DETECTION ISSUE: PMID 32075941 should have PMCID PMC7342663 but has PMC12290962",
+    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 39239266 has PMCID PMC11375796 but no full text content retrieved",
+    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 34295950 has PMCID PMC8294116 but no full text content retrieved",
+    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 22815492 has PMCID PMC6621293 but no full text content retrieved",
+    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 40141124 has PMCID PMC11942311 but no full text content retrieved",
+    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 37762230 has PMCID PMC10531384 but no full text content retrieved",
+    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 37457922 has PMCID PMC10339288 but no full text content retrieved",
+    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 33935797 has PMCID PMC8080444 but no full text content retrieved",
+    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 36457865 has PMCID PMC9706102 but no full text content retrieved",
+    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 32075941 has PMCID PMC12290962 but no full text content retrieved",
+    "\u26a0\ufe0f  WARNING: Limited source type diversity - only ['Paper'] found"
+  ],
+  "independent_llm_analysis": {
+    "status": "success",
+    "trial_id": 2,
+    "nct_id": "NCT05515666",
+    "literature_review": {
+      "papers_found": 0,
+      "summary": "No summary available"
+    },
+    "independent_analysis": {
+      "risk_assessment": "Unknown",
+      "confidence_score": 0.0,
+      "key_findings": "No findings available"
+    },
+    "full_result": {
+      "trial_id": "2",
+      "nct_id": "NCT05515666",
+      "timestamp": "2025-09-14T04:38:57.208589+00:00",
+      "literature_confidence": 0.85,
+      "relevant_trials_count": 3,
+      "relevant_papers_count": 3,
+      "search_queries": [
+        "\"Alzheimer Disease\" AND \"Phase PHASE3\" AND \"clinical trial\"",
+        "\"Alzheimer Disease\" AND \"ADAS-Cog11\" AND \"clinical trial\"",
+        "\"Alzheimer Disease\" AND \"systematic review\" AND \"meta-analysis\"",
+        "\"Alzheimer Disease\" AND \"pivotal trial\" AND \"FDA approval\""
+      ],
+      "gpt5_p_fail": 0.15,
+      "mechanistic_analysis": "The trial NCT05515666 targets Alzheimer's Disease, focusing on cognitive decline as measured by ADAS-Cog11. The mechanism likely involves amyloid-beta targeting, similar to Aducanumab and Lecanemab, which have shown success in reducing amyloid plaques and slowing cognitive decline. However, the failure of Solanezumab, which also targeted amyloid-beta, suggests variability in outcomes within this class.",
+      "class_prior_analysis": "Historically, amyloid-beta targeting therapies have had mixed results. Aducanumab and Lecanemab have shown success, leading to regulatory approvals, while Solanezumab failed to meet its primary endpoint. This indicates a moderate class prior with some successful precedents but also notable failures.",
+      "independent_risk_factors": [
+        "Variability in amyloid-beta response",
+        "Potential for cognitive endpoint variability"
+      ],
+      "agreement_with_deterministic": 0.85,
+      "additional_insights": [
+        "The trial's focus on ADAS-Cog11 is consistent with successful trials, but variability in cognitive endpoints remains a concern.",
+        "Regulatory precedents for amyloid-beta therapies are mixed, with recent approvals providing some optimism."
+      ],
+      "research_sources": [
+        "Efficacy and Safety of Aducanumab in Patients With Early Alzheimer's Disease: A Randomized, Double-Blind, Placebo-Controlled, Phase 3 Trial (2021)",
+        "Lecanemab in Early Alzheimer's Disease: Results from a Phase 3 Trial (2022)",
+        "Solanezumab for Mild Dementia Due to Alzheimer's Disease: Results from the EXPEDITION3 Trial (2018)"
+      ],
+      "confidence_level": "Medium",
+      "strong_red_flags": [],
+      "recommendation": "Proceed with cautious optimism. While there is a moderate risk of failure due to historical variability in amyloid-beta targeting therapies, recent successes provide a positive outlook.",
+      "analysis_quality": "Medium",
+      "disagreement_level": 0.15,
+      "recommendation_strength": 0
+    }
+  }
 }

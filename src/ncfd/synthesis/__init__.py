@@ -10,9 +10,9 @@ from .evidence_constrained_synthesis import (
     Sentence,
     SynthesisConfig
 )
-from .gpt5_thinking_hook import (
-    GPT5ThinkingHook,
-    trigger_gpt5_analysis_sync,
+from .independent_llm_analysis import (
+    IndependentLLMAnalysis,
+    trigger_independent_llm_analysis_sync,
     LiteratureReviewAgent,
     IndependentAnalysisAgent,
     LiteratureResult,
@@ -26,8 +26,8 @@ __all__ = [
     "Ref",
     "Sentence",
     "SynthesisConfig",
-    "GPT5ThinkingHook",
-    "trigger_gpt5_analysis_sync",
+    "IndependentLLMAnalysis",
+    "trigger_independent_llm_analysis_sync",
     "LiteratureReviewAgent",
     "IndependentAnalysisAgent",
     "LiteratureResult",

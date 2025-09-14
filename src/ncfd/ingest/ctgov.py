@@ -9,8 +9,6 @@ from dataclasses import dataclass
 from datetime import date, timezone, datetime
 from typing import Generator, Iterable, List, Optional, Tuple, Dict, Any
 
-# Alias for timezone.utc for convenience
-UTC = timezone.utc
 import hashlib
 import json
 import os
@@ -19,6 +17,7 @@ import time
 import logging
 
 import requests
+from ..logging import get_logger
 from bs4 import BeautifulSoup
 
 from .ctgov_types import (
@@ -30,6 +29,8 @@ from .ctgov_types import (
 DEFAULT_BASE_URL = "https://clinicaltrials.gov/api/v2"
 SESSION = requests.Session()
 SESSION.headers.update({"Accept": "application/json"})
+
+logger = get_logger(__name__)
 
 
 def _parse_date(value: Optional[str]) -> Optional[date]:
@@ -269,7 +270,7 @@ class CtgovClient:
             mesh_terms=mesh_terms,
             study_documents=study_documents,
             raw_jsonb=study,
-            extracted_at=datetime.now(UTC)
+            extracted_at=datetime.now(timezone.utc)
         )
 
     def extract_fields(self, study: dict) -> NormalizedFields:
@@ -721,13 +722,26 @@ def _main() -> None:
     seen = 0
     for st in c.iter_studies(since=since, page_size=page_size):
         fields = c.extract_fields(st)
-        print(fields.nct_id, fields.phase, fields.status, fields.intervention_types, fields.last_update_posted_date)
+        logger.info(
+            "ctgov.study.processed",
+            f"Processed study: {fields.nct_id}",
+            nct_id=fields.nct_id,
+            phase=fields.phase.value if fields.phase else None,
+            status=fields.status.value if fields.status else None,
+            intervention_types=[it.value for it in fields.intervention_types] if fields.intervention_types else [],
+            last_update_posted_date=fields.last_update_posted_date.isoformat() if fields.last_update_posted_date else None
+        )
         seen += 1
-        if seen >= max(page_size, 20):  # don’t spam terminal
+        if seen >= max(page_size, 20):  # don't spam terminal
             break
 
     if seen == 0:
-        print("No studies matched (after client-side filtering). Try widening CTG_SINCE or page size.")
+        logger.warn(
+            "ctgov.study.no_matches",
+            "No studies matched (after client-side filtering). Try widening CTG_SINCE or page size.",
+            since=since.isoformat() if since else None,
+            page_size=page_size
+        )
 
 
 if __name__ == "__main__":

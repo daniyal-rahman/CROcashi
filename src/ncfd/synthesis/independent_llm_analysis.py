@@ -1,5 +1,5 @@
 """
-GPT-5 Thinking Hook Implementation
+Independent LLM Analysis Implementation
 
 Two-agent system:
 1. Literature Review Agent: Finds relevant trials and literature
@@ -431,8 +431,8 @@ STRONG RED FLAGS (only include if VERY strong):
         return summary
 
 
-class GPT5ThinkingHook:
-    """Complete GPT-5 thinking hook with two-agent system."""
+class IndependentLLMAnalysis:
+    """Complete independent LLM analysis with two-agent system."""
     
     def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o"):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
@@ -553,7 +553,7 @@ class GPT5ThinkingHook:
 
 
 # Convenience function for synchronous usage
-def trigger_gpt5_analysis_sync(
+def trigger_independent_llm_analysis_sync(
     trial_id: str,
     nct_id: str,
     indication: str,
@@ -563,8 +563,8 @@ def trigger_gpt5_analysis_sync(
     mechanism: Optional[str] = None,
     p_fail: float = 0.0
 ) -> Dict[str, Any]:
-    """Synchronous wrapper for GPT-5 analysis."""
-    hook = GPT5ThinkingHook(api_key)
+    """Synchronous wrapper for independent LLM analysis."""
+    hook = IndependentLLMAnalysis(api_key)
     return asyncio.run(hook.trigger_thinking_analysis(
         trial_id=trial_id,
         nct_id=nct_id,

@@ -283,7 +283,9 @@ class AbstractProcessor:
                 for doc in documents:
                     pmid = doc.get('pmid')
                     if pmid and pmid in abstract_result:
-                        abstract_text = abstract_result[pmid]  # efetch_abstracts_xml returns Dict[str, str]
+                        # efetch_abstracts_xml now returns Dict[str, Dict[str, Any]]
+                        abstract_data = abstract_result[pmid]
+                        abstract_text = abstract_data.get('abstract', '') if isinstance(abstract_data, dict) else str(abstract_data)
                         if abstract_text and abstract_text.strip():
                             doc['abstract'] = abstract_text
                             abstracts_fetched += 1

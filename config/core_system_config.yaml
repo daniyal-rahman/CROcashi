@@ -2,36 +2,53 @@
 
 profile_defaults: &defaults
   logging:
+    # Basic configuration
     level: INFO
-    json: true
+    json_format: true
+    console: true
+    log_file: "logs/ncfd_pipeline.log"
     
-    # Enhanced logging configuration
-    enable_logging: true
-    log_format: "json"
-    structured_logging: true
+    # Structured logging configuration
+    enable_structured_logging: true
+    enforce_event_taxonomy: true
+    include_context: true
     
     # Log rotation
     max_log_size_mb: 100
     max_log_files: 10
     log_retention_days: 30
     
-    # Structured logging
-    include_timestamps: true
-    include_execution_id: true
-    include_pipeline_name: true
-    
-    # Log destinations
-    log_to_file: true
-    log_to_console: true
-    log_to_syslog: false
-    
     # Context tracking
     enable_context_tracking: true
-    log_context_vars: ["run_id", "trial_id", "task_id", "task_type"]
+    auto_include_git_info: true
+    auto_include_system_info: true
     
-    # Metrics
+    # IO tracing configuration
+    io_trace_mode: "errors"  # off|errors|sample:0.05|all
+    io_trace_blobs: false  # Store full payloads for debugging
+    io_trace_blob_dir: "/tmp/ncfd_io_blobs"
+    io_trace_include: ["ncfd.llm.", "ncfd.ingest.", "ncfd.extract."]
+    io_trace_exclude: ["ncfd.ingest.ctgov.raw_xml"]
+    
+    # Metrics and monitoring
     enable_metrics: true
     metrics_log_interval: 300  # 5 minutes
+    enable_performance_logging: true
+    
+    # Error handling
+    enable_error_context: true
+    include_stack_traces: true
+    enable_actionable_errors: true
+    
+    # LLM logging
+    enable_llm_cost_tracking: true
+    enable_llm_token_tracking: true
+    enable_llm_redaction: true
+    
+    # Decision transparency
+    enable_decision_logging: true
+    include_evidence_refs: true
+    include_reasoning_chain: true
 
   database:
     # Prefer DSN from env; these serve as fallbacks

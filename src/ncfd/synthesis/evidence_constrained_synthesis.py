@@ -486,5 +486,5 @@ class EvidenceConstrainedSynthesizer:
         return doc
 
 
-# Import the new GPT-5 thinking hook
-from .gpt5_thinking_hook import GPT5ThinkingHook, trigger_gpt5_analysis_sync
+# Import the new independent LLM analysis
+from .independent_llm_analysis import IndependentLLMAnalysis, trigger_independent_llm_analysis_sync
