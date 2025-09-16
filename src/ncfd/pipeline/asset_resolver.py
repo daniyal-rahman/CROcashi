@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from ..db.models import Asset, AssetAlias, AssetOwnership, Company, Trial
+from ..db.models import Asset, AssetOwnership, Company, Trial
 from ..mapping.normalize import norm_name, norm_name_loose
 
 
@@ -226,28 +226,29 @@ class AssetResolver:
         
         return matches
     
-    def _find_exact_matches(self, session: Session, normalized_name: str) -> List[AssetAlias]:
-        """Find exact matches in asset aliases."""
-        return session.query(AssetAlias).filter(
-            AssetAlias.alias_norm == normalized_name
+    def _find_exact_matches(self, session: Session, normalized_name: str) -> List[Asset]:
+        """Find exact matches in asset names (asset_aliases table removed)."""
+        # Since asset_aliases table is removed, match against asset names directly
+        return session.query(Asset).filter(
+            Asset.names_jsonb.op('->>')('inn') == normalized_name
         ).all()
     
-    def _find_fuzzy_matches(self, session: Session, normalized_name: str) -> List[AssetAlias]:
-        """Find fuzzy matches using trigram similarity."""
-        # Use PostgreSQL trigram similarity for fuzzy matching
+    def _find_fuzzy_matches(self, session: Session, normalized_name: str) -> List[Asset]:
+        """Find fuzzy matches using trigram similarity on asset names."""
+        # Use PostgreSQL trigram similarity on asset names since asset_aliases is removed
         query = text("""
-            SELECT aa.*, similarity(aa.alias_norm, :name) as sim_score
-            FROM asset_aliases aa
-            WHERE aa.alias_norm % :name
+            SELECT a.*, similarity(a.names_jsonb->>'inn', :name) as sim_score
+            FROM assets a
+            WHERE a.names_jsonb->>'inn' % :name
             ORDER BY sim_score DESC
             LIMIT 5
         """)
         
         result = session.execute(query, {'name': normalized_name})
-        return [AssetAlias(**row._asdict()) for row in result]
+        return [Asset(**row._asdict()) for row in result]
     
-    def _disambiguate_matches(self, session: Session, matches: List[AssetAlias], 
-                             sponsor_company_id: Optional[int]) -> AssetAlias:
+    def _disambiguate_matches(self, session: Session, matches: List[Asset], 
+                             sponsor_company_id: Optional[int]) -> Asset:
         """Disambiguate between multiple asset matches."""
         if len(matches) == 1:
             return matches[0]
@@ -280,9 +281,9 @@ class AssetResolver:
         if drug_name.confidence < 0.8:
             return None
         
-        # Check if already exists
-        existing = session.query(AssetAlias).filter(
-            AssetAlias.alias_norm == drug_name.normalized
+        # Check if already exists (asset_aliases table removed)
+        existing = session.query(Asset).filter(
+            Asset.names_jsonb.op('->>')('inn') == drug_name.normalized
         ).first()
         
         if existing:
@@ -306,15 +307,7 @@ class AssetResolver:
             session.add(asset)
             session.flush()
             
-            # Create alias
-            alias = AssetAlias(
-                asset_id=asset.asset_id,
-                alias=drug_name.original,
-                alias_norm=drug_name.normalized,
-                alias_type=drug_name.name_type,
-                source='ctgov_ingest'
-            )
-            session.add(alias)
+            # Note: AssetAlias table removed, aliases now stored in Asset.names_jsonb
             
             self.logger.info(f"Created new asset {asset.asset_id} for '{drug_name.original}'")
             return asset.asset_id

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from ..workers.base_worker import BaseWorker, WorkerResult
-from ...db.models import BaseSpan, Document, DocumentTextPage, DocumentTable
+from ...db.models import BaseSpan, Document, DocumentText, DocumentTable
 from ...db.session import get_session
 from ..sentencizer import get_sentencizer, SentenceSpan
 
@@ -138,31 +138,34 @@ class BaseSpanIngestWorker(BaseWorker):
             )
     
     def _generate_text_spans(self, session, document: Document) -> List[BaseSpan]:
-        """Generate spans from document text pages."""
+        """Generate spans from document text."""
         spans = []
         
-        # Get text pages
-        text_pages = session.query(DocumentTextPage).filter(
-            DocumentTextPage.doc_id == document.doc_id
-        ).order_by(DocumentTextPage.page_no).all()
+        # Get document text (fulltext or abstract)
+        doc_text = session.query(DocumentText).filter(
+            DocumentText.doc_id == document.doc_id
+        ).first()
         
-        for page in text_pages:
-            # Generate sentence spans
-            sentence_spans = self._extract_sentences(
-                page.text, 
-                document.doc_id, 
-                page.page_no
-            )
-            spans.extend(sentence_spans)
-            
-            # Optionally generate paragraph spans
-            if self.config.include_paragraph_spans:
-                paragraph_spans = self._extract_paragraphs(
-                    page.text,
-                    document.doc_id,
-                    page.page_no
+        if doc_text:
+            # Use fulltext if available, otherwise abstract
+            text_content = doc_text.fulltext_text or doc_text.abstract_text
+            if text_content:
+                # Generate sentence spans
+                sentence_spans = self._extract_sentences(
+                    text_content, 
+                    document.doc_id, 
+                    1  # Use page 1 as default since we don't have pages anymore
                 )
-                spans.extend(paragraph_spans)
+                spans.extend(sentence_spans)
+                
+                # Optionally generate paragraph spans
+                if self.config.include_paragraph_spans:
+                    paragraph_spans = self._extract_paragraphs(
+                        text_content,
+                        document.doc_id,
+                        1  # Use page 1 as default since we don't have pages anymore
+                    )
+                    spans.extend(paragraph_spans)
         
         return spans
     

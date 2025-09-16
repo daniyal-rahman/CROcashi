@@ -11,9 +11,9 @@ from datetime import datetime, timezone
 Base = declarative_base()
 
 
-class MethodCard(Base):
-    """SQLAlchemy model for method_cards table."""
-    __tablename__ = 'method_cards'
+class StudyCard(Base):
+    """SQLAlchemy model for study_cards table."""
+    __tablename__ = 'study_cards'
     
     id = Column(Integer, primary_key=True)
     doc_id = Column(String, nullable=False)
@@ -44,11 +44,21 @@ class MethodCard(Base):
     adjudication_committee = Column(Boolean, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    
+    # New versioning columns
+    version = Column(Integer, nullable=False, default=1)
+    authored_by = Column(String, nullable=True)
+    model_name = Column(String, nullable=True)
+    p_fail = Column(Float, nullable=True)
+    gates_json = Column(JSON, nullable=True)
+    summary_text = Column(Text, nullable=True)
+    risks_text = Column(Text, nullable=True)
+    methods_text = Column(Text, nullable=True)
 
 
-class ResultsFactsheet(Base):
-    """SQLAlchemy model for results_factsheets table."""
-    __tablename__ = 'results_factsheets'
+class Factsheet(Base):
+    """SQLAlchemy model for factsheets table."""
+    __tablename__ = 'factsheets'
     
     id = Column(Integer, primary_key=True)
     doc_id = Column(String, nullable=False)
@@ -86,9 +96,9 @@ class GateAssessment(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
-class EvidenceSpan(Base):
-    """SQLAlchemy model for evidence_spans table."""
-    __tablename__ = 'evidence_spans'
+class Span(Base):
+    """SQLAlchemy model for spans table."""
+    __tablename__ = 'spans'
     
     id = Column(Integer, primary_key=True)
     doc_id = Column(String, nullable=False)
@@ -97,19 +107,10 @@ class EvidenceSpan(Base):
     page = Column(Integer, nullable=True)
     char_start = Column(Integer, nullable=True)
     char_end = Column(Integer, nullable=True)
-    line_start = Column(Integer, nullable=True)
-    line_end = Column(Integer, nullable=True)
     confidence = Column(Float, nullable=True)
     table_id = Column(String, nullable=True)
     table_row = Column(Integer, nullable=True)
     table_col = Column(Integer, nullable=True)
-    table_header_ids = Column(JSON, nullable=True)
-    figure_id = Column(String, nullable=True)
-    supplementary_id = Column(String, nullable=True)
-    kind = Column(String, nullable=True)
-    parent_span_ids = Column(JSON, nullable=True)
-    internal_id = Column(String, nullable=True)
-    status = Column(String, nullable=True)
-    span_metadata = Column(JSON, nullable=True)
+    snippet_hash = Column(String, nullable=True)
+    bbox_json = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))

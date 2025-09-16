@@ -71,7 +71,6 @@ CertaintyEnum = PGEnum("low", "med", "high", name="certainty_enum", create_type=
 RunStatusEnum = SQLEnum("success", "failed", "partial", name="run_status_enum")
 AssignmentType = SQLEnum("sale", "license", "security", name="assignment_type")
 ArtifactType = SQLEnum("model", "data", "report", "config", name="artifact_type")
-LRScopeEnum = SQLEnum("gate", "signal", name="lr_scope")
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +94,6 @@ class Company(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationships
-    aliases: Mapped[List["CompanyAlias"]] = relationship(back_populates="company", cascade="all, delete-orphan")
     securities: Mapped[List["Security"]] = relationship(back_populates="company", cascade="all, delete-orphan")
     assets: Mapped[List["AssetOwnership"]] = relationship(back_populates="company")
     trials: Mapped[List["Trial"]] = relationship(back_populates="sponsor_company")
@@ -111,20 +109,6 @@ class Company(Base):
     )
 
 
-class CompanyAlias(Base):
-    __tablename__ = "company_aliases"
-
-    alias_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    company_id: Mapped[int] = mapped_column(ForeignKey("companies.company_id", ondelete="CASCADE"), nullable=False)
-    alias: Mapped[str] = mapped_column(Text, nullable=False)
-    source: Mapped[str] = mapped_column(Text, nullable=False)
-    valid_from: Mapped[Optional[date]] = mapped_column(Date)
-    valid_to: Mapped[Optional[date]] = mapped_column(Date)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    company: Mapped["Company"] = relationship(back_populates="aliases")
-
-    __table_args__ = (Index("idx_company_aliases_company_id", "company_id"),)
 
 
 class Security(Base):
@@ -166,7 +150,6 @@ class Asset(Base):
     ownership: Mapped[List["AssetOwnership"]] = relationship(back_populates="asset", cascade="all, delete-orphan")
     studies: Mapped[List["Study"]] = relationship(back_populates="asset")
     patents: Mapped[List["Patent"]] = relationship(back_populates="asset")
-    aliases: Mapped[List["AssetAlias"]] = relationship(back_populates="asset", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_assets_names_jsonb", "names_jsonb", postgresql_using="gin"),
@@ -509,24 +492,6 @@ class Score(Base):
     )
 
 
-class LRTable(Base):
-    """Likelihood ratio tables - configurable calibration per gate/universe"""
-    __tablename__ = "lr_tables"
-
-    lr_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    scope: Mapped[str] = mapped_column(LRScopeEnum, nullable=False)
-    id_code: Mapped[str] = mapped_column(Text, nullable=False)
-    universe_tag: Mapped[str] = mapped_column(Text, nullable=False)
-    lr_value: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)
-    ci_low: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6))
-    ci_high: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6))
-    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
-    effective_to: Mapped[Optional[date]] = mapped_column(Date)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    __table_args__ = (
-        Index("idx_lr_tables_id_universe_effective", "id_code", "universe_tag", "effective_from"),
-    )
 
 # ---------------------------------------------------------------------------
 # Catalyst Timing & Evaluation
@@ -679,14 +644,12 @@ class Document(Base):
 
     # Relationships
     text: Mapped[Optional["DocumentText"]] = relationship(back_populates="document", uselist=False, cascade="all, delete-orphan")
-    text_pages: Mapped[List["DocumentTextPage"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     tables: Mapped[List["DocumentTable"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     citations: Mapped[List["DocumentCitation"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     entities: Mapped[List["DocumentEntity"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     links: Mapped[List["DocumentLink"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     notes: Mapped[List["DocumentNote"]] = relationship(back_populates="document", cascade="all, delete-orphan")
-    base_spans: Mapped[List["BaseSpan"]] = relationship(back_populates="document", cascade="all, delete-orphan")
-    derived_spans: Mapped[List["DerivedSpan"]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    spans: Mapped[List["Span"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     # Trials are linked through DocumentLink table
     # trials: Mapped[List["Trial"]] = relationship(back_populates="documents")
     trial_candidates: Mapped[List["TrialDocCandidate"]] = relationship(back_populates="document", cascade="all, delete-orphan")
@@ -732,22 +695,6 @@ class DocumentText(Base):
     )
 
 
-class DocumentTextPage(Base):
-    """Document text pages table - extracted text content by page."""
-    __tablename__ = "document_text_pages"
-
-    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    page_no: Mapped[int] = mapped_column(Integer, nullable=False)
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-    char_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-
-    # Relationships
-    document: Mapped["Document"] = relationship(back_populates="text_pages")
-
-    __table_args__ = (
-        PrimaryKeyConstraint('doc_id', 'page_no'),
-        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE')
-    )
 
 
 class DocumentTable(Base):
@@ -874,115 +821,38 @@ class DocumentNote(Base):
 
 
 # ---------------------------------------------------------------------------
-# BaseSpan and DerivedSpan Models
+# Span Models (Simplified)
 # ---------------------------------------------------------------------------
 
-class BaseSpan(Base):
-    """Base spans table - immutable sentence-level or table-cell slices with stable location anchors."""
-    __tablename__ = "base_spans"
+class Span(Base):
+    """Simplified spans table - text spans with location information."""
+    __tablename__ = "spans"
 
-    span_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    section: Mapped[str] = mapped_column(Text, nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    doc_id: Mapped[str] = mapped_column(String, nullable=False)
+    quote: Mapped[str] = mapped_column(Text, nullable=False)
+    section: Mapped[str] = mapped_column(String, nullable=False)
     page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    char_start: Mapped[int] = mapped_column(Integer, nullable=False)
-    char_end: Mapped[int] = mapped_column(Integer, nullable=False)
-    text: Mapped[str] = mapped_column(Text, nullable=False)  # Cleaned/normalized text
-    text_original: Mapped[str] = mapped_column(Text, nullable=False)  # Original text slice
-    is_table_cell: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    table_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    row: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    col: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    
-    # Relationships
-    document: Mapped["Document"] = relationship(back_populates="base_spans")
-    derived_spans: Mapped[List["DerivedSpan"]] = relationship(
-        "DerivedSpan", 
-        secondary="base_span_derived_span_association",
-        back_populates="parent_base_spans"
-    )
-    
-    __table_args__ = (
-        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
-        Index("ix_base_spans_doc_id", "doc_id"),
-        Index("ix_base_spans_section", "section"),
-        Index("ix_base_spans_page", "page"),
-        Index("ix_base_spans_char_range", "char_start", "char_end"),
-        Index("ix_base_spans_table", "table_id", "row", "col"),
-        Index("ix_base_spans_text_original", "text_original"),
-        CheckConstraint("char_end > char_start", name="ck_base_spans_char_range"),
-        CheckConstraint("char_start >= 0", name="ck_base_spans_char_start_positive")
-    )
-
-
-class DerivedSpan(Base):
-    """Derived spans table - contiguous char ranges aligned by fuzzy matcher when quotes don't exactly match BaseSpans."""
-    __tablename__ = "derived_spans"
-
-    derived_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    char_start: Mapped[int] = mapped_column(Integer, nullable=False)
-    char_end: Mapped[int] = mapped_column(Integer, nullable=False)
-    parent_span_ids: Mapped[List[int]] = mapped_column(ARRAY(Integer), nullable=False)
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-    similarity_score: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    
-    # Relationships
-    document: Mapped["Document"] = relationship(back_populates="derived_spans")
-    parent_base_spans: Mapped[List["BaseSpan"]] = relationship(
-        "BaseSpan", 
-        secondary="base_span_derived_span_association",
-        back_populates="derived_spans"
-    )
-    
-    __table_args__ = (
-        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
-        Index("ix_derived_spans_doc_id", "doc_id"),
-        Index("ix_derived_spans_char_range", "char_start", "char_end"),
-        Index("ix_derived_spans_parent_ids", "parent_span_ids", postgresql_using="gin"),
-        CheckConstraint("char_end > char_start", name="ck_derived_spans_char_range"),
-        CheckConstraint("char_start >= 0", name="ck_derived_spans_char_start_positive"),
-        CheckConstraint("similarity_score >= 0.0 AND similarity_score <= 1.0", name="ck_derived_spans_similarity_range")
-    )
-
-
-# Association table for many-to-many relationship between BaseSpan and DerivedSpan
-class BaseSpanDerivedSpanAssociation(Base):
-    """Association table for BaseSpan and DerivedSpan many-to-many relationship."""
-    __tablename__ = "base_span_derived_span_association"
-
-    base_span_id: Mapped[int] = mapped_column(Integer, ForeignKey("base_spans.span_id"), primary_key=True)
-    derived_span_id: Mapped[int] = mapped_column(Integer, ForeignKey("derived_spans.derived_id"), primary_key=True)
-    
-    __table_args__ = (
-        Index("ix_base_derived_assoc_base", "base_span_id"),
-        Index("ix_base_derived_assoc_derived", "derived_span_id")
-    )
-
-
-class AssetAlias(Base):
-    """Asset aliases table - normalized asset names and codes."""
-    __tablename__ = "asset_aliases"
-
-    asset_alias_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    asset_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    alias: Mapped[str] = mapped_column(Text, nullable=False)
-    alias_norm: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    alias_type: Mapped[str] = mapped_column(Text, nullable=False)
-    source: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    char_start: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    char_end: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    table_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    table_row: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    table_col: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    snippet_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    bbox_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     # Relationships
-    asset: Mapped["Asset"] = relationship(back_populates="aliases")
+    document: Mapped["Document"] = relationship(back_populates="spans")
 
     __table_args__ = (
-        Index("ix_asset_aliases_lower_alias", "alias"),
-        Index("ix_asset_aliases_asset_id", "asset_id"),
-        Index("ix_asset_aliases_alias_norm", "alias_norm"),
-        ForeignKeyConstraint(['asset_id'], ['assets.asset_id'], ondelete='CASCADE'),
-        CheckConstraint("alias_type::text = ANY (ARRAY['inn','internal_code','generic','brand','misspelling','db_id','code']::text[])", name='ck_asset_aliases_alias_type'),
+        Index("ix_spans_doc_id", "doc_id"),
+        Index("ix_spans_section", "section"),
+        Index("ix_spans_char_range", "char_start", "char_end"),
     )
+
+
 
 # ---------------------------------------------------------------------------
 # PubMed Literature System Models
@@ -1144,31 +1014,6 @@ class EntityPack(Base):
     )
 
 
-class EntityAlias(Base):
-    """Entity aliases for search and linking."""
-    __tablename__ = "entity_aliases"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    entity_id: Mapped[str] = mapped_column(Text, nullable=False)
-    alias_type: Mapped[str] = mapped_column(Text, nullable=False)  # 'asset', 'company', 'indication', 'mechanism'
-    alias_value: Mapped[str] = mapped_column(Text, nullable=False)
-    alias_norm: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    confidence: Mapped[float] = mapped_column(Float, nullable=False, server_default='1.0')
-    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default='false')
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    __table_args__ = (
-        Index("ix_entity_aliases_entity_id", "entity_id"),
-        Index("ix_entity_aliases_alias_type", "alias_type"),
-        Index("ix_entity_aliases_alias_value", "alias_value"),
-        Index("ix_entity_aliases_alias_norm", "alias_norm"),
-        ForeignKeyConstraint(['entity_id'], ['entity_packs.entity_id'], ondelete='CASCADE'),
-        CheckConstraint(
-            "alias_type IN ('asset','company','indication','mechanism','nct_id')",
-            name="ck_entity_aliases_alias_type_valid",
-        ),
-        CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_entity_aliases_confidence_range"),
-    )
 
 
 class EntitySearchResult(Base):

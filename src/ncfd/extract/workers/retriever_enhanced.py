@@ -9,7 +9,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 from .base_worker import BaseWorker, WorkerResult
 from ..models import DocumentCard
-from ...db.models import Document, DocumentTextPage, DocumentText
+from ...db.models import Document, DocumentText
 from ...db.session import get_session
 
 logger = logging.getLogger(__name__)
@@ -242,17 +242,7 @@ class EnhancedRetriever(BaseWorker):
                 if not internal_doc_id:
                     return ""
                 
-                # First try text pages
-                text_pages = session.query(DocumentTextPage).filter(
-                    DocumentTextPage.doc_id == internal_doc_id
-                ).order_by(DocumentTextPage.page_no).all()
-                
-                if text_pages:
-                    combined_text = "\n".join([page.text for page in text_pages])
-                    print(f"Retrieved {len(combined_text)} characters of raw text from text_pages")
-                    return combined_text
-                
-                # Try document_text table (fulltext first, then abstracts)
+                # Get text from document_text table (fulltext first, then abstracts)
                 doc_text = session.query(DocumentText).filter(
                     DocumentText.doc_id == internal_doc_id
                 ).first()
@@ -369,16 +359,7 @@ class EnhancedRetriever(BaseWorker):
                             if len(doc_text.fulltext_text) >= 1500:
                                 adequate_fulltext_count += 1
                         
-                        # Check text pages as alternative
-                        elif session.query(DocumentTextPage).filter(
-                            DocumentTextPage.doc_id == doc.doc_id
-                        ).count() > 0:
-                            text_pages = session.query(DocumentTextPage).filter(
-                                DocumentTextPage.doc_id == doc.doc_id
-                            ).all()
-                            total_text_length = sum(len(page.text or '') for page in text_pages)
-                            if total_text_length >= 1500:
-                                adequate_fulltext_count += 1
+                        # Note: text pages table has been removed, only using document_text table
                 
                 # Validation criteria
                 if adequate_fulltext_count == 0:

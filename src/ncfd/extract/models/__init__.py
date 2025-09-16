@@ -6,7 +6,7 @@ This package contains all the data models for the study card system.
 
 from .base import BaseModel, ProvenanceMixin
 from .document_card import DocumentCard
-from .evidence_span import EvidenceSpan
+from .evidence_span import Span
 from .evidence_field import EvidenceField
 from .claim import Claim
 from .method_card import MethodCard
@@ -21,7 +21,7 @@ __all__ = [
     "BaseModel",
     "ProvenanceMixin", 
     "DocumentCard",
-    "EvidenceSpan",
+    "Span",
     "EvidenceField",
     "Claim",
     "MethodCard",

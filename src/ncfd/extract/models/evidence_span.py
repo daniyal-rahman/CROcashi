@@ -12,7 +12,7 @@ import uuid
 
 
 @dataclass
-class EvidenceSpan:
+class Span:
     """A span of text extracted from a document."""
     
     # Document identification
@@ -151,7 +151,7 @@ class EvidenceSpan:
         """Check if this is a figure span."""
         return self.section.lower() == "figure" and self.figure_id is not None
     
-    def overlaps_with(self, other: 'EvidenceSpan') -> bool:
+    def overlaps_with(self, other: 'Span') -> bool:
         """Check if this span overlaps with another span."""
         if self.doc_id != other.doc_id or self.page != other.page:
             return False
@@ -161,7 +161,7 @@ class EvidenceSpan:
         
         return not (self.char_end <= other.char_start or other.char_end <= self.char_start)
     
-    def get_overlap_ratio(self, other: 'EvidenceSpan') -> float:
+    def get_overlap_ratio(self, other: 'Span') -> float:
         """Calculate the overlap ratio with another span."""
         if not self.overlaps_with(other):
             return 0.0
