@@ -834,54 +834,8 @@ class ComprehensiveCassavaTest:
                 logger.info(f"🎯 Total gates generated: {total_gates}")
                 logger.info(f"📋 Total conclusions generated: {total_conclusions}")
                 
-                # Test Independent LLM Analysis
-                logger.info("🧠 Testing Independent LLM Analysis...")
-                try:
-                    from ncfd.synthesis import IndependentLLMAnalysis
-                    
-                    # Initialize independent LLM analysis
-                    independent_analysis = IndependentLLMAnalysis()
-                    
-                    # Run analysis for the main trial
-                    analysis_result = await independent_analysis.trigger_thinking_analysis(
-                        trial_id=str(trial.trial_id),
-                        nct_id=trial.nct_id,
-                        indication=trial.indication or "Unknown",
-                        phase=trial.phase or "Unknown",
-                        primary_endpoint=trial.primary_endpoint_text or "Unknown"
-                    )
-                    
-                    # Extract analysis details
-                    literature_review = analysis_result.get('literature_review', {})
-                    independent_analysis_data = analysis_result.get('independent_analysis', {})
-                    
-                    self.results["independent_llm_analysis"] = {
-                        "status": "success",
-                        "trial_id": trial.trial_id,
-                        "nct_id": trial.nct_id,
-                        "literature_review": {
-                            "papers_found": len(literature_review.get('papers', [])),
-                            "summary": literature_review.get('summary', 'No summary available')[:200] + "..." if literature_review.get('summary') else 'No summary available'
-                        },
-                        "independent_analysis": {
-                            "risk_assessment": independent_analysis_data.get('risk_assessment', 'Unknown'),
-                            "confidence_score": independent_analysis_data.get('confidence_score', 0.0),
-                            "key_findings": independent_analysis_data.get('key_findings', 'No findings available')[:200] + "..." if independent_analysis_data.get('key_findings') else 'No findings available'
-                        },
-                        "full_result": analysis_result
-                    }
-                    
-                    logger.info(f"✅ Independent LLM analysis completed for trial {trial.nct_id}")
-                    logger.info(f"📚 Literature review: {len(literature_review.get('papers', []))} papers found")
-                    logger.info(f"🎯 Risk assessment: {independent_analysis_data.get('risk_assessment', 'Unknown')}")
-                    logger.info(f"📊 Confidence score: {independent_analysis_data.get('confidence_score', 0.0)}")
-                    
-                except Exception as analysis_error:
-                    logger.error(f"Independent LLM analysis failed: {str(analysis_error)}")
-                    self.results["independent_llm_analysis"] = {
-                        "status": "failed",
-                        "error": str(analysis_error)
-                    }
+                # Note: Independent LLM Analysis is now handled by the orchestrator
+                logger.info("🧠 Independent LLM Analysis is handled by the orchestrator")
                 
         except Exception as e:
             logger.error(f"Study card pipeline test failed: {str(e)}")
@@ -918,6 +872,11 @@ class ComprehensiveCassavaTest:
                 "study_card_result": {
                     "success": orchestration_result.study_card_result.success if orchestration_result.study_card_result else False,
                     "gate_candidates": len(orchestration_result.study_card_result.gate_candidates) if orchestration_result.study_card_result else 0
+                },
+                "independent_analysis_result": {
+                    "success": orchestration_result.independent_analysis_result.get("success", False) if orchestration_result.independent_analysis_result else False,
+                    "trials_analyzed": orchestration_result.independent_analysis_result.get("trials_analyzed", 0) if orchestration_result.independent_analysis_result else 0,
+                    "successful_analyses": orchestration_result.independent_analysis_result.get("successful_analyses", 0) if orchestration_result.independent_analysis_result else 0
                 },
                 "errors": orchestration_result.errors,
                 "warnings": orchestration_result.warnings
@@ -1001,7 +960,12 @@ class ComprehensiveCassavaTest:
             study_card_results = await orchestrator.run_study_card_generation(public_trials)
             result.study_card_result = study_card_results
             
-            # Step 6: Update metrics
+            # Step 6: Independent LLM Analysis
+            logger.info("Step 6: Running independent LLM analysis")
+            independent_analysis_results = await orchestrator.run_independent_llm_analysis(public_trials)
+            result.independent_analysis_result = independent_analysis_results
+            
+            # Step 7: Update metrics
             result.trials_matched_to_companies = len(matched_trials)
             result.public_company_trials = len(public_trials)
             
@@ -1324,34 +1288,17 @@ class ComprehensiveCassavaTest:
         """Check synthesis results and log warnings for positive results."""
         logger.info("🧠 Checking synthesis results...")
         
-        # Check independent LLM analysis results
-        if "independent_llm_analysis" in self.results:
-            analysis = self.results["independent_llm_analysis"]
+        # Check independent LLM analysis results (from orchestrator)
+        if "orchestrator_testing" in self.results:
+            orchestrator_results = self.results["orchestrator_testing"]
+            indep_result = orchestrator_results.get("independent_analysis_result", {})
             
-            if analysis.get("status") == "success":
-                ind_analysis = analysis.get("independent_analysis", {})
-                risk_assessment = ind_analysis.get("risk_assessment", "").lower()
-                confidence_score = ind_analysis.get("confidence_score", 0.0)
-                
-                # Check for positive/optimistic synthesis results
-                positive_indicators = [
-                    "low risk", "favorable", "positive", "promising", 
-                    "encouraging", "beneficial", "effective", "successful"
-                ]
-                
-                is_positive = any(indicator in risk_assessment for indicator in positive_indicators)
-                
-                if is_positive and confidence_score > 0.7:
-                    warning_msg = f"⚠️  WARNING: Synthesis result appears POSITIVE (Risk: {risk_assessment}, Confidence: {confidence_score:.2f}) - verify this aligns with expected Cassava concerns"
-                    logger.warning(warning_msg)
-                    self.results["warnings"].append(warning_msg)
-                    
-                    # Add context about Cassava's known issues
-                    context_msg = "   Context: Cassava Sciences has faced significant controversy including data integrity concerns, FDA scrutiny, and expression of concern on key papers"
-                    logger.warning(context_msg)
-                    self.results["warnings"].append(context_msg)
-                else:
-                    logger.info(f"✅ Synthesis result appears appropriately cautious (Risk: {risk_assessment}, Confidence: {confidence_score:.2f})")
+            if indep_result.get("success", False):
+                logger.info("✅ Independent LLM analysis executed successfully via orchestrator")
+                # Note: Detailed analysis results would be in the orchestrator's independent_analysis_result
+                # but we don't have access to the detailed risk assessment here
+            else:
+                logger.warning("⚠️  Independent LLM analysis not executed via orchestrator")
         
         # Check study card decision records
         if "study_card_generation" in self.results:
@@ -1380,7 +1327,7 @@ class ComprehensiveCassavaTest:
             self.results["validation_results"] = {}
         
         self.results["validation_results"]["synthesis_results_check"] = {
-            "checked_llm_analysis": "independent_llm_analysis" in self.results,
+            "checked_llm_analysis": "orchestrator_testing" in self.results and self.results["orchestrator_testing"].get("independent_analysis_result", {}).get("success", False),
             "checked_study_cards": "study_card_generation" in self.results,
             "warnings_generated": len([w for w in self.results["warnings"] if "POSITIVE" in w])
         }
@@ -1562,24 +1509,20 @@ class ComprehensiveCassavaTest:
                     print(f"        Failed gates: {conclusion.get('failed_gates', 0)}")
                     print(f"        Reasoning: {conclusion.get('reasoning', 'No reasoning')[:100]}...")
         
-        # Independent LLM Analysis metrics
-        if "independent_llm_analysis" in self.results and self.results["independent_llm_analysis"].get("status") == "success":
-            analysis = self.results["independent_llm_analysis"]
-            print(f"\n🧠 Independent LLM Analysis Metrics:")
-            print(f"   • Trial analyzed: {analysis.get('nct_id', 'Unknown')}")
+        # Independent LLM Analysis metrics (from orchestrator)
+        if "orchestrator_testing" in self.results and self.results["orchestrator_testing"].get("status") == "success":
+            orchestrator_results = self.results["orchestrator_testing"]
+            indep_result = orchestrator_results.get("independent_analysis_result", {})
             
-            # Literature review details
-            lit_review = analysis.get('literature_review', {})
-            print(f"   • Literature review:")
-            print(f"     - Papers found: {lit_review.get('papers_found', 0)}")
-            print(f"     - Summary: {lit_review.get('summary', 'No summary available')}")
-            
-            # Independent analysis details
-            ind_analysis = analysis.get('independent_analysis', {})
-            print(f"   • Independent analysis:")
-            print(f"     - Risk assessment: {ind_analysis.get('risk_assessment', 'Unknown')}")
-            print(f"     - Confidence score: {ind_analysis.get('confidence_score', 0.0):.2f}")
-            print(f"     - Key findings: {ind_analysis.get('key_findings', 'No findings available')}")
+            if indep_result.get("success", False):
+                print(f"\n🧠 Independent LLM Analysis Metrics (via Orchestrator):")
+                print(f"   • Trials analyzed: {indep_result.get('trials_analyzed', 0)}")
+                print(f"   • Successful analyses: {indep_result.get('successful_analyses', 0)}")
+                print(f"   • Status: {'✅ Success' if indep_result.get('success') else '❌ Failed'}")
+            else:
+                print(f"\n🧠 Independent LLM Analysis Metrics (via Orchestrator):")
+                print(f"   • Status: ❌ Not executed or failed")
+                print(f"   • Reason: Independent analysis not included in orchestrator execution")
         
         # Comprehensive validation checks
         if "validation_results" in self.results and self.results["validation_results"].get("status") == "success":

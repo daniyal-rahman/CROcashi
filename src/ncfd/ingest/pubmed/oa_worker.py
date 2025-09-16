@@ -382,12 +382,19 @@ class OAWorker:
                 if not doc:
                     return None
                 
-                # Get citation data
+                # First try to get PMCID from citation table
                 citation = session.query(DocumentCitation).filter(
                     DocumentCitation.doc_id == doc.doc_id
                 ).first()
                 
-                return citation.pmcid if citation else None
+                if citation and citation.pmcid:
+                    return citation.pmcid
+                
+                # Fallback: check if PMCID is stored directly in document table
+                if doc.pmcid:
+                    return doc.pmcid
+                
+                return None
                 
         except Exception as e:
             self.logger.error(f"Error getting stored PMCID for PMID {pmid}: {e}")

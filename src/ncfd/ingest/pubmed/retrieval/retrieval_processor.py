@@ -308,7 +308,7 @@ class RetrievalProcessor:
             # Log rate limiting & retries summary
             rate_limit_info = self.client.get_rate_limit_info()
             logger.info(f"Rate limiting & retries summary:")
-            logger.info(f"  esearch_calls={len(query_tiers)}, efetch_calls=0, retries={rate_limit_info['consecutive_failures']}, total_api_time={execution_time:.1f}s")
+            logger.info(f"  esearch_calls={rate_limit_info['esearch_calls']}, efetch_calls={rate_limit_info['efetch_calls']}, retries={rate_limit_info['consecutive_failures']}, total_api_time={execution_time:.1f}s")
             
             logger.info(f"Retrieval processing completed in {execution_time:.2f}s: {len(scored_documents)} documents (stored for human verification)")
             

@@ -8,6 +8,7 @@ documents + raw text → LLM quotes → backtraced spans → workers
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Tuple
@@ -189,9 +190,9 @@ class StudyCardPipeline:
         require_gates = quality_config.get('require_gates', True)
         min_llm_artifacts = quality_config.get('min_llm_artifacts', 1)
         
-        # Check document analysis
-        if len(result.document_cards) < min_documents:
-            errors.append(f"Insufficient documents analyzed: {len(result.document_cards)} < {min_documents}")
+        # Check document analysis - always require at least 1 document
+        if len(result.document_cards) < max(1, min_documents):
+            errors.append(f"Insufficient documents analyzed: {len(result.document_cards)} < {max(1, min_documents)}")
         
         # Check quotes (from evidence spans)
         quote_count = len(result.evidence_spans)
@@ -202,13 +203,15 @@ class StudyCardPipeline:
         if len(result.evidence_spans) < min_evidence_spans:
             errors.append(f"Insufficient evidence spans: {len(result.evidence_spans)} < {min_evidence_spans}")
         
-        # Check method card
-        if require_method and not result.method_card:
-            errors.append("Method section missing - no method card generated")
+        # Check method card - always require if we have documents
+        if len(result.document_cards) > 0 and (require_method or not result.method_card):
+            if not result.method_card:
+                errors.append("Method section missing - no method card generated")
         
-        # Check results factsheet
-        if require_results and not result.results_factsheet:
-            errors.append("Results section missing - no results factsheet generated")
+        # Check results factsheet - always require if we have documents
+        if len(result.document_cards) > 0 and (require_results or not result.results_factsheet):
+            if not result.results_factsheet:
+                errors.append("Results section missing - no results factsheet generated")
         
         # Check gates
         if require_gates and len(result.gate_assessments) == 0:
@@ -270,6 +273,10 @@ class StudyCardPipeline:
             raw_doc_texts = prioritized_docs['raw_doc_texts']
             
             logger.info(f"Prioritization stats: {rate_stats}")
+            
+            # Stage 1.6: Full text retrieval for documents with PMCIDs
+            logger.info("Stage 1.6: Full text retrieval for documents with PMCIDs")
+            await self._retrieve_full_texts(result.document_cards, raw_doc_texts)
             
             # Stage 2: Direct LLM processing using our working components
             logger.info("Stage 2: Direct LLM processing")
@@ -503,12 +510,16 @@ class StudyCardPipeline:
             logger.info("Final Stage: Quality gate validation")
             is_valid, quality_errors = self._validate_study_card_quality(result)
             
+            # Get quality config for logging
+            quality_config = self.config.get('quality_gate', {})
+            min_quotes = quality_config.get('min_quotes', 3)
+            min_llm_artifacts = quality_config.get('min_llm_artifacts', 1)
+            
             if not is_valid:
                 logger.error(f"Study card failed quality gate validation: {quality_errors}")
                 result.errors.extend([f"Quality gate: {error}" for error in quality_errors])
                 
                 # Check if we should fail hard or just warn
-                quality_config = self.config.get('quality_gate', {})
                 fail_on_quality_gate = quality_config.get('fail_on_validation', True)
                 
                 if fail_on_quality_gate:
@@ -524,11 +535,11 @@ class StudyCardPipeline:
                 logger.info("✅ Study card passed quality gate validation")
                 logger.info("🎉 QUALITY GATE VALIDATION DETAILS:")
                 logger.info(f"   📄 Documents Analyzed: {len(result.document_cards)} (≥ 1 required)")
-                logger.info(f"   📝 Quotes Extracted: {len(result.evidence_spans)} (≥ 3 required)")
+                logger.info(f"   📝 Quotes Extracted: {len(result.evidence_spans)} (≥ {min_quotes} required)")
                 logger.info(f"   📋 Method Card: {'✅ Generated' if result.method_card else '❌ Missing'}")
                 logger.info(f"   📊 Results Factsheet: {'✅ Generated' if result.results_factsheet else '❌ Missing'}")
                 logger.info(f"   🚪 Gate Assessments: {'✅ Generated' if result.gate_assessments else '❌ Missing'}")
-                logger.info(f"   🔧 LLM Artifacts: {len(result.llm_artifacts)} (≥ 1 required)")
+                logger.info(f"   🔧 LLM Artifacts: {len(result.llm_artifacts)} (≥ {min_llm_artifacts} required)")
             
             # Stage: Decision Record Generation
             logger.info("Final Stage: Decision record generation")
@@ -745,43 +756,57 @@ class StudyCardPipeline:
             from ncfd.db.session import session_scope
             from ncfd.db.models import Document, DocumentText, DocumentLink
             
+            # Use document_cards as the source of truth instead of database query
+            # This ensures we only prioritize documents that were actually retrieved
+            if not document_cards:
+                logger.warning(f"No document cards provided for trial {trial_id}")
+                return {'document_cards': [], 'raw_doc_texts': {}}, {
+                    "total_documents": 0, 
+                    "total_candidates": 0,
+                    "selected_documents": 0,
+                    "priority_counts": {},
+                    "text_availability": {},
+                    "rs_score_stats": {},
+                    "rate_limit_applied": False
+                }
+            
+            # Get document details from database for prioritization
+            doc_ids = [doc_card.doc_id for doc_card in document_cards]
+            
             with session_scope() as session:
-                # Get all documents linked to this trial with R/S scores via TrialDocCandidate
-                from ncfd.db.models import TrialDocCandidate
                 documents = session.query(Document, DocumentText).outerjoin(
                     DocumentText, Document.doc_id == DocumentText.doc_id
-                ).join(
-                    TrialDocCandidate, Document.doc_id == TrialDocCandidate.doc_id
-                ).filter(
-                    TrialDocCandidate.trial_id == trial_id,
-                    TrialDocCandidate.stage == 'U1_abstract',  # Only U1_abstract stage has abstracts and R/S scores
-                    TrialDocCandidate.selected == True
-                ).all()
+                ).filter(Document.doc_id.in_(doc_ids)).all()
                 
-                if not documents:
-                    logger.warning(f"No documents found for trial {trial_id}")
-                    return {'document_cards': [], 'raw_doc_texts': {}}, {
-                        "total_documents": 0, 
-                        "total_candidates": 0,
-                        "selected_documents": 0,
-                        "priority_counts": {},
-                        "text_availability": {},
-                        "rs_score_stats": {},
-                        "rate_limit_applied": False
+                # Create a lookup map for document details
+                doc_details = {}
+                for doc, doc_text in documents:
+                    doc_details[doc.doc_id] = {
+                        'doc': doc,
+                        'doc_text': doc_text,
+                        'has_full_text': bool(doc_text and doc_text.fulltext_text and len(doc_text.fulltext_text.strip()) > 0),
+                        'has_abstract': bool(doc_text and doc_text.abstract_text and len(doc_text.abstract_text.strip()) > 0)
                     }
                 
-                # Convert to processing candidates with prioritization
+                # Convert document cards to processing candidates with prioritization
                 candidates = []
-                logger.info(f"DEBUG: Processing {len(documents)} documents from database query")
-                for i, (doc, doc_text) in enumerate(documents):
-                    # Check text availability
-                    has_full_text = bool(doc_text and doc_text.fulltext_text and len(doc_text.fulltext_text.strip()) > 0)
-                    has_abstract = bool(doc_text and doc_text.abstract_text and len(doc_text.abstract_text.strip()) > 0)
+                logger.info(f"DEBUG: Processing {len(document_cards)} document cards from retrieval")
+                
+                for i, doc_card in enumerate(document_cards):
+                    doc_info = doc_details.get(doc_card.doc_id)
+                    if not doc_info:
+                        logger.warning(f"No database details found for doc_id {doc_card.doc_id}")
+                        continue
+                    
+                    doc = doc_info['doc']
+                    doc_text = doc_info['doc_text']
+                    has_full_text = doc_info['has_full_text']
+                    has_abstract = doc_info['has_abstract']
                     
                     # Determine priority based on R/S scores and text availability
                     priority = self._determine_document_priority(
                         doc.r_score, doc.r_tier, doc.s_score, doc.s_tier,
-                        has_full_text, has_abstract
+                        has_full_text, has_abstract, doc
                     )
                     
                     logger.info(f"DEBUG: Document {i+1}: doc_id={doc.doc_id}, priority={priority}, has_text={has_full_text or has_abstract}")
@@ -829,9 +854,7 @@ class StudyCardPipeline:
                 for candidate in selected_candidates:
                     # Find matching document card from original retrieval
                     matching_doc_card = None
-                    logger.info(f"DEBUG: Looking for doc_id {candidate['doc_id']} in {len(document_cards)} document_cards")
                     for doc_card in document_cards:
-                        logger.info(f"DEBUG: Checking doc_card.doc_id = {doc_card.doc_id}")
                         if doc_card.doc_id == candidate['doc_id']:
                             matching_doc_card = doc_card
                             break
@@ -861,10 +884,63 @@ class StudyCardPipeline:
                 
         except Exception as e:
             logger.error(f"Error applying document prioritization for trial {trial_id}: {e}")
-            return {'document_cards': document_cards, 'raw_doc_texts': raw_doc_texts}, {"error": str(e)}
+            logger.warning("Falling back to simple sort by R/S score")
+            
+            # Fallback: simple sort by R/S score and limit to top documents
+            try:
+                from ncfd.db.session import session_scope
+                from ncfd.db.models import Document
+                
+                # Get document details for sorting
+                doc_ids = [doc_card.doc_id for doc_card in document_cards]
+                with session_scope() as session:
+                    documents = session.query(Document).filter(Document.doc_id.in_(doc_ids)).all()
+                    doc_lookup = {doc.doc_id: doc for doc in documents}
+                
+                # Sort by R/S score (convert Decimal to float)
+                def sort_key(doc_card):
+                    doc = doc_lookup.get(doc_card.doc_id)
+                    if not doc:
+                        return 0.0
+                    r_score = float(doc.r_score) if doc.r_score is not None else 0.0
+                    s_score = float(doc.s_score) if doc.s_score is not None else 0.0
+                    return (r_score + s_score) / 2.0
+                
+                sorted_cards = sorted(document_cards, key=sort_key, reverse=True)
+                
+                # Limit to top documents (configurable, default to 1)
+                top_k = getattr(self.config, 'method_docs_top_k', 1)
+                limited_cards = sorted_cards[:top_k]
+                
+                # Filter out obvious non-study documents
+                filtered_cards = []
+                for doc_card in limited_cards:
+                    doc = doc_lookup.get(doc_card.doc_id)
+                    if doc and self._is_study_document(doc):
+                        filtered_cards.append(doc_card)
+                
+                # Use filtered cards or fall back to limited cards
+                final_cards = filtered_cards if filtered_cards else limited_cards
+                
+                # Build corresponding raw texts
+                final_raw_texts = {card.doc_id: raw_doc_texts.get(card.doc_id, "") for card in final_cards}
+                
+                logger.info(f"Fallback prioritization: {len(final_cards)} documents selected from {len(document_cards)} candidates")
+                
+                return {
+                    'document_cards': final_cards,
+                    'raw_doc_texts': final_raw_texts
+                }, {"error": str(e), "fallback_used": True, "documents_selected": len(final_cards)}
+                
+            except Exception as fallback_error:
+                logger.error(f"Fallback prioritization also failed: {fallback_error}")
+                # Last resort: return first document only
+                single_card = document_cards[:1] if document_cards else []
+                single_raw_texts = {card.doc_id: raw_doc_texts.get(card.doc_id, "") for card in single_card}
+                return {'document_cards': single_card, 'raw_doc_texts': single_raw_texts}, {"error": str(e), "fallback_failed": True}
     
-    def _determine_document_priority(self, r_score, r_tier, s_score, s_tier, has_full_text, has_abstract):
-        """Determine document priority based on R/S scores and text availability."""
+    def _determine_document_priority(self, r_score, r_tier, s_score, s_tier, has_full_text, has_abstract, doc=None):
+        """Determine document priority based on R/S scores, text availability, and document characteristics."""
         
         # Convert tiers to scores if scores are missing
         if r_score is None and r_tier:
@@ -872,28 +948,81 @@ class StudyCardPipeline:
         if s_score is None and s_tier:
             s_score = self._tier_to_score(s_tier)
         
-        # Default to low scores if missing
-        r_score = r_score or 0.0
-        s_score = s_score or 0.0
+        # Convert to float to avoid Decimal + float errors
+        r_score = float(r_score) if r_score is not None else 0.0
+        s_score = float(s_score) if s_score is not None else 0.0
         
-        # High priority: R≥2 AND S≥2 AND has text (full text preferred, abstract acceptable)
-        if (r_score >= 0.6 and s_score >= 0.6 and (has_full_text or has_abstract)):
+        # Boost priority for documents with PMCID (proxy for full text availability)
+        pmcid_boost = 0.0
+        if doc and hasattr(doc, 'pmcid') and doc.pmcid:
+            pmcid_boost = 0.2
+        
+        # Boost priority for clinical trial publications
+        clinical_trial_boost = 0.0
+        if doc and hasattr(doc, 'publication_type') and doc.publication_type:
+            pub_type = doc.publication_type.lower()
+            if any(term in pub_type for term in ['clinical trial', 'randomized controlled trial', 'controlled clinical trial']):
+                clinical_trial_boost = 0.3
+        
+        # Boost priority for documents with NCT IDs
+        nct_boost = 0.0
+        if doc and hasattr(doc, 'title') and doc.title:
+            title = doc.title.lower()
+            if 'nct' in title or 'clinicaltrials.gov' in title:
+                nct_boost = 0.2
+        
+        # Apply boosts
+        effective_r_score = r_score + pmcid_boost + clinical_trial_boost + nct_boost
+        effective_s_score = s_score + pmcid_boost + clinical_trial_boost + nct_boost
+        
+        # HIGH priority: Strong R/S scores OR PMCID presence OR clinical trial
+        if (effective_r_score >= 0.5 or effective_s_score >= 0.5) and (has_full_text or has_abstract):
             return "HIGH"
         
-        # Medium priority: R≥2 OR S≥2 AND has text (full text preferred, abstract acceptable)
-        if ((r_score >= 0.6 or s_score >= 0.6) and (has_full_text or has_abstract)):
+        # MEDIUM priority: Moderate R/S scores OR PMCID presence
+        if (effective_r_score >= 0.3 or effective_s_score >= 0.3) and (has_full_text or has_abstract):
             return "MEDIUM"
         
-        # Low priority: R≥1 OR S≥1 AND has text (full text preferred, abstract acceptable)
-        if ((r_score >= 0.4 or s_score >= 0.4) and (has_full_text or has_abstract)):
+        # LOW priority: Any R/S score with text
+        if (effective_r_score >= 0.1 or effective_s_score >= 0.1) and (has_full_text or has_abstract):
             return "LOW"
         
-        # Fallback: Any R/S score with abstract only (no full text)
-        if ((r_score >= 0.4 or s_score >= 0.4) and has_abstract and not has_full_text):
+        # FALLBACK: Any R/S score with abstract only
+        if (effective_r_score >= 0.1 or effective_s_score >= 0.1) and has_abstract and not has_full_text:
             return "FALLBACK"
         
         # Default to low priority
         return "LOW"
+    
+    def _is_study_document(self, doc) -> bool:
+        """Filter out obvious non-study documents (news, editorials, etc.)."""
+        if not doc:
+            return False
+        
+        # Check publication type
+        if hasattr(doc, 'publication_type') and doc.publication_type:
+            pub_type = doc.publication_type.lower()
+            # Exclude obvious non-study types
+            if any(term in pub_type for term in ['news', 'editorial', 'letter', 'comment', 'retraction']):
+                return False
+        
+        # Check title for study indicators
+        if hasattr(doc, 'title') and doc.title:
+            title = doc.title.lower()
+            # Must have some study-related terms
+            study_terms = ['study', 'trial', 'clinical', 'research', 'investigation', 'analysis', 'evaluation', 'assessment']
+            if not any(term in title for term in study_terms):
+                # Allow if it has method/result terms
+                method_terms = ['method', 'result', 'outcome', 'efficacy', 'safety', 'effect']
+                if not any(term in title for term in method_terms):
+                    return False
+        
+        # Check abstract length (too short might be non-study)
+        if hasattr(doc, 'abstract_text') and doc.abstract_text:
+            if len(doc.abstract_text.strip()) < 100:  # Very short abstracts are suspicious
+                return False
+        
+        return True
     
     def _tier_to_score(self, tier):
         """Convert R/S tier to approximate score."""
@@ -1135,4 +1264,129 @@ class StudyCardPipeline:
             
         except Exception as e:
             logger.error(f"Failed to generate comprehensive analysis: {e}")
+    
+    async def _retrieve_full_texts(self, document_cards: List[DocumentCard], raw_doc_texts: Dict[int, str]) -> None:
+        """
+        Retrieve full text for documents that have PMCIDs but no full text content.
+        
+        Args:
+            document_cards: List of document cards to process
+            raw_doc_texts: Dictionary of doc_id -> text content (will be updated)
+        """
+        try:
+            from ncfd.ingest.pubmed.client import PubMedClient
+            from ncfd.db.session import session_scope
+            from ncfd.db.models import Document, DocumentText
+            
+            # Initialize PubMed client with proper async context
+            async with PubMedClient() as client:
+                # Get documents with PMCIDs but no full text
+                documents_to_process = []
+                with session_scope() as session:
+                    for doc_card in document_cards:
+                        doc = session.query(Document).filter(Document.doc_id == doc_card.doc_id).first()
+                        if doc and doc.pmcid:
+                            # Check if we already have full text
+                            doc_text = session.query(DocumentText).filter(DocumentText.doc_id == doc.doc_id).first()
+                            has_full_text = bool(doc_text and doc_text.fulltext_text and len(doc_text.fulltext_text.strip()) > 0)
+                            
+                            if not has_full_text:
+                                documents_to_process.append({
+                                    'doc_id': doc.doc_id,
+                                    'pmid': doc.pmid,
+                                    'pmcid': doc.pmcid
+                                })
+                
+                if not documents_to_process:
+                    logger.info("No documents need full text retrieval")
+                    return
+                
+                logger.info(f"Retrieving full text for {len(documents_to_process)} documents with PMCIDs")
+                
+                # Process documents in batches
+                batch_size = 5
+                for i in range(0, len(documents_to_process), batch_size):
+                    batch = documents_to_process[i:i + batch_size]
+                    logger.info(f"Processing batch {i//batch_size + 1}: {len(batch)} documents")
+                    
+                    for doc_info in batch:
+                        try:
+                            logger.info(f"Retrieving full text for PMID {doc_info['pmid']} (PMCID: {doc_info['pmcid']})")
+                            
+                            # Try JATS XML first (most comprehensive)
+                            full_text = await client.get_pmc_full_text_jats(
+                                doc_info['pmcid'], 
+                                include_refs=True, 
+                                include_captions=True
+                            )
+                            
+                            # Fallback to plain text if JATS fails
+                            if not full_text:
+                                logger.warning(f"JATS fetch failed for {doc_info['pmcid']}, trying plain text fallback")
+                                full_text = await client.get_pmc_full_text(doc_info['pmcid'])
+                            
+                            if full_text:
+                                # Store in database
+                                await self._store_fulltext(doc_info['doc_id'], full_text, source='PMC')
+                                
+                                # Update raw_doc_texts for immediate use
+                                raw_doc_texts[doc_info['doc_id']] = full_text
+                                
+                                logger.info(f"✅ Retrieved {len(full_text)} characters for PMID {doc_info['pmid']}")
+                            else:
+                                logger.warning(f"❌ Failed to retrieve full text for PMID {doc_info['pmid']}")
+                                
+                        except Exception as e:
+                            logger.error(f"Error retrieving full text for PMID {doc_info['pmid']}: {e}")
+                    
+                    # Small delay between batches to be respectful to PMC
+                    if i + batch_size < len(documents_to_process):
+                        await asyncio.sleep(1)
+                
+                logger.info(f"Full text retrieval completed for {len(documents_to_process)} documents")
+            
+        except Exception as e:
+            logger.error(f"Error in full text retrieval: {e}")
+    
+    async def _store_fulltext(self, doc_id: int, full_text: str, source: str) -> bool:
+        """
+        Store full text in the database.
+        
+        Args:
+            doc_id: Document ID
+            full_text: Full text content
+            source: Source of the text (PMC, Unpaywall, etc.)
+            
+        Returns:
+            True if stored successfully, False otherwise
+        """
+        try:
+            from ncfd.db.session import session_scope
+            from ncfd.db.models import DocumentText
+            
+            with session_scope() as session:
+                # Check if DocumentText record exists
+                doc_text = session.query(DocumentText).filter(DocumentText.doc_id == doc_id).first()
+                
+                if doc_text:
+                    # Update existing record
+                    doc_text.fulltext_text = full_text
+                    doc_text.fulltext_source = source
+                    doc_text.fulltext_retrieved_at = datetime.now(timezone.utc)
+                else:
+                    # Create new record
+                    doc_text = DocumentText(
+                        doc_id=doc_id,
+                        fulltext_text=full_text,
+                        fulltext_source=source,
+                        fulltext_retrieved_at=datetime.now(timezone.utc)
+                    )
+                    session.add(doc_text)
+                
+                session.commit()
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error storing full text for doc_id {doc_id}: {e}")
+            return False
     

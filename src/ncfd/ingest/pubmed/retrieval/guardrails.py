@@ -149,20 +149,28 @@ class GuardrailsSystem:
         
         has_indication_signal = any(term.lower() in text for term in indication_terms if term)
         
+        # Also check for drug terms (expression of concern papers might not mention indication)
+        drug_terms = []
+        drug_terms.extend(entity_pack.asset.aliases)
+        drug_terms.append(entity_pack.asset.canonical)
+        has_drug_signal = any(term.lower() in text for term in drug_terms)
+        
         # Check for NCT ID (overrides indication requirement)
         nct_id = document.get('nct_id')
         has_nct_id = nct_id is not None and nct_id.strip() != ""
         
-        # Apply guardrail logic
-        if not has_indication_signal and not has_nct_id:
+        # Apply guardrail logic - accept if indication OR drug OR NCT ID is present
+        if not has_indication_signal and not has_drug_signal and not has_nct_id:
             return GuardrailResult(
                 passes_validation=False,
                 guardrail_name="indication_gate",
                 reason="No indication signal found and no NCT ID",
                 details={
                     "has_indication_signal": has_indication_signal,
+                    "has_drug_signal": has_drug_signal,
                     "has_nct_id": has_nct_id,
                     "indication_terms_found": [term for term in indication_terms if term and term.lower() in text],
+                    "drug_terms_found": [term for term in drug_terms if term.lower() in text],
                     "nct_id": nct_id
                 },
                 penalty_score=1.0
@@ -174,6 +182,7 @@ class GuardrailsSystem:
             reason="Indication signal found or NCT ID present",
             details={
                 "has_indication_signal": has_indication_signal,
+                "has_drug_signal": has_drug_signal,
                 "has_nct_id": has_nct_id
             }
         )
@@ -193,7 +202,14 @@ class GuardrailsSystem:
         drug_terms.extend(entity_pack.asset.aliases)
         drug_terms.append(entity_pack.asset.canonical)
         
+        # Also check for mechanism targets (e.g., "filamin A" for simufilam)
+        mechanism_terms = entity_pack.mechanism.targets if hasattr(entity_pack.mechanism, 'targets') else []
+        
         has_drug_in_tiab = any(term.lower() in text for term in drug_terms)
+        has_mechanism_in_tiab = any(term.lower() in text for term in mechanism_terms)
+        
+        # Accept if either drug OR mechanism target is mentioned
+        has_relevant_term = has_drug_in_tiab or has_mechanism_in_tiab
         
         # Check for NCT ID in secondary ID field
         nct_id = document.get('nct_id')
@@ -201,7 +217,7 @@ class GuardrailsSystem:
         
         # Apply guardrail logic
         field_coverage_met = False
-        if self.config.min_drug_field_coverage and has_drug_in_tiab:
+        if self.config.min_drug_field_coverage and has_relevant_term:
             field_coverage_met = True
         if self.config.min_nct_field_coverage and has_nct_in_si:
             field_coverage_met = True
@@ -215,8 +231,11 @@ class GuardrailsSystem:
                 reason="Insufficient field coverage",
                 details={
                     "has_drug_in_tiab": has_drug_in_tiab,
+                    "has_mechanism_in_tiab": has_mechanism_in_tiab,
+                    "has_relevant_term": has_relevant_term,
                     "has_nct_in_si": has_nct_in_si,
                     "drug_terms_found": [term for term in drug_terms if term.lower() in text],
+                    "mechanism_terms_found": [term for term in mechanism_terms if term.lower() in text],
                     "nct_id": nct_id,
                     "min_drug_coverage_required": self.config.min_drug_field_coverage,
                     "min_nct_coverage_required": self.config.min_nct_field_coverage
@@ -230,6 +249,8 @@ class GuardrailsSystem:
             reason="Sufficient field coverage",
             details={
                 "has_drug_in_tiab": has_drug_in_tiab,
+                "has_mechanism_in_tiab": has_mechanism_in_tiab,
+                "has_relevant_term": has_relevant_term,
                 "has_nct_in_si": has_nct_in_si
             }
         )

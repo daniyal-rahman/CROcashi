@@ -1445,7 +1445,9 @@ class PipelineOrchestrator:
             end_time = datetime.now(timezone.utc)
             
             analysis_summary = {
+                'success': len(successful_results) > 0,
                 'total_trials': len(trial_list),
+                'trials_analyzed': len(trial_list),
                 'successful_analyses': len(successful_results),
                 'failed_analyses': len(failed_results),
                 'start_time': start_time,
@@ -1463,8 +1465,10 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.error(f"Independent LLM analysis failed: {e}")
             return {
+                'success': False,
                 'error': str(e),
                 'total_trials': len(trial_list),
+                'trials_analyzed': 0,
                 'successful_analyses': 0,
                 'failed_analyses': len(trial_list)
             }

@@ -89,6 +89,11 @@ class PubMedClient:
         self.circuit_breaker_open = False
         self.circuit_breaker_open_until = None
         
+        # Call counters
+        self.esearch_calls = 0
+        self.efetch_calls = 0
+        self.esummary_calls = 0
+        
         # Session management
         self.session: Optional[aiohttp.ClientSession] = None
         
@@ -265,6 +270,15 @@ class PubMedClient:
         """Record a successful request."""
         self.consecutive_failures = 0
     
+    def _increment_call_counter(self, url: str):
+        """Increment appropriate call counter based on URL."""
+        if 'esearch' in url:
+            self.esearch_calls += 1
+        elif 'efetch' in url:
+            self.efetch_calls += 1
+        elif 'esummary' in url:
+            self.esummary_calls += 1
+    
     async def _make_request(
         self, 
         url: str, 
@@ -323,6 +337,7 @@ class PubMedClient:
                         try:
                             result = json.loads(text)
                             self._record_success()
+                            self._increment_call_counter(url)
                             return result
                         except json.JSONDecodeError as e:
                             logger.error(
@@ -337,6 +352,7 @@ class PubMedClient:
                     else:
                         # Return raw text for non-JSON responses
                         self._record_success()
+                        self._increment_call_counter(url)
                         return text
                         
             except aiohttp.ClientResponseError as e:
@@ -699,7 +715,11 @@ class PubMedClient:
                 'retmode': 'xml'
             })
             
-            logger.info(f"Fetching EFetch XML for {len(batch)} PMIDs")
+            logger.info(f"Fetching EFetch XML for {len(batch)} PMIDs", extra={
+                "event": "pubmed.efetch.start",
+                "message": f"Fetching EFetch XML for {len(batch)} PMIDs",
+                "pmid_count": len(batch)
+            })
             result = await self._make_request(self.EFETCH_URL, params, expect_json=False)
             
             if isinstance(result, str):
@@ -730,7 +750,11 @@ class PubMedClient:
         try:
             # Log XML root for debugging
             root = ET.fromstring(xml_text)
-            logger.debug(f"XML root tag: {root.tag}")
+            logger.debug(f"XML root tag: {root.tag}", extra={
+                "event": "pubmed.efetch.xml_parsed",
+                "message": f"XML root tag: {root.tag}",
+                "root_tag": root.tag
+            })
             
             # Accept both possible XML structures
             articles = root.findall('.//PubmedArticle')
@@ -770,7 +794,13 @@ class PubMedClient:
                 logger.warning(f"EFetch returned {len(returned_pmids)}/{len(pmids)} PMIDs; missing: {sorted(missing)[:10]}")
             
             abstract_count = len([k for k, v in content_map.items() if v["abstract"]])
-            logger.info(f"Parsed XML response: {abstract_count}/{len(pmids)} PMIDs with abstracts, {pmcid_count}/{len(pmids)} with PMCID")
+            logger.info(f"Parsed XML response: {abstract_count}/{len(pmids)} PMIDs with abstracts, {pmcid_count}/{len(pmids)} with PMCID", extra={
+                "event": "pubmed.efetch.done",
+                "message": f"Parsed XML response: {abstract_count}/{len(pmids)} PMIDs with abstracts, {pmcid_count}/{len(pmids)} with PMCID",
+                "abstract_count": abstract_count,
+                "pmcid_count": pmcid_count,
+                "total_pmids": len(pmids)
+            })
             
         except ET.ParseError as e:
             logger.error(f"Failed to parse XML response: {e}")
@@ -1341,7 +1371,11 @@ class PubMedClient:
             'retmode': 'text'
         })
         
-        logger.info(f"Fetching full text (plain) for PMCID: {pmcid}")
+        logger.info(f"Fetching full text (plain) for PMCID: {pmcid}", extra={
+            "event": "pmc.fulltext.fetch.start",
+            "message": f"Fetching full text (plain) for PMCID: {pmcid}",
+            "pmcid": pmcid
+        })
         try:
             result = await self._make_request(self.EFETCH_URL, params, expect_json=False)
             if isinstance(result, str):
@@ -1369,7 +1403,11 @@ class PubMedClient:
         params = self._get_base_params()
         params.update({'db': 'pmc', 'id': pmcid, 'retmode': 'xml'})
         
-        logger.info(f"Fetching full text (JATS XML) for PMCID: {pmcid}")
+        logger.info(f"Fetching full text (JATS XML) for PMCID: {pmcid}", extra={
+            "event": "pmc.fulltext.fetch.start",
+            "message": f"Fetching full text (JATS XML) for PMCID: {pmcid}",
+            "pmcid": pmcid
+        })
         try:
             xml_str = await self._make_request(self.EFETCH_URL, params, expect_json=False)
             if not isinstance(xml_str, str):
@@ -1380,41 +1418,76 @@ class PubMedClient:
             from lxml import etree
             root = etree.fromstring(xml_str.encode("utf-8"))
 
-            # Get namespace
-            ns = {'ns': root.nsmap.get(None) or root.nsmap.get('') or ''}
+            # Get namespace - handle both default and prefixed namespaces
+            default_ns = root.nsmap.get(None) or root.nsmap.get('')
+            if default_ns:
+                # Use a proper prefix for the default namespace
+                ns = {'ns': default_ns}
+            else:
+                # No namespace, use local-name() function
+                ns = {}
 
             # Extract sections
             chunks = []
 
             # Title & metadata
-            for node in root.xpath('.//ns:article-title', namespaces=ns):
-                chunks.append(' '.join(node.itertext()))
+            if ns:
+                for node in root.xpath('.//ns:article-title', namespaces=ns):
+                    chunks.append(' '.join(node.itertext()))
+            else:
+                for node in root.xpath('.//*[local-name()="article-title"]'):
+                    chunks.append(' '.join(node.itertext()))
 
             # Abstract(s)
-            for node in root.xpath('.//ns:abstract', namespaces=ns):
-                chunks.append(' '.join(node.itertext()))
+            if ns:
+                for node in root.xpath('.//ns:abstract', namespaces=ns):
+                    chunks.append(' '.join(node.itertext()))
+            else:
+                for node in root.xpath('.//*[local-name()="abstract"]'):
+                    chunks.append(' '.join(node.itertext()))
 
             # Main body
-            for node in root.xpath('.//ns:body', namespaces=ns):
-                chunks.append(' '.join(node.itertext()))
+            if ns:
+                for node in root.xpath('.//ns:body', namespaces=ns):
+                    chunks.append(' '.join(node.itertext()))
+            else:
+                for node in root.xpath('.//*[local-name()="body"]'):
+                    chunks.append(' '.join(node.itertext()))
 
             # Captions (figures/tables)
             if include_captions:
-                for node in root.xpath('.//ns:fig/ns:caption|.//ns:table-wrap/ns:caption', namespaces=ns):
-                    chunks.append(' '.join(node.itertext()))
+                if ns:
+                    for node in root.xpath('.//ns:fig/ns:caption|.//ns:table-wrap/ns:caption', namespaces=ns):
+                        chunks.append(' '.join(node.itertext()))
+                else:
+                    for node in root.xpath('.//*[local-name()="fig"]/*[local-name()="caption"]|.//*[local-name()="table-wrap"]/*[local-name()="caption"]'):
+                        chunks.append(' '.join(node.itertext()))
 
             # Footnotes / acknowledgments
-            for node in root.xpath('.//ns:fn-group|.//ns:ack', namespaces=ns):
-                chunks.append(' '.join(node.itertext()))
+            if ns:
+                for node in root.xpath('.//ns:fn-group|.//ns:ack', namespaces=ns):
+                    chunks.append(' '.join(node.itertext()))
+            else:
+                for node in root.xpath('.//*[local-name()="fn-group"]|.//*[local-name()="ack"]'):
+                    chunks.append(' '.join(node.itertext()))
 
             # References
             if include_refs:
-                for node in root.xpath('.//ns:ref-list', namespaces=ns):
-                    chunks.append(' '.join(node.itertext()))
+                if ns:
+                    for node in root.xpath('.//ns:ref-list', namespaces=ns):
+                        chunks.append(' '.join(node.itertext()))
+                else:
+                    for node in root.xpath('.//*[local-name()="ref-list"]'):
+                        chunks.append(' '.join(node.itertext()))
 
             # Normalize whitespace and HTML entities
             text = self._normalize_text(' '.join(chunks))
-            logger.info(f"JATS extraction completed for {pmcid}: {len(text)} characters")
+            logger.info(f"JATS extraction completed for {pmcid}: {len(text)} characters", extra={
+                "event": "pmc.fulltext.fetch.done",
+                "message": f"JATS extraction completed for {pmcid}: {len(text)} characters",
+                "pmcid": pmcid,
+                "character_count": len(text)
+            })
             return text or None
 
         except Exception as e:
@@ -1480,7 +1553,10 @@ class PubMedClient:
             'min_delay': self.min_delay,
             'consecutive_failures': self.consecutive_failures,
             'circuit_breaker_open': self.circuit_breaker_open,
-            'circuit_breaker_open_until': self.circuit_breaker_open_until.isoformat() if self.circuit_breaker_open_until else None
+            'circuit_breaker_open_until': self.circuit_breaker_open_until.isoformat() if self.circuit_breaker_open_until else None,
+            'esearch_calls': self.esearch_calls,
+            'efetch_calls': self.efetch_calls,
+            'esummary_calls': self.esummary_calls
         }
 
 
