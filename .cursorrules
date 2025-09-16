@@ -1,9 +1,0 @@
-# .cursorrules
-# Cursor will apply these rules automatically across your workspace
-
-rules:
-  - "All test scripts must be created in `tests/scripts/`."
-  - "All test outputs and logs must be written to `tests/logs/`."
-  - "Do not create files with prefixes like `enhanced_` or suffixes like `_improved`."
-  - "Always overwrite the existing function or file instead of creating duplicates."
-  - "Preserve existing file names and function names unless explicitly told otherwise."

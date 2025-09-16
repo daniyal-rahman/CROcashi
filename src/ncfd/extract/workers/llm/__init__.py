@@ -7,10 +7,10 @@ Only the active workers used in the direct study card pipeline are included.
 
 from .llm_method_card_generator import LLMMethodCardGenerator
 from .llm_results_factsheet_generator import LLMResultsFactsheetGenerator
-from .llm_gate_assessment_generator import LLMGateAssessmentGenerator
+from .llm_gate_assessment_generator import PatternFamilyDetector
 
 __all__ = [
     "LLMMethodCardGenerator",
     "LLMResultsFactsheetGenerator", 
-    "LLMGateAssessmentGenerator"
+    "PatternFamilyDetector"
 ]

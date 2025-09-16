@@ -12,9 +12,10 @@ from .claim import Claim
 from .method_card import MethodCard
 from .results_factsheet import ResultsFactsheet
 from .pocket_context import PocketContextCard
-from .gate_candidate import GateCandidate
-from .gate_spec import GateSpec
-from .gate_assessment import GateAssessment
+# Legacy gate models removed - using Pattern Families
+# from .gate_candidate import GateCandidate
+# from .gate_spec import GateSpec
+# from .gate_assessment import GateAssessment
 from .decision_record import DecisionRecord
 
 __all__ = [
@@ -27,8 +28,9 @@ __all__ = [
     "MethodCard",
     "ResultsFactsheet",
     "PocketContextCard",
-    "GateCandidate",
-    "GateSpec",
-    "GateAssessment",
+    # Legacy gate models removed - using Pattern Families
+    # "GateCandidate",
+    # "GateSpec", 
+    # "GateAssessment",
     "DecisionRecord",
 ]

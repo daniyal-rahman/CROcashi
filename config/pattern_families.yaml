@@ -1,0 +1,499 @@
+# Pattern Families Configuration
+# Clean, elegant F1-F9 system with LLM-driven detection
+
+version: "2025-01-01"
+description: "Pattern Families for clinical trial risk assessment"
+
+families:
+  F1:
+    name: "Endpoint Validity & Clinical Meaningfulness"
+    description: "Endpoints that may not translate to clinical benefit"
+    patterns:
+      P1:
+        name: "Surrogate/Unvalidated Endpoint"
+        description: "No established clinical benefit or weak linkage"
+        cue_phrases:
+          - "surrogate endpoint"
+          - "biomarker endpoint"
+          - "no established clinical benefit"
+          - "accelerated approval"
+          - "intermediate endpoint"
+        severity_rules:
+          "no precedent in indication": 3
+          "adjacent precedent only": 2
+          "weak linkage to clinical benefit": 1
+      
+      P2:
+        name: "Highly Subjective Measure"
+        description: "Patient-reported or investigator-rated outcomes"
+        cue_phrases:
+          - "patient-reported outcome"
+          - "PRO"
+          - "investigator-rated"
+          - "subjective assessment"
+          - "quality of life"
+        severity_rules:
+          "subjective + open-label": 3
+          "subjective + double-blind": 2
+          "PRO without adjudication": 1
+      
+      P3:
+        name: "Composite Fragility"
+        description: "Composite endpoints driven by soft components"
+        cue_phrases:
+          - "composite endpoint"
+          - "driven by soft components"
+          - "≥60% weight from non-hard"
+          - "time to clinical worsening"
+        severity_rules:
+          "≥60% weight from soft components": 3
+          "composite without hard components": 2
+          "balanced composite": 1
+      
+      P4:
+        name: "Multiplicity/Hierarchy Ambiguity"
+        description: "Multiple endpoints without proper control"
+        cue_phrases:
+          - "co-primary endpoint"
+          - "multiple endpoints"
+          - "weak FWER control"
+          - "hierarchical testing"
+          - "multiple comparisons"
+        severity_rules:
+          ">3 key tests without strong control": 2
+          "unadjusted secondaries framed as key": 3
+          "proper multiplicity control": 0
+
+  F2:
+    name: "Power & Analysis Robustness"
+    description: "Statistical power and analysis methodology issues"
+    patterns:
+      P1:
+        name: "Underpowered vs Stated Effect"
+        description: "Insufficient power for claimed effect size"
+        cue_phrases:
+          - "power calculation"
+          - "sample size"
+          - "effect size"
+          - "dropout rate"
+          - "power analysis"
+        severity_rules:
+          "power <50%": 3
+          "power <70%": 2
+          "power <80%": 1
+          "power ≥80%": 0
+      
+      P2:
+        name: "Model Misfit"
+        description: "Statistical model assumptions violated"
+        cue_phrases:
+          - "proportional hazards"
+          - "Cox model"
+          - "assumption violations"
+          - "model diagnostics"
+          - "sensitivity analysis"
+        severity_rules:
+          "PH violated but Cox primary": 3
+          "diagnostics suggest violation": 2
+          "model assumptions met": 0
+      
+      P3:
+        name: "Informative Interim/Alpha Spending"
+        description: "Interim analyses without proper alpha spending"
+        cue_phrases:
+          - "interim analysis"
+          - "alpha spending"
+          - "data peeks"
+          - "stopping rules"
+          - "group sequential"
+        severity_rules:
+          "informative interims": 2
+          "data peeks": 3
+          "proper alpha spending": 0
+      
+      P4:
+        name: "Baseline/Strata Risk"
+        description: "Randomization and stratification issues"
+        cue_phrases:
+          - "randomization"
+          - "stratification"
+          - "baseline imbalance"
+          - "covariate adjustment"
+        severity_rules:
+          "inadequate randomization strata": 2
+          "significant baseline imbalance": 1
+          "proper randomization": 0
+
+  F3:
+    name: "Core Design Adequacy"
+    description: "Fundamental trial design issues"
+    patterns:
+      P1:
+        name: "Control/Blinding Adequacy"
+        description: "Inadequate control or blinding"
+        cue_phrases:
+          - "open-label"
+          - "historical control"
+          - "single-arm"
+          - "blinding"
+          - "placebo control"
+        severity_rules:
+          "open-label where blinding feasible": 3
+          "historical control": 2
+          "single-arm where RCT standard": 2
+          "proper control and blinding": 0
+      
+      P2:
+        name: "Replication Sufficiency"
+        description: "Insufficient replication or single study"
+        cue_phrases:
+          - "single pivotal study"
+          - "no replication"
+          - "second adequate study"
+          - "robust single-study alternative"
+        severity_rules:
+          "single study with soft endpoint": 3
+          "single study with hard endpoint": 2
+          "adequate replication": 0
+      
+      P3:
+        name: "Population/Eligibility Drift"
+        description: "Post-hoc population changes"
+        cue_phrases:
+          - "post-hoc analysis"
+          - "population subset"
+          - "eligibility criteria"
+          - "subgroup analysis"
+        severity_rules:
+          "post-hoc population narrowing": 2
+          "pre-specified subgroup": 0
+      
+      P4:
+        name: "Endpoint/Objective Reframe"
+        description: "Changes to primary endpoint or objectives"
+        cue_phrases:
+          - "endpoint change"
+          - "protocol amendment"
+          - "primary objective"
+          - "study design change"
+        severity_rules:
+          "endpoint change after start": 3
+          "endpoint change before start": 1
+          "no endpoint changes": 0
+
+  F4:
+    name: "Operational Integrity"
+    description: "Trial conduct and operational issues"
+    patterns:
+      P1:
+        name: "Enrollment/Site Concentration/Geo Skew"
+        description: "Concentrated enrollment or geographic issues"
+        cue_phrases:
+          - "site concentration"
+          - "top 10 sites"
+          - "geographic distribution"
+          - "enrollment pattern"
+        severity_rules:
+          "top 10 sites >40% subjects": 3
+          "country >70% subjects": 2
+          "balanced enrollment": 0
+      
+      P2:
+        name: "Protocol Churn"
+        description: "Major protocol amendments"
+        cue_phrases:
+          - "protocol amendment"
+          - "major changes"
+          - "endpoint changes"
+          - "population changes"
+        severity_rules:
+          "≥2 major amendments": 3
+          "1 major amendment": 2
+          "minor amendments only": 0
+      
+      P3:
+        name: "Missing Data/Rescue Use Risk"
+        description: "High missing data or rescue medication use"
+        cue_phrases:
+          - "missing data"
+          - "rescue medication"
+          - "dropout rate"
+          - "attrition"
+        severity_rules:
+          "projected ≥15% missing data": 3
+          "high rescue medication use": 2
+          "low missing data": 0
+      
+      P4:
+        name: "Monitoring/Data Quality Red Flags"
+        description: "Data quality or monitoring issues"
+        cue_phrases:
+          - "data quality"
+          - "monitoring"
+          - "audit findings"
+          - "protocol violations"
+        severity_rules:
+          "significant data quality issues": 2
+          "adequate monitoring": 0
+
+  F5:
+    name: "Mechanistic & External Coherence"
+    description: "External evidence and mechanistic understanding"
+    patterns:
+      P1:
+        name: "Class/Target Precedent Failures"
+        description: "Previous failures in same class or target"
+        cue_phrases:
+          - "class effect"
+          - "target failures"
+          - "precedent failures"
+          - "mechanism"
+        severity_rules:
+          "≥2 well-run fails in class": 3
+          "1 failure in class": 2
+          "no precedent failures": 0
+      
+      P2:
+        name: "Phase-2 Inconsistency"
+        description: "Inconsistent Phase 2 results"
+        cue_phrases:
+          - "phase 2"
+          - "inconsistent results"
+          - "non-replication"
+          - "dose response"
+        severity_rules:
+          "inconsistent Phase 2 results": 2
+          "consistent Phase 2 results": 0
+      
+      P3:
+        name: "Biomarker/PD Misalignment"
+        description: "Biomarkers don't move as hypothesized"
+        cue_phrases:
+          - "biomarker"
+          - "pharmacodynamics"
+          - "PD markers"
+          - "target engagement"
+        severity_rules:
+          "no PD movement": 3
+          "weak PD signal": 2
+          "strong PD signal": 0
+      
+      P4:
+        name: "Preclinical/Translational Gap"
+        description: "Poor preclinical to clinical translation"
+        cue_phrases:
+          - "preclinical"
+          - "translation"
+          - "animal models"
+          - "PK mismatch"
+        severity_rules:
+          "no relevant models": 2
+          "good preclinical data": 0
+
+  F6:
+    name: "CMC / Dose / PK–PD Fitness"
+    description: "Chemistry, manufacturing, and dose selection issues"
+    patterns:
+      P1:
+        name: "Comparability/Manufacturing Change Unbridged"
+        description: "Manufacturing changes without bridging studies"
+        cue_phrases:
+          - "manufacturing change"
+          - "process change"
+          - "scale-up"
+          - "comparability"
+          - "bridging study"
+        severity_rules:
+          "change without bridging": 3
+          "bridged but thin data": 2
+          "proper bridging": 0
+      
+      P2:
+        name: "Exposure–Response Mismatch/Flatness"
+        description: "Poor exposure-response relationship"
+        cue_phrases:
+          - "exposure-response"
+          - "dose-response"
+          - "flat curve"
+          - "PK-PD"
+        severity_rules:
+          "flat or inverted curve": 3
+          "weak dose-response": 2
+          "clear dose-response": 0
+      
+      P3:
+        name: "Dose Selection Fragile"
+        description: "Dose not at efficacy plateau or near toxicity"
+        cue_phrases:
+          - "dose selection"
+          - "efficacy plateau"
+          - "toxicity"
+          - "therapeutic window"
+        severity_rules:
+          "dose not at plateau": 2
+          "dose near toxicity": 2
+          "optimal dose selection": 0
+      
+      P4:
+        name: "Stability/Supply Vulnerability"
+        description: "Drug stability or supply chain issues"
+        cue_phrases:
+          - "stability"
+          - "shelf life"
+          - "supply chain"
+          - "cold chain"
+        severity_rules:
+          "tight shelf life": 2
+          "supply chain issues": 2
+          "stable supply": 0
+
+  F7:
+    name: "Safety/Tolerability Margin"
+    description: "Safety concerns and tolerability issues"
+    patterns:
+      P1:
+        name: "Marginal Safety at Clinical Dose"
+        description: "Safety margin too thin"
+        cue_phrases:
+          - "safety margin"
+          - "adverse events"
+          - "toxicity"
+          - "dose limiting"
+        severity_rules:
+          "AEs near clinical dose": 3
+          "thin safety margin": 2
+          "adequate safety margin": 0
+      
+      P2:
+        name: "Class Safety Liabilities"
+        description: "Known safety issues in drug class"
+        cue_phrases:
+          - "class safety"
+          - "known toxicity"
+          - "safety baggage"
+          - "cardiovascular risk"
+        severity_rules:
+          "known class safety issues": 2
+          "no known safety issues": 0
+
+  F8:
+    name: "Sponsor Incentives & Communications"
+    description: "Sponsor behavior and communication patterns"
+    patterns:
+      P1:
+        name: "Financial Runway Pressure"
+        description: "Cash runway concerns"
+        cue_phrases:
+          - "cash runway"
+          - "funding"
+          - "going concern"
+          - "financial pressure"
+        severity_rules:
+          "runway < readout + 6 months": 2
+          "adequate runway": 0
+      
+      P2:
+        name: "Over-Promotional/Over-Specified Claims"
+        description: "Overly promotional communications"
+        cue_phrases:
+          - "positive results"
+          - "breakthrough"
+          - "promising"
+          - "investor presentation"
+        severity_rules:
+          "over-promotional without adjusted stats": 2
+          "balanced communication": 0
+      
+      P3:
+        name: "Insider Trading/Disclosure Patterns"
+        description: "Suspicious trading or disclosure patterns"
+        cue_phrases:
+          - "insider trading"
+          - "disclosure"
+          - "timing"
+          - "SEC filings"
+        severity_rules:
+          "suspicious trading patterns": 1
+          "normal trading patterns": 0
+
+  F9:
+    name: "Transparency & Reporting"
+    description: "Transparency and reporting issues"
+    patterns:
+      P1:
+        name: "Opaque Protocol/SAP"
+        description: "Redacted or opaque protocol/analysis plan"
+        cue_phrases:
+          - "redacted"
+          - "confidential"
+          - "proprietary"
+          - "statistical analysis plan"
+        severity_rules:
+          "heavily redacted protocol": 2
+          "transparent protocol": 0
+      
+      P2:
+        name: "Reporting Lag/Inconsistent Disclosures"
+        description: "Delayed or inconsistent reporting"
+        cue_phrases:
+          - "reporting lag"
+          - "delayed disclosure"
+          - "inconsistent"
+          - "timeline"
+        severity_rules:
+          "long reporting lag": 1
+          "timely reporting": 0
+      
+      P3:
+        name: "Timeline Slippage Beyond Operational Bounds"
+        description: "Timeline delays beyond reasonable operational range"
+        cue_phrases:
+          - "timeline slippage"
+          - "delays"
+          - "operational issues"
+          - "readout delay"
+        severity_rules:
+          "slippage beyond operational bounds": 1
+          "reasonable timeline": 0
+
+# Scoring Configuration
+scoring:
+  # Family weights for blended scoring
+  family_weights:
+    F1: 0.15  # Endpoint validity (heaviest)
+    F2: 0.12  # Power & analysis
+    F3: 0.10  # Core design
+    F4: 0.08  # Operational integrity
+    F5: 0.08  # Mechanistic coherence
+    F6: 0.10  # CMC/dose/PK-PD
+    F7: 0.05  # Safety margin
+    F8: 0.05  # Sponsor incentives
+    F9: 0.05  # Transparency
+  
+  # LLM weight in blended scoring
+  llm_weight: 0.7
+  
+  # Over-index contribution
+  over_index_weight: 0.1
+  
+  # Severity weights for family aggregation
+  severity_weights:
+    0: 0  # Grey
+    1: 1  # Yellow
+    2: 2  # Amber
+    3: 4  # Red
+
+# LLM Configuration
+llm:
+  # Model settings
+  model: "gpt-4o"
+  temperature: 0.1
+  max_tokens: 2000
+  
+  # Prompt settings
+  max_context_length: 8000
+  evidence_span_limit: 5
+  
+  # Confidence thresholds
+  min_confidence: 0.3
+  high_confidence: 0.8

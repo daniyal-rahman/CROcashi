@@ -1,111 +1,69 @@
 """
-Pattern Family Detector
+Clean Pattern Families Detector
 
-LLM-driven pattern detection for F1-F9 Pattern Families system.
-Replaces the old gate assessment generator with pattern-based detection.
+Simple, elegant LLM-driven pattern detection for F1-F9 families.
+No legacy code, no complexity - just clean pattern detection.
 """
 
-import logging
 import yaml
 import json
-from typing import Dict, List, Any, Optional
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from pathlib import Path
 
-from ...pattern_families.models import PatternDetection, SeverityLevel
-from .base_llm_generator import BaseLLMGenerator
+from .models import PatternDetection, SeverityLevel
 
-logger = logging.getLogger(__name__)
+@dataclass
+class PatternConfig:
+    """Configuration for a single pattern."""
+    family_id: str
+    pattern_id: str
+    name: str
+    description: str
+    cue_phrases: List[str]
+    severity_rules: Dict[str, int]
 
-
-class PatternFamilyDetector(BaseLLMGenerator):
-    """LLM-driven pattern detection for Pattern Families system."""
+class PatternFamilyDetector:
+    """Clean, simple Pattern Families detector."""
     
-    def __init__(self, model_name: str = "gpt-4o-mini", config_path: str = "config/pattern_families.yaml"):
-        super().__init__("PatternFamilyDetector", "1.0.0")
-        self.model_name = model_name
+    def __init__(self, config_path: str = "config/pattern_families.yaml"):
         self.config_path = config_path
-        self.logger = logging.getLogger(__name__)
         self.config = self._load_config()
         self.patterns = self._load_patterns()
-    
-    async def process(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Detect patterns using Pattern Families system.
-        
-        Args:
-            inputs: {
-                "raw_doc_text": str,
-                "doc_id": str,
-                "trial_context": Dict[str, Any]
-            }
-            
-        Returns:
-            {
-                "pattern_detections": List[PatternDetection],
-                "success": bool,
-                "error_message": Optional[str]
-            }
-        """
-        try:
-            raw_doc_text = inputs.get("raw_doc_text", "")
-            doc_id = inputs.get("doc_id", "")
-            trial_context = inputs.get("trial_context", {})
-            
-            if not raw_doc_text:
-                return {
-                    "pattern_detections": [],
-                    "success": False,
-                    "error_message": "No document text provided"
-                }
-            
-            # Detect patterns
-            detections = await self.detect_patterns(doc_id, [{"content": raw_doc_text, "doc_id": doc_id}], trial_context)
-            
-            return {
-                "pattern_detections": detections,
-                "success": True,
-                "error_message": None
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Pattern detection failed: {str(e)}")
-            return {
-                "pattern_detections": [],
-                "success": False,
-                "error_message": str(e)
-            }
+        self.llm_client = self._init_llm_client()
     
     def _load_config(self) -> Dict[str, Any]:
         """Load Pattern Families configuration."""
         config_file = Path(self.config_path)
         if not config_file.exists():
-            self.logger.warning(f"Config file not found: {self.config_path}")
-            return {}
+            raise FileNotFoundError(f"Config file not found: {self.config_path}")
         
         with open(config_file, 'r') as f:
             return yaml.safe_load(f)
     
-    def _load_patterns(self) -> Dict[str, Dict[str, Any]]:
+    def _load_patterns(self) -> Dict[str, PatternConfig]:
         """Load pattern configurations."""
         patterns = {}
         
-        if 'families' not in self.config:
-            return patterns
-        
         for family_id, family_data in self.config['families'].items():
-            for pattern_id, pattern_data in family_data.get('patterns', {}).items():
+            for pattern_id, pattern_data in family_data['patterns'].items():
                 full_pattern_id = f"{family_id}{pattern_id}"
-                patterns[full_pattern_id] = {
-                    'family_id': family_id,
-                    'pattern_id': full_pattern_id,
-                    'name': pattern_data.get('name', ''),
-                    'description': pattern_data.get('description', ''),
-                    'cue_phrases': pattern_data.get('cue_phrases', []),
-                    'severity_rules': pattern_data.get('severity_rules', {})
-                }
+                patterns[full_pattern_id] = PatternConfig(
+                    family_id=family_id,
+                    pattern_id=full_pattern_id,
+                    name=pattern_data['name'],
+                    description=pattern_data['description'],
+                    cue_phrases=pattern_data['cue_phrases'],
+                    severity_rules=pattern_data['severity_rules']
+                )
         
         return patterns
+    
+    def _init_llm_client(self):
+        """Initialize LLM client."""
+        # TODO: Implement actual LLM client
+        # For now, return a mock client
+        return MockLLMClient()
     
     async def detect_patterns(self, 
                             trial_id: str,
@@ -117,7 +75,7 @@ class PatternFamilyDetector(BaseLLMGenerator):
         prompt = self._build_detection_prompt(documents, trial_context)
         
         # Call LLM
-        response = await self._extract_with_llm("", trial_context, prompt)
+        response = await self.llm_client.generate(prompt)
         
         # Parse response
         detections = self._parse_llm_response(response)
@@ -189,10 +147,10 @@ If no patterns detected for a family, omit it. Be conservative - only report pat
         
         for pattern in self.patterns.values():
             card = f"""
-{pattern['pattern_id']}: {pattern['name']}
-Description: {pattern['description']}
-Cue Phrases: {', '.join(pattern['cue_phrases'][:5])}  # Limit to 5 for brevity
-Severity Rules: {pattern['severity_rules']}
+{pattern.pattern_id}: {pattern.name}
+Description: {pattern.description}
+Cue Phrases: {', '.join(pattern.cue_phrases[:5])}  # Limit to 5 for brevity
+Severity Rules: {pattern.severity_rules}
 """
             cards.append(card)
         
@@ -208,14 +166,13 @@ Severity Rules: {pattern['severity_rules']}
         
         return "\n".join(slices)
     
-    def _parse_llm_response(self, response: Dict[str, Any]) -> List[PatternDetection]:
+    def _parse_llm_response(self, response: str) -> List[PatternDetection]:
         """Parse LLM response into PatternDetection objects."""
         try:
-            if 'detections' not in response:
-                return []
-            
+            data = json.loads(response)
             detections = []
-            for detection_data in response['detections']:
+            
+            for detection_data in data.get('detections', []):
                 detection = PatternDetection(
                     family_id=detection_data['family_id'],
                     pattern_id=detection_data['pattern_id'],
@@ -229,13 +186,13 @@ Severity Rules: {pattern['severity_rules']}
             return detections
             
         except Exception as e:
-            self.logger.error(f"Error parsing LLM response: {e}")
+            print(f"Error parsing LLM response: {e}")
             return []
     
     def _apply_deterministic_guards(self, detections: List[PatternDetection], trial_context: Dict[str, Any]) -> List[PatternDetection]:
         """Apply deterministic guards to LLM detections."""
         
-        # Example: Power calculation guard for F2P1
+        # Example: Power calculation guard
         if any(d.pattern_id == 'F2P1' for d in detections):
             # Recalculate power and adjust severity if needed
             power = self._calculate_power(trial_context)
@@ -258,3 +215,22 @@ Severity Rules: {pattern['severity_rules']}
         # TODO: Implement power calculation
         # This would use the same logic as the old S2 signal
         return None
+
+class MockLLMClient:
+    """Mock LLM client for testing."""
+    
+    async def generate(self, prompt: str) -> str:
+        """Mock LLM generation."""
+        # Return mock response
+        return json.dumps({
+            "detections": [
+                {
+                    "family_id": "F1",
+                    "pattern_id": "F1P1",
+                    "severity": 2,
+                    "confidence": 0.8,
+                    "rationale": "Mock detection for testing",
+                    "evidence_spans": [{"doc_id": "123", "snippet_hash": "abc"}]
+                }
+            ]
+        })

@@ -15,7 +15,6 @@ import hashlib
 
 from ..db.models import Trial, TrialVersion, Study
 from ..db.session import get_session
-from ..signals import S1_endpoint_changed
 
 
 @dataclass

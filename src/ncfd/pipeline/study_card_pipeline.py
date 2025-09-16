@@ -15,7 +15,6 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 
 from ..extract.workers import (
-    GateValidator, GateAssessor,
     DeterministicMethodAuditor, DeterministicResultsDistiller
 )
 from ..extract.workers.retriever_factory import build_retriever
@@ -23,7 +22,7 @@ from ..extract.workers.llm.llm_results_factsheet_generator import LLMResultsFact
 from ..extract.workers.provenance_backtracer import ProvenanceBacktracer
 from ..extract.models import (
     DocumentCard, EvidenceSpan, Claim, MethodCard, ResultsFactsheet,
-    PocketContextCard, GateCandidate, GateSpec, GateAssessment, DecisionRecord
+    PocketContextCard, DecisionRecord
 )
 from ..extract.validators import GlobalValidator
 from ..extract.validators.section_constraints import enforce_section_constraints
@@ -47,9 +46,13 @@ class StudyCardPipelineResult:
     claims: List[Claim] = field(default_factory=list)
     method_card: Optional[MethodCard] = None
     results_factsheet: Optional[ResultsFactsheet] = None
-    gate_candidates: List[GateCandidate] = field(default_factory=list)
-    gate_specs: List[GateSpec] = field(default_factory=list)
-    gate_assessments: List[GateAssessment] = field(default_factory=list)
+    # Legacy gate components (deprecated - using Pattern Families)
+    # gate_candidates: List[GateCandidate] = field(default_factory=list)
+    # gate_specs: List[GateSpec] = field(default_factory=list)
+    # gate_assessments: List[GateAssessment] = field(default_factory=list)
+    
+    # Pattern Families system
+    pattern_detections: List[Any] = field(default_factory=list)  # PatternDetection objects
     decision_record: Optional[DecisionRecord] = None
     
     # Dual-path and fusion outputs
@@ -77,11 +80,11 @@ class StudyCardPipeline:
         
         # Core LLM-first workers
         from ..extract.workers.llm.llm_method_card_generator import LLMMethodCardGenerator
-        from ..extract.workers.llm.llm_gate_assessment_generator import LLMGateAssessmentGenerator
+        from ..extract.workers.llm.llm_gate_assessment_generator import PatternFamilyDetector
         
         self.llm_method_generator = LLMMethodCardGenerator()
         self.llm_results_generator = LLMResultsFactsheetGenerator()
-        self.llm_gate_generator = LLMGateAssessmentGenerator()
+        self.pattern_detector = PatternFamilyDetector()
         self.provenance_backtracer = ProvenanceBacktracer()
         
         # Deterministic Path Workers (hooks available but disabled by default)
@@ -93,9 +96,9 @@ class StudyCardPipeline:
             self.deterministic_method_auditor = None
             self.deterministic_results_distiller = None
         
-        # Other workers
-        self.gate_validator = GateValidator()
-        self.gate_assessor = GateAssessor()
+        # Other workers (legacy gate components removed - using Pattern Families)
+        # self.gate_validator = GateValidator()  # Legacy - removed
+        # self.gate_assessor = GateAssessor()   # Legacy - removed
         
         # Validation configuration
         validation_config = self.config.get('validation', {})
@@ -407,57 +410,38 @@ class StudyCardPipeline:
                             await self._save_quotes_to_db(field_quotes, doc_card.doc_id, trial_id)
                             logger.info(f"Results factsheet generated for document {doc_card.doc_id} with {len(field_quotes)} quotes")
                         
-                        # Gate assessment generation
-                        gate_data = {
+                        # Pattern detection generation
+                        pattern_data = {
                             "raw_doc_text": doc_text,
                             "doc_id": doc_card.doc_id,
                             "trial_context": trial_context
                         }
-                        gate_result = await concurrency_manager.execute_with_concurrency_control(
-                            self.llm_gate_generator.process, gate_data
+                        pattern_result = await concurrency_manager.execute_with_concurrency_control(
+                            self.pattern_detector.process, pattern_data
                         )
-                        logger.info(f"DEBUG: Gate result for doc {doc_card.doc_id}: success={gate_result.get('success')}, has_gate_assessments={bool(gate_result.get('gate_assessments'))}, field_quotes_count={len(gate_result.get('field_quotes', []))}")
+                        logger.info(f"DEBUG: Pattern result for doc {doc_card.doc_id}: success={pattern_result.get('success')}, has_pattern_detections={bool(pattern_result.get('pattern_detections'))}")
                         
-                        # Log detailed gate assessments output
-                        if gate_result.get("gate_assessments"):
-                            gate_assessments = gate_result["gate_assessments"]
-                            logger.info(f"🚪 GATE ASSESSMENTS GENERATED for doc {doc_card.doc_id}:")
-                            for i, gate in enumerate(gate_assessments):
-                                logger.info(f"   Gate {i+1}: {getattr(gate, 'gate_id', 'Unknown')}")
-                                logger.info(f"      Status: {getattr(gate, 'status', 'N/A')}")
-                                logger.info(f"      Confidence: {getattr(gate, 'confidence_in_assessment', 'N/A')}")
-                                logger.info(f"      Rationale: {'; '.join(getattr(gate, 'rationale', []))[:100]}...")
+                        # Log detailed pattern detections output
+                        if pattern_result.get("pattern_detections"):
+                            pattern_detections = pattern_result["pattern_detections"]
+                            logger.info(f"🔍 PATTERN DETECTIONS GENERATED for doc {doc_card.doc_id}:")
+                            for i, detection in enumerate(pattern_detections):
+                                logger.info(f"   Pattern {i+1}: {getattr(detection, 'pattern_id', 'Unknown')}")
+                                logger.info(f"      Family: {getattr(detection, 'family_id', 'N/A')}")
+                                logger.info(f"      Severity: {getattr(detection, 'severity', 'N/A')}")
+                                logger.info(f"      Confidence: {getattr(detection, 'confidence', 'N/A')}")
+                                logger.info(f"      Rationale: {getattr(detection, 'rationale', 'N/A')[:100]}...")
                         
-                        # Log detailed field quotes
-                        field_quotes = gate_result.get('field_quotes', [])
-                        if field_quotes:
-                            logger.info(f"📝 GATE FIELD QUOTES ({len(field_quotes)} quotes):")
-                            for i, quote in enumerate(field_quotes):
-                                logger.info(f"   Quote {i+1}: {quote.field_name} = {str(quote.value)[:50]}...")
-                                logger.info(f"      Evidence: {quote.evidence_quote[:100]}...")
-                                logger.info(f"      Confidence: {quote.confidence}")
-                        
-                        # FIXED: Use gate_assessments (plural) instead of gate_assessment (singular)
-                        if gate_result.get("success") and gate_result.get("gate_assessments"):
-                            result.gate_assessments.extend(gate_result["gate_assessments"])
-                            
-                            # Collect field quotes as evidence spans
-                            field_quotes = gate_result.get("field_quotes", [])
-                            for quote in field_quotes:
-                                evidence_span = EvidenceSpan(
-                                    doc_id=str(doc_card.doc_id),
-                                    quote=quote.evidence_quote,
-                                    section="Gates",
-                                    confidence=quote.confidence
-                                )
-                                result.evidence_spans.append(evidence_span)
+                        # Store pattern detections for later scoring
+                        if pattern_result.get("pattern_detections"):
+                            result.pattern_detections.extend(pattern_result["pattern_detections"])
                             
                             # Store LLM artifacts
-                            result.llm_artifacts[f"gate_assessments_{doc_card.doc_id}"] = gate_result
+                            result.llm_artifacts[f"pattern_detections_{doc_card.doc_id}"] = pattern_result
                             
-                            # Save gate assessments to database
-                            for gate_assessment in gate_result["gate_assessments"]:
-                                await self._save_gate_assessment_to_db(gate_assessment, trial_context.get("trial_id"))
+                            # Save pattern detections to database
+                            for pattern_detection in pattern_result["pattern_detections"]:
+                                await self._save_pattern_detection_to_db(pattern_detection, trial_context.get("trial_id"))
                             
                             # Save quotes to database
                             await self._save_quotes_to_db(field_quotes, doc_card.doc_id, trial_id)
@@ -1388,5 +1372,31 @@ class StudyCardPipeline:
                 
         except Exception as e:
             logger.error(f"Error storing full text for doc_id {doc_id}: {e}")
+            return False
+    
+    async def _save_pattern_detection_to_db(self, pattern_detection: Any, trial_id: str) -> bool:
+        """Save pattern detection to database."""
+        try:
+            from ..db.session import get_session
+            from ..pattern_families.models import PatternDetection as PatternDetectionModel
+            
+            async with get_session() as session:
+                # Convert PatternDetection dataclass to SQLAlchemy model
+                db_detection = PatternDetectionModel(
+                    trial_id=int(trial_id),
+                    run_id="pattern_families_run",
+                    family_id=pattern_detection.family_id,
+                    pattern_id=pattern_detection.pattern_id,
+                    severity=pattern_detection.severity.value,
+                    confidence=pattern_detection.confidence,
+                    rationale=pattern_detection.rationale,
+                    evidence_spans=pattern_detection.evidence_spans
+                )
+                session.add(db_detection)
+                session.commit()
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error saving pattern detection: {e}")
             return False
     
