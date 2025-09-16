@@ -95,7 +95,7 @@ class Company(Base):
 
     # Relationships
     securities: Mapped[List["Security"]] = relationship(back_populates="company", cascade="all, delete-orphan")
-    assets: Mapped[List["AssetOwnership"]] = relationship(back_populates="company")
+    owned_assets: Mapped[List["Asset"]] = relationship("Asset", foreign_keys="Asset.owner_company_id")
     trials: Mapped[List["Trial"]] = relationship(back_populates="sponsor_company")
 
     __table_args__ = (
@@ -146,8 +146,13 @@ class Asset(Base):
     modality: Mapped[Optional[str]] = mapped_column(Text)
     target: Mapped[Optional[str]] = mapped_column(Text)
     moa: Mapped[Optional[str]] = mapped_column(Text)
+    
+    # Simplified ownership (one-to-one)
+    owner_company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("companies.company_id"))
+    ownership_history: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
 
-    ownership: Mapped[List["AssetOwnership"]] = relationship(back_populates="asset", cascade="all, delete-orphan")
+    # Relationships
+    owner_company: Mapped[Optional["Company"]] = relationship("Company", foreign_keys=[owner_company_id])
     studies: Mapped[List["Study"]] = relationship(back_populates="asset")
     patents: Mapped[List["Patent"]] = relationship(back_populates="asset")
 
@@ -155,29 +160,10 @@ class Asset(Base):
         Index("idx_assets_names_jsonb", "names_jsonb", postgresql_using="gin"),
         Index("idx_assets_target", "target"),
         Index("idx_assets_moa", "moa"),
+        Index("ix_assets_owner_company_id", "owner_company_id"),
     )
 
 
-class AssetOwnership(Base):
-    __tablename__ = "asset_ownership"
-
-    ownership_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.asset_id", ondelete="CASCADE"), nullable=False)
-    company_id: Mapped[int] = mapped_column(ForeignKey("companies.company_id", ondelete="CASCADE"), nullable=False)
-    start_date: Mapped[Optional[date]] = mapped_column(Date)
-    end_date: Mapped[Optional[date]] = mapped_column(Date)
-    source: Mapped[str] = mapped_column(Text, nullable=False)
-    evidence_url: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    asset: Mapped["Asset"] = relationship(back_populates="ownership")
-    company: Mapped["Company"] = relationship(back_populates="assets")
-
-    __table_args__ = (
-        Index("idx_asset_ownership_asset_id", "asset_id"),
-        Index("idx_asset_ownership_company_id", "company_id"),
-        Index("idx_asset_ownership_start_date", "start_date"),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -648,7 +634,6 @@ class Document(Base):
     citations: Mapped[List["DocumentCitation"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     entities: Mapped[List["DocumentEntity"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     links: Mapped[List["DocumentLink"]] = relationship(back_populates="document", cascade="all, delete-orphan")
-    notes: Mapped[List["DocumentNote"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     spans: Mapped[List["Span"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     # Trials are linked through DocumentLink table
     # trials: Mapped[List["Trial"]] = relationship(back_populates="documents")
@@ -798,26 +783,6 @@ class DocumentLink(Base):
     )
 
 
-class DocumentNote(Base):
-    """Document notes table - user annotations and processing notes."""
-    __tablename__ = "document_notes"
-
-    note_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    note_type: Mapped[str] = mapped_column(Text, nullable=False)
-    note_text: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    note_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
-
-    # Relationships
-    document: Mapped["Document"] = relationship(back_populates="notes")
-
-    __table_args__ = (
-        ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
-        Index("ix_document_notes_doc_id", "doc_id"),
-        Index("ix_document_notes_note_type", "note_type")
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -964,8 +929,8 @@ class CtgovIngestState(Base):
 
 
 class Task(Base):
-    """Task queue for pipeline processing."""
-    __tablename__ = "tasks"
+    """Processing queue for pipeline tasks."""
+    __tablename__ = "processing_queue"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     task_type: Mapped[str] = mapped_column(Text, nullable=False)
@@ -982,10 +947,10 @@ class Task(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     __table_args__ = (
-        UniqueConstraint("task_type", "task_key", name="uq_tasks_type_key"),
+        UniqueConstraint("task_type", "task_key", name="uq_processing_queue_type_key"),
         CheckConstraint(
             "status IN ('queued','leased','done','failed','parked','canceled')",
-            name="ck_tasks_status_valid",
+            name="ck_processing_queue_status_valid",
         ),
     )
 

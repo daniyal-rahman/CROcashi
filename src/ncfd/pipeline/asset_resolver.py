@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from ..db.models import Asset, AssetOwnership, Company, Trial
+from ..db.models import Asset, Company, Trial
 from ..mapping.normalize import norm_name, norm_name_loose
 
 
@@ -256,11 +256,11 @@ class AssetResolver:
         # If sponsor is known, prefer assets owned by sponsor
         if sponsor_company_id:
             for match in matches:
-                ownership = session.query(AssetOwnership).filter(
-                    AssetOwnership.asset_id == match.asset_id,
-                    AssetOwnership.company_id == sponsor_company_id
+                asset = session.query(Asset).filter(
+                    Asset.asset_id == match.asset_id,
+                    Asset.owner_company_id == sponsor_company_id
                 ).first()
-                if ownership:
+                if asset:
                     return match
         
         # Fallback to first match (could be enhanced with more heuristics)

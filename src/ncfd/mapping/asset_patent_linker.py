@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from ..db.models import Asset, AssetAlias, Patent, Company, AssetOwnership
+from ..db.models import Asset, Patent, Company
 from ..ingest.uspto.patent_types import PatentLinkCandidate
 from ..extract.models.evidence_span import EvidenceSpan
 
@@ -205,18 +205,16 @@ class AssetPatentLinker:
             if not asset:
                 return None
             
-            # Get aliases
-            aliases = session.query(AssetAlias).filter(AssetAlias.asset_id == asset_id).all()
-            
             # Extract names from JSONB
             names = asset.names_jsonb or {}
             inn = names.get('inn', '')
             internal_codes = names.get('internal_codes', [])
             generic_names = names.get('generic', [])
             brand_names = names.get('brand', [])
+            synonyms = names.get('synonyms', [])
             
-            # Add aliases
-            alias_names = [alias.alias for alias in aliases]
+            # Combine all names
+            alias_names = synonyms + generic_names + brand_names
             
             return {
                 'asset_id': asset_id,
@@ -352,17 +350,19 @@ class AssetPatentLinker:
         links = []
         
         try:
-            # Get companies that own this asset
-            ownership_query = text("""
-                SELECT DISTINCT company_id, start_date, end_date
-                FROM asset_ownership
+            # Get company that owns this asset
+            asset_query = text("""
+                SELECT owner_company_id
+                FROM assets
                 WHERE asset_id = :asset_id
-                AND (end_date IS NULL OR end_date > CURRENT_DATE)
+                AND owner_company_id IS NOT NULL
             """)
             
-            ownerships = session.execute(ownership_query, {"asset_id": asset['asset_id']}).fetchall()
+            result = session.execute(asset_query, {"asset_id": asset['asset_id']}).first()
+            ownerships = [result] if result and result[0] else []
             
-            for company_id, start_date, end_date in ownerships:
+            for ownership in ownerships:
+                company_id = ownership[0]
                 # Find patents assigned to this company
                 company_patents = self._find_patents_by_assignee_company(session, company_id)
                 

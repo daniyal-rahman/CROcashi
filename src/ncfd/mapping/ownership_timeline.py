@@ -21,7 +21,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from ..db.models import Asset, AssetOwnership, Company, Patent, PatentAssignment, Study, Trial
+from ..db.models import Asset, Company, Patent, PatentAssignment, Study, Trial
 
 logger = logging.getLogger(__name__)
 
@@ -317,12 +317,17 @@ class OwnershipTimelineBuilder:
         
         try:
             # This would integrate with SEC filing extraction
-            # For now, check existing asset_ownership records with SEC sources
-            
-            ownership_records = session.query(AssetOwnership).filter(
-                AssetOwnership.asset_id == asset_id,
-                AssetOwnership.source.in_(['sec_filing', '8-K', '10-K', '10-Q'])
-            ).all()
+            # For now, check existing asset ownership from assets table
+            asset = session.query(Asset).filter(Asset.asset_id == asset_id).first()
+            ownership_records = []
+            if asset and asset.owner_company_id:
+                # Create a simple ownership record from the asset
+                ownership_records = [type('OwnershipRecord', (), {
+                    'company_id': asset.owner_company_id,
+                    'start_date': None,
+                    'end_date': None,
+                    'source': 'direct_ownership'
+                })()]
             
             for record in ownership_records:
                 confidence = self.evidence_weights.get("sec_filing", 0.85)
@@ -439,9 +444,16 @@ class OwnershipTimelineBuilder:
         events = []
         
         try:
-            ownership_records = session.query(AssetOwnership).filter(
-                AssetOwnership.asset_id == asset_id
-            ).order_by(AssetOwnership.start_date).all()
+            # Get ownership from assets table
+            asset = session.query(Asset).filter(Asset.asset_id == asset_id).first()
+            ownership_records = []
+            if asset and asset.owner_company_id:
+                ownership_records = [type('OwnershipRecord', (), {
+                    'company_id': asset.owner_company_id,
+                    'start_date': None,
+                    'end_date': None,
+                    'source': 'direct_ownership'
+                })()]
             
             for record in ownership_records:
                 if not record.start_date:

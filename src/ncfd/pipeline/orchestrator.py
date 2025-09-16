@@ -40,7 +40,7 @@ from ..ingest.pubmed.queue_service import TaskQueueService
 
 # Database imports
 from ..db.session import session_scope
-from ..db.models import Trial, TrialVersion, Company, Asset, AssetOwnership
+from ..db.models import Trial, TrialVersion, Company, Asset
 
 logger = logging.getLogger(__name__)
 
@@ -324,13 +324,13 @@ class PipelineOrchestrator:
                     # Find companies that own these assets
                     companies = []
                     for asset_match in asset_matches:
-                        ownerships = session.query(AssetOwnership).filter(
-                            AssetOwnership.asset_id == asset_match.asset_id
-                        ).all()
+                        asset = session.query(Asset).filter(
+                            Asset.asset_id == asset_match.asset_id
+                        ).first()
                         
-                        for ownership in ownerships:
+                        if asset and asset.owner_company_id:
                             company = session.query(Company).filter(
-                                Company.company_id == ownership.company_id
+                                Company.company_id == asset.owner_company_id
                             ).first()
                             if company:
                                 companies.append(company)
