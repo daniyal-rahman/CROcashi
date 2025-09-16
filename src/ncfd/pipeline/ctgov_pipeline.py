@@ -562,19 +562,12 @@ class CtgovPipeline:
             try:
                 sponsor_name = trial_fields.sponsor_info.lead_sponsor_name if trial_fields.sponsor_info else None
                 if sponsor_name:
-                    from ncfd.mapping.resolve_service import resolve_sponsor  # lazy import
-                    import yaml
-                    from pathlib import Path as _Path
-
-                    cfg_path = _Path("config/resolver.yaml")
-                    cfg = {}
-                    if cfg_path.exists():
-                        with open(cfg_path, "r") as _f:
-                            cfg = yaml.safe_load(_f) or {}
-
-                    r = resolve_sponsor(session, sponsor_name, cfg)
-                    if r and r.get("company_id") and float(r.get("p", 0)) >= float(cfg.get("thresholds", {}).get("tau_accept", 0.9)):
-                        new_trial.sponsor_company_id = int(r["company_id"])  # type: ignore
+                    from ncfd.mapping.simple_resolver import resolve_sponsor_simple
+                    
+                    result = resolve_sponsor_simple(session, trial.nct_id, sponsor_name)
+                    if result.company_id and result.confidence >= 0.8:
+                        new_trial.sponsor_company_id = result.company_id
+                        logger.info(f"Resolved sponsor '{sponsor_name}' to company {result.company_id} ({result.match_method})")
             except Exception as _e:
                 # Non-fatal; keep ingestion robust
                 self.logger.warning(f"Sponsor resolution failed for {trial_fields.nct_id}: {_e}")

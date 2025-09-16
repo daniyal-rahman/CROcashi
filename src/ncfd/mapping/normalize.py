@@ -20,8 +20,7 @@ _LEGAL_TAILS = {
 
 _ACADEMIC_WORDS = {
     "university", "hospital", "institute", "foundation", "college",
-    "medical", "clinic", "centre", "center", "health", "system",
-    "nhs", "trust", "school"
+    "clinic", "centre", "center", "nhs", "trust", "school"
 }
 
 # --- regexes: preserve hyphens to keep asset codes like AB-123 intact ----------

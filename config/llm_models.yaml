@@ -179,7 +179,7 @@ workers:
     
   llm_resolution:
     provider: openai
-    model: gpt-5
+    model: gpt-4o
     
   # Self-research mechanistic analysis - use GPT-5 for web search capabilities
   mechanistic_dose_researcher:

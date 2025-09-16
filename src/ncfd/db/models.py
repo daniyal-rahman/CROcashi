@@ -109,6 +109,26 @@ class Company(Base):
     )
 
 
+class CompanyAlias(Base):
+    """Company aliases for fuzzy matching."""
+    __tablename__ = "company_aliases"
+
+    alias_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    company_id: Mapped[int] = mapped_column(Integer, ForeignKey("companies.company_id"), nullable=False)
+    alias: Mapped[str] = mapped_column(Text, nullable=False)
+    alias_norm: Mapped[str] = mapped_column(Text, nullable=False)
+    alias_type: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    company: Mapped["Company"] = relationship("Company", foreign_keys=[company_id])
+
+    __table_args__ = (
+        Index("idx_company_aliases_company_id", "company_id"),
+        Index("idx_company_aliases_alias_norm", "alias_norm"),
+        Index("idx_company_aliases_alias_type", "alias_type"),
+    )
 
 
 class Security(Base):
@@ -152,7 +172,7 @@ class Asset(Base):
     ownership_history: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
 
     # Relationships
-    owner_company: Mapped[Optional["Company"]] = relationship("Company", foreign_keys=[owner_company_id])
+    owner_company: Mapped[Optional["Company"]] = relationship("Company", foreign_keys=[owner_company_id], overlaps="owned_assets")
     studies: Mapped[List["Study"]] = relationship(back_populates="asset")
     patents: Mapped[List["Patent"]] = relationship(back_populates="asset")
 
@@ -794,7 +814,7 @@ class Span(Base):
     __tablename__ = "spans"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    doc_id: Mapped[str] = mapped_column(String, nullable=False)
+    doc_id: Mapped[int] = mapped_column(Integer, ForeignKey("documents.doc_id"), nullable=False)
     quote: Mapped[str] = mapped_column(Text, nullable=False)
     section: Mapped[str] = mapped_column(String, nullable=False)
     page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -1004,4 +1024,100 @@ class EntitySearchResult(Base):
         Index("ix_entity_search_results_rerank_score", "rerank_score"),
         ForeignKeyConstraint(['entity_id'], ['entity_packs.entity_id'], ondelete='CASCADE'),
         UniqueConstraint("entity_id", "query_variant", "pmid", name="uq_entity_search_results_entity_query_pmid"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Simplified Resolver System Models
+# ---------------------------------------------------------------------------
+
+class SponsorResolution(Base):
+    """Simplified sponsor resolution results."""
+    __tablename__ = "sponsor_resolutions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    nct_id: Mapped[str] = mapped_column(String(20), nullable=False)
+    sponsor_text: Mapped[str] = mapped_column(Text, nullable=False)
+    sponsor_text_norm: Mapped[str] = mapped_column(Text, nullable=False)
+    company_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("companies.company_id"), nullable=True)
+    match_method: Mapped[str] = mapped_column(String(20), nullable=False)  # exact, fuzzy, llm, manual
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    evidence: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB(astext_type=Text), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    company: Mapped[Optional["Company"]] = relationship("Company", foreign_keys=[company_id])
+
+    __table_args__ = (
+        UniqueConstraint("nct_id", "sponsor_text_norm", name="uq_sponsor_resolutions_nct_sponsor"),
+        Index("idx_sponsor_resolutions_nct_id", "nct_id"),
+        Index("idx_sponsor_resolutions_company_id", "company_id"),
+        Index("idx_sponsor_resolutions_match_method", "match_method"),
+        CheckConstraint(
+            "match_method IN ('exact', 'fuzzy', 'llm', 'manual')",
+            name="ck_sponsor_resolutions_match_method_valid",
+        ),
+        CheckConstraint(
+            "confidence >= 0.0 AND confidence <= 1.0",
+            name="ck_sponsor_resolutions_confidence_valid",
+        ),
+    )
+
+
+class ManualReviewQueue(Base):
+    """Simplified manual review queue."""
+    __tablename__ = "manual_review_queue"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    nct_id: Mapped[str] = mapped_column(String(20), nullable=False)
+    sponsor_text: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default='pending')
+    assigned_company_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("companies.company_id"), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    assigned_company: Mapped[Optional["Company"]] = relationship("Company", foreign_keys=[assigned_company_id])
+
+    __table_args__ = (
+        Index("idx_manual_review_queue_status", "status"),
+        Index("idx_manual_review_queue_nct_id", "nct_id"),
+        CheckConstraint(
+            "status IN ('pending', 'completed', 'skipped')",
+            name="ck_manual_review_queue_status_valid",
+        ),
+    )
+
+
+class AcademicBlacklist(Base):
+    """Precise academic institution patterns."""
+    __tablename__ = "academic_blacklist"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    pattern: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default='true')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class LLMDiscovery(Base):
+    """Track LLM learning and discoveries."""
+    __tablename__ = "llm_discoveries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    nct_id: Mapped[str] = mapped_column(String(20), nullable=False)
+    sponsor_text: Mapped[str] = mapped_column(Text, nullable=False)
+    discovered_company_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("companies.company_id"), nullable=True)
+    discovered_aliases: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB(astext_type=Text), nullable=True)
+    llm_response: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB(astext_type=Text), nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    discovered_company: Mapped[Optional["Company"]] = relationship("Company", foreign_keys=[discovered_company_id])
+
+    __table_args__ = (
+        Index("idx_llm_discoveries_nct_id", "nct_id"),
+        Index("idx_llm_discoveries_company_id", "discovered_company_id"),
     )

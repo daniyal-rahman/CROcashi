@@ -5,7 +5,7 @@ This package provides a modular, provider-agnostic interface for LLM interaction
 Supports OpenAI, Anthropic, and Gemini with unified request/response handling.
 """
 
-from .models import LLMRequest, LLMResponse, LLMError
+from .models import LLMRequest, LLMResponse, LLMError, LLMMessage, LLMGenerationConfig, LLMSchema
 from .base_provider import BaseLLMProvider
 from .factory import LLMProviderFactory
 from .config import LLMConfig, load_llm_config
@@ -15,6 +15,9 @@ __all__ = [
     "LLMRequest",
     "LLMResponse", 
     "LLMError",
+    "LLMMessage",
+    "LLMGenerationConfig",
+    "LLMSchema",
     "BaseLLMProvider",
     "LLMProviderFactory",
     "LLMConfig",
