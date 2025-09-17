@@ -75,7 +75,7 @@ pubmed:
 study_card:
   # Extractor configuration
   extractor:
-    enable_method_cards: true
+    enable_study_cards: true
     enable_results_cards: true
     batch_size: 3
     min_confidence_threshold: 0.7

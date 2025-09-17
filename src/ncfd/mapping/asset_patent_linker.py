@@ -22,7 +22,7 @@ from sqlalchemy import text
 
 from ..db.models import Asset, Patent, Company
 from ..ingest.uspto.patent_types import PatentLinkCandidate
-from ..extract.models.evidence_span import EvidenceSpan
+from ..extract.models.evidence_span import Span
 
 logger = logging.getLogger(__name__)
 

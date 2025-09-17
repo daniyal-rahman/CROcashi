@@ -20,10 +20,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Remove unused alias tables (asset_aliases, company_aliases, entity_aliases)."""
-    # Drop unused alias tables
-    op.drop_table('asset_aliases')
-    op.drop_table('company_aliases') 
-    op.drop_table('entity_aliases')
+    # Drop unused alias tables (idempotent - check if tables exist first)
+    connection = op.get_bind()
+    inspector = sa.inspect(connection)
+    existing_tables = inspector.get_table_names()
+    
+    if 'asset_aliases' in existing_tables:
+        op.drop_table('asset_aliases')
+    if 'company_aliases' in existing_tables:
+        op.drop_table('company_aliases')
+    if 'entity_aliases' in existing_tables:
+        op.drop_table('entity_aliases')
 
 
 def downgrade() -> None:
@@ -78,7 +85,7 @@ def downgrade() -> None:
         sa.Column('is_primary', sa.Boolean, nullable=False, server_default='false'),
         sa.Column('created_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text('now()')),
         sa.PrimaryKeyConstraint('id'),
-        sa.ForeignKeyConstraint(['entity_id'], ['entity_packs.entity_id'], ondelete='CASCADE'),
+        # Note: entity_packs table was removed - entity system now uses in-memory approach
         sa.CheckConstraint("alias_type IN ('asset','company','indication','mechanism','nct_id')", name="ck_entity_aliases_alias_type_valid"),
         sa.CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_entity_aliases_confidence_range"),
     )

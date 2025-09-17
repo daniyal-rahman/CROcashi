@@ -129,10 +129,9 @@ class StructuredLogger:
     
     def _log_record(self, record: LogRecord):
         """Log a structured record."""
-        # Validate event name
-        if not EventTaxonomy.validate_event(record.event):
-            # Log warning about invalid event but don't fail
-            self._logger.warning(f"Invalid event name: {record.event}")
+        # Validate event name (disabled to avoid noise from regular logging)
+        # if not EventTaxonomy.validate_event(record.event):
+        #     self._logger.warning(f"Invalid event name: {record.event}")
         
         # Convert to JSON and log
         log_data = record.to_dict()

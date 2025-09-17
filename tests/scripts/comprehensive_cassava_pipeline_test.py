@@ -300,7 +300,7 @@ class ComprehensiveCassavaTest:
             
             # Study card configuration
             "study_card": {
-                "max_documents_per_trial": 5,  # Limit to 3 documents for comprehensive testing
+                "max_documents_per_trial": 3,  # Limit to 3 documents for comprehensive testing
                 "store_json_snapshots": True,
                 "llm_timeout_seconds": 60,  # Reduce timeout for testing
                 "retrieval_timeout_seconds": 90,
@@ -321,9 +321,9 @@ class ComprehensiveCassavaTest:
                     "min_quotes": 0,  # Allow 0 quotes for testing
                     "min_evidence_spans": 0,  # Allow 0 evidence spans for testing
                     "min_confidence": 0.0,  # Lower confidence threshold for testing
-                    "require_method": False,  # Don't require method card for testing
+                    "require_method": False,  # Don't require study card for testing
                     "require_results": False,  # Don't require results factsheet for testing
-                    "require_gates": False,  # Don't require gate assessments for testing
+                    "require_patterns": False,  # Don't require pattern detections for testing
                     "min_llm_artifacts": 0  # Allow 0 LLM artifacts for testing
                 },
                 "stages": {
@@ -439,8 +439,7 @@ class ComprehensiveCassavaTest:
                 "trial_versions", "trials", "company_aliases", "companies",
                 "assets", "asset_ownership", "signals", "gates", "scores",
                 "catalysts", "labels", "disclosures", "method_cards",
-                "results_factsheets", "gate_candidates", "gate_specs",
-                "gate_assessments", "decision_records",
+                "results_factsheets", "pattern_detections", "decision_records",
                 # Add dual-persistence tables if they exist
                 "retrieval_sessions", "retrieval_documents", "processed_documents"
             ]
@@ -746,9 +745,9 @@ class ComprehensiveCassavaTest:
                     raise ValueError("Main trial NCT05515666 not found for study card generation")
                 
                 study_card_results = []
-                total_gates = 0
+                total_patterns = 0
                 total_conclusions = 0
-                gate_details = []
+                pattern_details = []
                 conclusion_details = []
                 
                 # Process only the main trial
@@ -774,14 +773,14 @@ class ComprehensiveCassavaTest:
                 logger.info(f"Generating study card for main trial {trial.nct_id} (ID: {trial.trial_id})...")
                 result = await study_card_pipeline.execute(trial.trial_id, trial_context)
                 
-                # Extract gate details
-                gate_info = []
-                for gate in result.gate_candidates:
-                    gate_info.append({
-                        "gate_id": getattr(gate, 'gate_id', 'unknown'),
-                        "gate_type": getattr(gate, 'gate_type', 'unknown'),
-                        "description": getattr(gate, 'description', 'No description')[:100] + "..." if getattr(gate, 'description', None) and len(getattr(gate, 'description', '')) > 100 else getattr(gate, 'description', 'No description'),
-                        "confidence": getattr(gate, 'confidence', 0.0)
+                # Extract pattern details
+                pattern_info = []
+                for pattern in result.pattern_detections:
+                    pattern_info.append({
+                        "family_id": getattr(pattern, 'family_id', 'unknown'),
+                        "pattern_id": getattr(pattern, 'pattern_id', 'unknown'),
+                        "severity": getattr(pattern, 'severity', 'unknown'),
+                        "confidence": getattr(pattern, 'confidence', 0.0)
                     })
                 
                 # Extract conclusion details
@@ -802,36 +801,34 @@ class ComprehensiveCassavaTest:
                     "document_cards": len(getattr(result, 'document_cards', [])),
                     "evidence_spans": len(getattr(result, 'evidence_spans', [])),
                     "claims": len(getattr(result, 'claims', [])),
-                    "method_cards": len(getattr(result, 'method_cards', [])),
+                    "study_cards": len(getattr(result, 'study_cards', [])),
                     "results_factsheets": len(getattr(result, 'results_factsheets', [])),
-                    "gate_candidates": len(getattr(result, 'gate_candidates', [])),
-                    "gate_specs": len(getattr(result, 'gate_specs', [])),
-                    "gate_assessments": len(getattr(result, 'gate_assessments', [])),
+                    "pattern_detections": len(getattr(result, 'pattern_detections', [])),
                     "decision_record": getattr(result, 'decision_record', None) is not None,
-                    "gates": gate_info,
+                    "patterns": pattern_info,
                     "conclusions": conclusion_info,
                     "errors": result.errors,
                     "warnings": result.warnings
                 })
                 
-                total_gates += len(result.gate_candidates)
+                total_patterns += len(result.pattern_detections)
                 total_conclusions += 1 if result.decision_record else 0
-                gate_details.extend(gate_info)
+                pattern_details.extend(pattern_info)
                 conclusion_details.extend(conclusion_info)
                 
                 self.results["study_card_generation"] = {
                     "status": "success",
                     "main_trial": trial.nct_id,
                     "trials_processed": 1,  # Only processing the main trial
-                    "total_gates_generated": total_gates,
+                    "total_patterns_generated": total_patterns,
                     "total_conclusions_generated": total_conclusions,
-                    "gate_details": gate_details,
+                    "pattern_details": pattern_details,
                     "conclusion_details": conclusion_details,
                     "results": study_card_results
                 }
                 
                 logger.info(f"✅ Study card generation completed for main trial {trial.nct_id}")
-                logger.info(f"🎯 Total gates generated: {total_gates}")
+                logger.info(f"🎯 Total patterns generated: {total_patterns}")
                 logger.info(f"📋 Total conclusions generated: {total_conclusions}")
                 
                 # Note: Independent LLM Analysis is now handled by the orchestrator
@@ -871,7 +868,7 @@ class ComprehensiveCassavaTest:
                 },
                 "study_card_result": {
                     "success": orchestration_result.study_card_result.success if orchestration_result.study_card_result else False,
-                    "gate_candidates": len(orchestration_result.study_card_result.gate_candidates) if orchestration_result.study_card_result else 0
+                    "pattern_detections": len(orchestration_result.study_card_result.pattern_detections) if orchestration_result.study_card_result else 0
                 },
                 "independent_analysis_result": {
                     "success": orchestration_result.independent_analysis_result.get("success", False) if orchestration_result.independent_analysis_result else False,
@@ -1225,17 +1222,18 @@ class ComprehensiveCassavaTest:
                 WHERE fired_bool = true
             """)).fetchall()
             
-            # Check for passed gate assessments using raw SQL
-            passed_assessments_result = session.execute(text("""
-                SELECT gate_id, status, confidence_in_assessment, rationale
-                FROM gate_assessments 
-                WHERE status IN ('passed', 'pass', 'approved', 'positive')
+            # Check for pattern detections using raw SQL
+            # Note: severity is stored as integer (0=grey, 1=yellow, 2=amber, 3=red)
+            pattern_detections_result = session.execute(text("""
+                SELECT family_id, pattern_id, severity, confidence, rationale
+                FROM pattern_detections 
+                WHERE severity IN (1, 2, 3)
             """)).fetchall()
             
-            total_passed = len(fired_gates_result) + len(passed_assessments_result)
+            total_passed = len(fired_gates_result) + len(pattern_detections_result)
             
             if total_passed > 0:
-                warning_msg = f"⚠️  WARNING: {total_passed} gates PASSED ({len(fired_gates_result)} fired gates, {len(passed_assessments_result)} passed assessments) - this may indicate overly permissive gate criteria"
+                warning_msg = f"⚠️  WARNING: {total_passed} patterns detected ({len(fired_gates_result)} fired gates, {len(pattern_detections_result)} pattern detections) - this may indicate risk patterns in the trial"
                 logger.warning(warning_msg)
                 self.results["warnings"].append(warning_msg)
                 
@@ -1489,15 +1487,15 @@ class ComprehensiveCassavaTest:
             study_cards = self.results["study_card_generation"]
             print(f"\n📋 Study Card Generation Metrics:")
             print(f"   • Trials processed: {study_cards.get('trials_processed', 0)}")
-            print(f"   • Total gates generated: {study_cards.get('total_gates_generated', 0)}")
+            print(f"   • Total patterns generated: {study_cards.get('total_patterns_generated', 0)}")
             print(f"   • Total conclusions generated: {study_cards.get('total_conclusions_generated', 0)}")
             
-            # Show gate details
-            if study_cards.get('gate_details'):
-                print(f"   • Gate details:")
-                for i, gate in enumerate(study_cards['gate_details'][:3], 1):
-                    print(f"     {i}. {gate.get('gate_type', 'Unknown')}: {gate.get('description', 'No description')}")
-                    print(f"        Confidence: {gate.get('confidence', 0.0):.2f}")
+            # Show pattern details
+            if study_cards.get('pattern_details'):
+                print(f"   • Pattern details:")
+                for i, pattern in enumerate(study_cards['pattern_details'][:3], 1):
+                    print(f"     {i}. {pattern.get('family_id', 'Unknown')}/{pattern.get('pattern_id', 'Unknown')}: {pattern.get('severity', 'Unknown')}")
+                    print(f"        Confidence: {pattern.get('confidence', 0.0):.2f}")
             
             # Show conclusion details
             if study_cards.get('conclusion_details'):

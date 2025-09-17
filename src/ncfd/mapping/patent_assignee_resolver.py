@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Any, Tuple
 from sqlalchemy.orm import Session
 
-from .resolve_service import resolve_sponsor
+from .simple_resolver import resolve_sponsor_simple
 from .normalize import norm_name, norm_name_loose
 from .deterministic import has_academic_keywords
 from ..db.models import Company, CompanyAlias
@@ -163,32 +163,23 @@ class PatentAssigneeResolver:
     
     def _try_direct_resolution(self, session: Session, assignee_name: str,
                              context: Optional[Dict[str, Any]]) -> AssigneeResolution:
-        """Try direct resolution using existing company resolver."""
+        """Try direct resolution using new company resolver."""
         try:
-            # Use existing resolve_sponsor function with default config
-            config = {
-                "model": {"weights": {}, "intercept": 0.0},
-                "thresholds": {
-                    "tau_accept": 0.85,
-                    "review_low": 0.65,
-                    "min_top2_margin": 0.1
-                }
-            }
+            # Use new resolve_sponsor_simple function
+            result = resolve_sponsor_simple(session, "PATENT_ASSIGNEE", assignee_name)
             
-            result = resolve_sponsor(session, assignee_name, config, context)
-            
-            if result.get("company_id"):
+            if result.company_id:
                 # Get company name
                 company = session.query(Company).filter(
-                    Company.company_id == result["company_id"]
+                    Company.company_id == result.company_id
                 ).first()
                 
                 return AssigneeResolution(
-                    company_id=result["company_id"],
+                    company_id=result.company_id,
                     company_name=company.name if company else None,
-                    confidence=result.get("p", 0.0),
-                    method=f"direct_{result.get('mode', 'unknown')}",
-                    evidence=result
+                    confidence=result.confidence,
+                    method=f"direct_{result.match_method}",
+                    evidence=result.evidence
                 )
         
         except Exception as e:

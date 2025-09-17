@@ -180,26 +180,18 @@ data_quality:
   min_filing_completeness: 0.8
   min_entity_completeness: 0.9
 
-# Validation Configuration
-validation:
-  # Validation strictness for study card artifacts
-  strict_validation: true  # Hard fail on provenance/section validation errors
-  fail_fast_on_validation: true  # Stop pipeline on first validation error
-  
-  # Specific validation rules
-  hard_fail_on_provenance: true  # Provenance validation must pass
-  hard_fail_on_units: true  # Units validation must pass  
-  hard_fail_on_denominators: true  # Denominator validation must pass
-  hard_fail_on_sections: true  # Section validation must pass
-  
-  # Validation targets
-  validate_method_card: true
-  validate_results_factsheet: true
-  validate_claims: true
-  
-  # Error handling
-  validation_error_action: "fail"  # "fail", "warn", or "log"
-  max_validation_errors: 10  # Maximum errors before hard fail
+# Quality Gate Configuration
+quality_gate:
+  # Quality thresholds for study card generation
+  min_documents_analyzed: 1
+  min_quotes: 3
+  min_evidence_spans: 3
+  min_confidence: 0.55
+  require_method: true
+  require_results: true
+  require_patterns: true
+  min_llm_artifacts: 1
+  fail_on_validation: true
 
 # Monitoring Configuration
 monitoring:

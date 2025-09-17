@@ -415,15 +415,19 @@ class RetrievalProcessor:
             # Apply policy engine validation to each PMID
             validated_docs = []
             for pmid in pmids:
-                validation_result = self.policy_engine.validate_document({'pmid': pmid}, entity_pack)
-                # Use attribute access for PolicyResult object
-                if hasattr(validation_result, 'passed') and validation_result.passed:
-                    validated_docs.append({'pmid': pmid, 'policy_engine_passed': True})
-                elif hasattr(validation_result, 'get') and validation_result.get('passed', True):
-                    validated_docs.append({'pmid': pmid, 'policy_engine_passed': True})
-                else:
-                    # Default to pass if validation unclear
-                    validated_docs.append({'pmid': pmid, 'policy_engine_passed': True})
+                try:
+                    validation_result = self.policy_engine.validate_document({'pmid': pmid}, entity_pack)
+                    # Check if validation passed using the correct attribute
+                    if hasattr(validation_result, 'passes_validation') and validation_result.passes_validation:
+                        validated_docs.append({'pmid': pmid, 'policy_engine_passed': True})
+                    else:
+                        # Document failed validation - mark as failed
+                        logger.debug(f"Document {pmid} failed policy validation: {getattr(validation_result, 'validation_errors', 'Unknown error')}")
+                        validated_docs.append({'pmid': pmid, 'policy_engine_passed': False})
+                except Exception as e:
+                    # If validation fails due to error, mark as failed
+                    logger.error(f"Error validating document {pmid}: {e}")
+                    validated_docs.append({'pmid': pmid, 'policy_engine_passed': False})
             
             logger.info(f"Policy engine applied to {len(pmids)} documents: {len(validated_docs)} passed")
             return validated_docs

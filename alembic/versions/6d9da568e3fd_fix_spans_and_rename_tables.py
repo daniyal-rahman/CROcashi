@@ -20,10 +20,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Fix spans and rename tables."""
-    # Step 1: Remove unused span tables
-    op.drop_table('base_span_derived_span_association')
-    op.drop_table('base_spans')
-    op.drop_table('derived_spans')
+    # Step 1: Remove unused span tables (idempotent - check if tables exist first)
+    connection = op.get_bind()
+    inspector = sa.inspect(connection)
+    existing_tables = inspector.get_table_names()
+    
+    if 'base_span_derived_span_association' in existing_tables:
+        op.drop_table('base_span_derived_span_association')
+    if 'base_spans' in existing_tables:
+        op.drop_table('base_spans')
+    if 'derived_spans' in existing_tables:
+        op.drop_table('derived_spans')
     
     # Step 2: Rename existing tables
     op.rename_table('method_cards', 'study_cards')

@@ -31,6 +31,7 @@ class LLMGenerationConfig:
     top_p: float = 0.95
     top_k: Optional[int] = None
     stop_sequences: Optional[List[str]] = None
+    json_output: bool = False
     
     def to_dict(self) -> Dict[str, Any]:
         config = {

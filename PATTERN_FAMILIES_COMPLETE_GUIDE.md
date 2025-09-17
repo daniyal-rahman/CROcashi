@@ -128,7 +128,7 @@ class PatternDetection:
     """Pattern detection result from LLM."""
     family_id: str
     pattern_id: str
-    severity: SeverityLevel  # 0-3 scale
+    severity: SeverityLevel  # 0-2 scale
     confidence: float        # 0-1 scale
     rationale: str
     evidence_spans: List[Dict[str, Any]]

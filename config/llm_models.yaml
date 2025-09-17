@@ -137,67 +137,123 @@ enable_fallback: true
 fallback_order: [openai, anthropic, gemini]
 
 # Worker-Specific Overrides
-# Each worker can be configured to use a specific provider and model
+# Each worker can be configured to use a specific provider, model, and parameters
 workers:
   # Basic tasks - use GPT-5-mini for efficiency
   llm_decider:
     provider: openai
     model: gpt-5-mini
+    max_retries: 3
+    temperature: 0.1
+    max_tokens: 2000
+    json_output: true
     
   sec_extractor:
     provider: openai  # Will switch to gemini when implemented
     model: gpt-5-mini
+    max_retries: 3
+    temperature: 0.1
+    max_tokens: 2000
+    json_output: true
     
   method_auditor:
     provider: openai
     model: gpt-5-mini
+    max_retries: 3
+    temperature: 0.1
+    max_tokens: 2000
+    json_output: true
     
   results_distiller:
     provider: openai
     model: gpt-5-mini
+    max_retries: 3
+    temperature: 0.1
+    max_tokens: 2000
+    json_output: true
     
   fda_lens:
     provider: openai
     model: gpt-5-mini
+    max_retries: 3
+    temperature: 0.1
+    max_tokens: 2000
+    json_output: true
     
   memo_composer:
     provider: openai
     model: gpt-5-mini
+    max_retries: 3
+    temperature: 0.1
+    max_tokens: 2000
+    json_output: true
     
   gate_proposer:
     provider: openai
     model: gpt-5-mini
+    max_retries: 3
+    temperature: 0.1
+    max_tokens: 2000
+    json_output: true
     
   # Complex thinking tasks - use GPT-5 for enhanced reasoning
   literature_review:
     provider: openai  # Will switch to anthropic when implemented
     model: gpt-5
+    max_retries: 3
+    temperature: 0.1
+    max_tokens: 4000
+    json_output: true
     
   independent_analysis:
     provider: openai  # Will switch to anthropic when implemented  
     model: gpt-5
+    max_retries: 3
+    temperature: 0.1
+    max_tokens: 4000
+    json_output: true
     
   llm_resolution:
     provider: openai
     model: gpt-4o
+    max_retries: 3
+    temperature: 0.1
+    max_tokens: 4000
+    json_output: true
     
   # Self-research mechanistic analysis - use GPT-5 for web search capabilities
   mechanistic_dose_researcher:
     provider: openai
     model: gpt-5
+    max_retries: 3
+    temperature: 0.1
+    max_tokens: 4000
+    json_output: true
     
   # Direct card generators - use GPT-5-mini for efficiency
-  LLMMethodCardGenerator:
+  LLMStudyCardGenerator:
     provider: openai
     model: gpt-5-mini
+    max_retries: 3
+    temperature: 0.1
+    max_tokens: 2000
+    json_output: true
     
   LLMResultsFactsheetGenerator:
     provider: openai
     model: gpt-5-mini
+    max_retries: 3
+    temperature: 0.1
+    max_tokens: 2000
+    json_output: true
     
-  LLMGateAssessmentGenerator:
+  PatternFamilyDetector:
     provider: openai
     model: gpt-5-mini
+    max_retries: 3
+    temperature: 0.1
+    max_tokens: 2000
+    json_output: true
 
 # Rate Limiting & Performance
 rate_limiting:

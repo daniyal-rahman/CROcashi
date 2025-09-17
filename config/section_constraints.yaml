@@ -55,7 +55,7 @@ section_aliases:
 
 # Field-level section constraints
 constraints:
-  MethodCard:
+  StudyCard:
     site_geography: ["methods"]
     primary_endpoint: ["methods"]
     sample_size: ["methods"]
@@ -86,7 +86,7 @@ constraints:
 
 # Severity levels for constraint violations
 severity:
-  MethodCard:
+  StudyCard:
     site_geography: "hard"
     primary_endpoint: "hard"
     sample_size: "hard"

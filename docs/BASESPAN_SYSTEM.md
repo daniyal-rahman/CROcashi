@@ -28,39 +28,30 @@ Table Data → Table Cell Spans → Fuzzy Alignment → Derived Spans
 
 ## Database Schema
 
-### BaseSpan Table
+### Spans Table (Simplified)
+
+The span system has been simplified to use a single `spans` table (renamed from `evidence_spans`):
 
 ```sql
-CREATE TABLE base_spans (
-    span_id SERIAL PRIMARY KEY,
+CREATE TABLE spans (
+    id SERIAL PRIMARY KEY,
     doc_id INTEGER NOT NULL REFERENCES documents(doc_id),
+    quote TEXT NOT NULL,
     section TEXT NOT NULL,
     page INTEGER,
-    char_start INTEGER NOT NULL,
-    char_end INTEGER NOT NULL,
-    text TEXT NOT NULL,
-    is_table_cell BOOLEAN NOT NULL DEFAULT FALSE,
-    table_id INTEGER,
-    row INTEGER,
-    col INTEGER,
+    char_start INTEGER,
+    char_end INTEGER,
+    confidence FLOAT,
+    table_id TEXT,
+    table_row INTEGER,
+    table_col INTEGER,
+    snippet_hash TEXT,
+    bbox_json JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 ```
 
-### DerivedSpan Table
-
-```sql
-CREATE TABLE derived_spans (
-    derived_id SERIAL PRIMARY KEY,
-    doc_id INTEGER NOT NULL REFERENCES documents(doc_id),
-    char_start INTEGER NOT NULL,
-    char_end INTEGER NOT NULL,
-    parent_span_ids INTEGER[] NOT NULL,
-    text TEXT NOT NULL,
-    similarity_score NUMERIC(3,2),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-```
+**Note**: The previous `base_spans` and `derived_spans` tables have been removed as part of the span system simplification. The current system uses a single unified spans table with simplified schema.
 
 ## Configuration
 

@@ -206,7 +206,7 @@ studycard_stage:
   retry_delay: 60
   
   # Card generation
-  enable_method_cards: true
+  enable_study_cards: true
   enable_results_cards: true
   min_confidence_threshold: 0.7
   

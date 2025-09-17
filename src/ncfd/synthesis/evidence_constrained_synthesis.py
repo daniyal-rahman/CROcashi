@@ -10,8 +10,7 @@ import yaml
 from pydantic import BaseModel
 
 from ncfd.db.models import Study, Trial
-from ncfd.signals.gates import GateResult
-from ncfd.signals.scoring import ScoreResult
+# Legacy signals imports removed - using Pattern Families system
 
 
 class Ref(BaseModel):
@@ -115,8 +114,8 @@ class EvidenceConstrainedSynthesizer:
     def _validate_early_stopping_requirements(
         self, 
         study_cards: List[Study], 
-        gates: Dict[str, GateResult],
-        score: ScoreResult
+        gates: Dict[str, Any],
+        score: Any
     ) -> None:
         """Validate that trial meets early stopping requirements."""
         # Must have study cards (full review completed)
@@ -301,7 +300,7 @@ class EvidenceConstrainedSynthesizer:
     
     def _build_red_flags_section(
         self, 
-        gates: Dict[str, GateResult],
+        gates: Dict[str, Any],
         study_cards: List[Study]
     ) -> List[Sentence]:
         """Build red flags section from fired gates."""
@@ -338,7 +337,7 @@ class EvidenceConstrainedSynthesizer:
         
         return sentences
     
-    def _build_posterior_section(self, score: ScoreResult) -> List[Sentence]:
+    def _build_posterior_section(self, score: Any) -> List[Sentence]:
         """Build posterior probability section."""
         if score.stop_rule_applied is not None:
             text = f"Stop rule applied: P_fail set to {score.p_fail:.3f}."
@@ -381,7 +380,7 @@ class EvidenceConstrainedSynthesizer:
         
         return sentences
     
-    def _should_trigger_gpt5_hook(self, score: ScoreResult) -> bool:
+    def _should_trigger_gpt5_hook(self, score: Any) -> bool:
         """Determine if GPT-5 thinking model should be triggered."""
         return score.p_fail >= self.config.gpt5_threshold
     
@@ -401,8 +400,8 @@ class EvidenceConstrainedSynthesizer:
         self,
         trial: Trial,
         study_cards: List[Study],
-        gates: Dict[str, GateResult],
-        score: ScoreResult
+        gates: Dict[str, Any],
+        score: Any
     ) -> SynthesisDoc:
         """
         Generate deterministic synthesis for a trial.

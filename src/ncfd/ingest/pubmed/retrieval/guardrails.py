@@ -97,13 +97,7 @@ class GuardrailsSystem:
         oncology_detected = any(term.lower() in text for term in oncology_terms)
         
         # Check for must-link terms
-        must_link_terms = []
-        must_link_terms.extend(entity_pack.asset.aliases)
-        must_link_terms.extend(entity_pack.company.aliases)
-        must_link_terms.extend(entity_pack.registries.nct_ids)
-        must_link_terms.append(entity_pack.asset.canonical)
-        must_link_terms.append(entity_pack.company.canonical)
-        
+        must_link_terms = entity_pack.get_must_link_terms()
         has_must_link = any(term.lower() in text for term in must_link_terms)
         
         # Apply guardrail logic

@@ -14,19 +14,11 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 
-from ..extract.workers import (
-    DeterministicMethodAuditor, DeterministicResultsDistiller
-)
-from ..extract.workers.retriever_factory import build_retriever
-from ..extract.workers.llm.llm_results_factsheet_generator import LLMResultsFactsheetGenerator
-from ..extract.workers.provenance_backtracer import ProvenanceBacktracer
+from ..extract.retrieval import build_retriever
+from ..extract.generators import LLMResultsFactsheetGenerator
 from ..extract.models import (
-    DocumentCard, EvidenceSpan, Claim, MethodCard, ResultsFactsheet,
-    PocketContextCard, DecisionRecord
+    DocumentCard, Span, StudyCard, ResultsFactsheet, DecisionRecord
 )
-from ..extract.validators import GlobalValidator
-from ..extract.validators.section_constraints import enforce_section_constraints
-from ..extract.normalization import get_metric_registry
 
 logger = logging.getLogger(__name__)
 
@@ -42,14 +34,9 @@ class StudyCardPipelineResult:
     
     # Pipeline outputs
     document_cards: List[DocumentCard] = field(default_factory=list)
-    evidence_spans: List[EvidenceSpan] = field(default_factory=list)
-    claims: List[Claim] = field(default_factory=list)
-    method_card: Optional[MethodCard] = None
+    evidence_spans: List[Span] = field(default_factory=list)
+    study_card: Optional[StudyCard] = None
     results_factsheet: Optional[ResultsFactsheet] = None
-    # Legacy gate components (deprecated - using Pattern Families)
-    # gate_candidates: List[GateCandidate] = field(default_factory=list)
-    # gate_specs: List[GateSpec] = field(default_factory=list)
-    # gate_assessments: List[GateAssessment] = field(default_factory=list)
     
     # Pattern Families system
     pattern_detections: List[Any] = field(default_factory=list)  # PatternDetection objects
@@ -79,96 +66,15 @@ class StudyCardPipeline:
         self.retriever = build_retriever(self.config)
         
         # Core LLM-first workers
-        from ..extract.workers.llm.llm_method_card_generator import LLMMethodCardGenerator
-        from ..extract.workers.llm.llm_gate_assessment_generator import PatternFamilyDetector
+        from ..extract.generators import LLMStudyCardGenerator, PatternFamilyDetector
         
-        self.llm_method_generator = LLMMethodCardGenerator()
+        self.llm_study_generator = LLMStudyCardGenerator()
         self.llm_results_generator = LLMResultsFactsheetGenerator()
         self.pattern_detector = PatternFamilyDetector()
-        self.provenance_backtracer = ProvenanceBacktracer()
         
-        # Deterministic Path Workers (hooks available but disabled by default)
-        deterministic_enabled = self.config.get('deterministic', {}).get('enabled', False)
-        if deterministic_enabled:
-            self.deterministic_method_auditor = DeterministicMethodAuditor()
-            self.deterministic_results_distiller = DeterministicResultsDistiller()
-        else:
-            self.deterministic_method_auditor = None
-            self.deterministic_results_distiller = None
         
-        # Other workers (legacy gate components removed - using Pattern Families)
-        # self.gate_validator = GateValidator()  # Legacy - removed
-        # self.gate_assessor = GateAssessor()   # Legacy - removed
-        
-        # Validation configuration
-        validation_config = self.config.get('validation', {})
-        self.strict_validation = validation_config.get('strict_validation', True)
-        self.fail_fast_on_validation = validation_config.get('fail_fast_on_validation', True)
-        self.validation_error_action = validation_config.get('validation_error_action', 'fail')
-        self.max_validation_errors = validation_config.get('max_validation_errors', 10)
-        
-        # Specific validation rules
-        self.hard_fail_on_provenance = validation_config.get('hard_fail_on_provenance', True)
-        self.hard_fail_on_units = validation_config.get('hard_fail_on_units', True)
-        self.hard_fail_on_denominators = validation_config.get('hard_fail_on_denominators', True)
-        self.hard_fail_on_sections = validation_config.get('hard_fail_on_sections', True)
-        
-        logger.info(f"StudyCardPipeline initialized with strict_validation={self.strict_validation}")
+        logger.info("StudyCardPipeline initialized with LLM-first architecture")
     
-    def _handle_validation_errors(self, result: StudyCardPipelineResult, 
-                                artifact_type: str, errors: List[str]) -> bool:
-        """
-        Handle validation errors according to configuration.
-        
-        Args:
-            result: Pipeline result object
-            artifact_type: Type of artifact being validated
-            errors: List of validation errors
-            
-        Returns:
-            True if validation passed (no errors or warnings only), False if hard fail
-        """
-        if not errors:
-            return True
-            
-        # Determine if these are hard-fail errors based on content
-        hard_fail_errors = []
-        warning_errors = []
-        
-        for error in errors:
-            # Check if error is related to hard-fail categories
-            is_hard_fail = (
-                self.hard_fail_on_provenance and any(keyword in error.lower() for keyword in 
-                    ['provenance', 'span_ids', 'input_hash', 'missing input_hash', 'no span references'])
-                or self.hard_fail_on_units and any(keyword in error.lower() for keyword in 
-                    ['units', 'invalid units'])
-                or self.hard_fail_on_denominators and any(keyword in error.lower() for keyword in 
-                    ['denominator', 'n cannot be default', 'pending_denominator'])
-                or self.hard_fail_on_sections and any(keyword in error.lower() for keyword in 
-                    ['section', 'missing required field'])
-            )
-            
-            if is_hard_fail:
-                hard_fail_errors.append(error)
-            else:
-                warning_errors.append(error)
-        
-        # Handle hard-fail errors
-        if hard_fail_errors and self.strict_validation:
-            result.errors.extend([f"{artifact_type} validation: {error}" for error in hard_fail_errors])
-            if self.fail_fast_on_validation:
-                return False
-        
-        # Handle warning errors
-        if warning_errors:
-            result.warnings.extend([f"{artifact_type} validation: {error}" for error in warning_errors])
-        
-        # Check if we've exceeded max validation errors
-        if len(result.errors) >= self.max_validation_errors:
-            result.errors.append(f"Exceeded maximum validation errors ({self.max_validation_errors})")
-            return False
-        
-        return True
     
     def _validate_study_card_quality(self, result: StudyCardPipelineResult) -> Tuple[bool, List[str]]:
         """
@@ -190,7 +96,7 @@ class StudyCardPipeline:
         min_confidence = quality_config.get('min_confidence', 0.55)
         require_method = quality_config.get('require_method', True)
         require_results = quality_config.get('require_results', True)
-        require_gates = quality_config.get('require_gates', True)
+        require_patterns = quality_config.get('require_patterns', True)
         min_llm_artifacts = quality_config.get('min_llm_artifacts', 1)
         
         # Check document analysis - always require at least 1 document
@@ -206,36 +112,74 @@ class StudyCardPipeline:
         if len(result.evidence_spans) < min_evidence_spans:
             errors.append(f"Insufficient evidence spans: {len(result.evidence_spans)} < {min_evidence_spans}")
         
-        # Check method card - always require if we have documents
-        if len(result.document_cards) > 0 and (require_method or not result.method_card):
-            if not result.method_card:
-                errors.append("Method section missing - no method card generated")
+        # Check study card - always require if we have documents
+        if len(result.document_cards) > 0 and (require_method or not result.study_card):
+            if not result.study_card:
+                errors.append("Study section missing - no study card generated")
         
         # Check results factsheet - always require if we have documents
         if len(result.document_cards) > 0 and (require_results or not result.results_factsheet):
             if not result.results_factsheet:
                 errors.append("Results section missing - no results factsheet generated")
         
-        # Check gates
-        if require_gates and len(result.gate_assessments) == 0:
-            errors.append("Gates section missing - no gate assessments generated")
+        # Check pattern detections
+        if require_patterns and len(result.pattern_detections) == 0:
+            errors.append("Pattern detections missing - no risk patterns detected")
         
         # Check LLM artifacts count
         total_llm_artifacts = len(result.llm_artifacts)
         if total_llm_artifacts < min_llm_artifacts:
             errors.append(f"Insufficient LLM artifacts: {total_llm_artifacts} < {min_llm_artifacts}")
         
-        # Check confidence score (calculate from available data)
-        if result.claims:
-            confidence_scores = [claim.confidence for claim in result.claims if hasattr(claim, 'confidence') and claim.confidence is not None]
-            if confidence_scores:
-                avg_confidence = sum(confidence_scores) / len(confidence_scores)
-                if avg_confidence < min_confidence:
-                    errors.append(f"Low confidence score: {avg_confidence:.3f} < {min_confidence}")
-            else:
-                errors.append("No confidence scores available for validation")
+        # Check database persistence (verify artifacts were actually saved)
+        db_persistence_errors = self._check_database_persistence(result)
+        errors.extend(db_persistence_errors)
+        
         
         return len(errors) == 0, errors
+    
+    def _check_database_persistence(self, result: StudyCardPipelineResult) -> List[str]:
+        """Check that artifacts were actually persisted to the database."""
+        errors = []
+        
+        try:
+            from ncfd.db.session import session_scope
+            from sqlalchemy import text
+            
+            with session_scope() as session:
+                # Check study cards table
+                if result.study_card:
+                    study_card_count = session.execute(text("SELECT COUNT(*) FROM study_cards WHERE doc_id = :doc_id"), 
+                                                     {'doc_id': result.study_card.doc_id}).scalar()
+                    if study_card_count == 0:
+                        errors.append(f"Study card not persisted to database for doc_id: {result.study_card.doc_id}")
+                
+                # Check factsheets table
+                if result.results_factsheet:
+                    factsheet_count = session.execute(text("SELECT COUNT(*) FROM factsheets WHERE doc_id = :doc_id"), 
+                                                    {'doc_id': result.results_factsheet.doc_id}).scalar()
+                    if factsheet_count == 0:
+                        errors.append(f"Results factsheet not persisted to database for doc_id: {result.results_factsheet.doc_id}")
+                
+                # Check spans table (evidence quotes)
+                if result.evidence_spans:
+                    doc_ids = [span.doc_id for span in result.evidence_spans]
+                    spans_count = session.execute(text("SELECT COUNT(*) FROM spans WHERE doc_id = ANY(:doc_ids)"), 
+                                                {'doc_ids': doc_ids}).scalar()
+                    if spans_count == 0:
+                        errors.append(f"Evidence spans not persisted to database for doc_ids: {doc_ids}")
+                
+                # Check pattern_detections table
+                if result.pattern_detections:
+                    pattern_count = session.execute(text("SELECT COUNT(*) FROM pattern_detections WHERE trial_id = :trial_id"), 
+                                                  {'trial_id': result.trial_id}).scalar()
+                    if pattern_count == 0:
+                        errors.append(f"Pattern detections not persisted to database for trial_id: {result.trial_id}")
+                        
+        except Exception as e:
+            errors.append(f"Database persistence check failed: {e}")
+        
+        return errors
     
     async def execute(self, trial_id: str, trial_context: Dict[str, Any]) -> StudyCardPipelineResult:
         """Execute the complete study card pipeline with LLM-first architecture."""
@@ -287,57 +231,61 @@ class StudyCardPipeline:
             # Process each document with our working LLM components
             logger.info(f"🔍 STARTING LLM PROCESSING for {len(result.document_cards)} documents")
             for i, doc_card in enumerate(result.document_cards):
-                doc_text = raw_doc_texts.get(doc_card.doc_id, "")
-                logger.info(f"🔍 PROCESSING DOCUMENT {i+1}/{len(result.document_cards)}: doc_id={doc_card.doc_id}")
+                # Ensure consistent key type for lookup (raw_doc_texts keys are strings)
+                doc_id_key = str(doc_card.doc_id)
+                doc_text = raw_doc_texts.get(doc_id_key, "")
+                logger.info(f"🔍 PROCESSING DOCUMENT {i+1}/{len(result.document_cards)}: doc_id={doc_card.doc_id} (key={doc_id_key})")
                 logger.info(f"   📄 Doc text length: {len(doc_text) if doc_text else 0} characters")
                 logger.info(f"   📄 Doc text preview: {doc_text[:200] if doc_text else 'NO TEXT'}...")
                 logger.info(f"   🔑 Available raw_doc_texts keys: {list(raw_doc_texts.keys())}")
+                logger.info(f"   🔍 Key lookup: '{doc_id_key}' in raw_doc_texts = {doc_id_key in raw_doc_texts}")
                 
                 if not doc_text:
-                    logger.error(f"❌ ERROR: No text available for document {doc_card.doc_id}")
+                    logger.error(f"❌ ERROR: No text available for document {doc_card.doc_id} (key={doc_id_key})")
+                    logger.error(f"   Available keys: {list(raw_doc_texts.keys())}")
                     continue
                 
                 # Use our working LLM components with concurrency control
                 try:
                     from ncfd.llm.concurrency_manager import concurrency_manager
                     
-                    # Method card generation
-                    method_data = {
+                    # Study card generation
+                    study_data = {
                         "raw_doc_text": doc_text,
                         "doc_id": doc_card.doc_id,
                         "trial_context": trial_context
                     }
-                    method_result = await concurrency_manager.execute_with_concurrency_control(
-                        self.llm_method_generator.process, method_data
+                    study_result = await concurrency_manager.execute_with_concurrency_control(
+                        self.llm_study_generator.process, study_data
                     )
-                    logger.info(f"DEBUG: Method result for doc {doc_card.doc_id}: success={method_result.get('success')}, has_method_card={bool(method_result.get('method_card'))}, field_quotes_count={len(method_result.get('field_quotes', []))}")
+                    logger.info(f"DEBUG: Study result for doc {doc_card.doc_id}: success={study_result.get('success')}, has_study_card={bool(study_result.get('study_card'))}, field_quotes_count={len(study_result.get('field_quotes', []))}")
                     
-                    # Log detailed method card output
-                    if method_result.get("method_card"):
-                        method_card = method_result["method_card"]
-                        logger.info(f"📋 METHOD CARD GENERATED for doc {doc_card.doc_id}:")
-                        logger.info(f"   Design Archetype: {getattr(method_card, 'design_archetype', 'N/A')}")
-                        logger.info(f"   Population Description: {str(getattr(method_card, 'population_description', 'N/A'))[:100]}...")
-                        logger.info(f"   Primary Endpoint: {str(getattr(method_card, 'primary_endpoint', 'N/A'))[:100]}...")
-                        logger.info(f"   Sample Size: {getattr(method_card, 'sample_size', 'N/A')}")
-                        logger.info(f"   Alpha Level: {getattr(method_card, 'alpha_level', 'N/A')}")
+                    # Log detailed study card output
+                    if study_result.get("study_card"):
+                        study_card = study_result["study_card"]
+                        logger.info(f"📋 STUDY CARD GENERATED for doc {doc_card.doc_id}:")
+                        logger.info(f"   Design Archetype: {getattr(study_card, 'design_archetype', 'N/A')}")
+                        logger.info(f"   Population Description: {str(getattr(study_card, 'population_description', 'N/A'))[:100]}...")
+                        logger.info(f"   Primary Endpoint: {str(getattr(study_card, 'primary_endpoint', 'N/A'))[:100]}...")
+                        logger.info(f"   Sample Size: {getattr(study_card, 'sample_size', 'N/A')}")
+                        logger.info(f"   Alpha Level: {getattr(study_card, 'alpha_level', 'N/A')}")
                     
                     # Log detailed field quotes
-                    field_quotes = method_result.get('field_quotes', [])
+                    field_quotes = study_result.get('field_quotes', [])
                     if field_quotes:
-                        logger.info(f"📝 METHOD FIELD QUOTES ({len(field_quotes)} quotes):")
+                        logger.info(f"📝 STUDY FIELD QUOTES ({len(field_quotes)} quotes):")
                         for i, quote in enumerate(field_quotes):
                             logger.info(f"   Quote {i+1}: {quote.field_name} = {str(quote.value)[:50]}...")
                             logger.info(f"      Evidence: {quote.evidence_quote[:100]}...")
                             logger.info(f"      Confidence: {quote.confidence}")
                     
-                    if method_result.get("success") and method_result.get("method_card"):
-                        result.method_card = method_result["method_card"]
+                    if study_result.get("success") and study_result.get("study_card"):
+                        result.study_card = study_result["study_card"]
                         
                         # Collect field quotes as evidence spans
-                        field_quotes = method_result.get("field_quotes", [])
+                        field_quotes = study_result.get("field_quotes", [])
                         for quote in field_quotes:
-                            evidence_span = EvidenceSpan(
+                            evidence_span = Span(
                                 doc_id=str(doc_card.doc_id),
                                 quote=quote.evidence_quote,
                                 section="Methods",
@@ -346,14 +294,14 @@ class StudyCardPipeline:
                             result.evidence_spans.append(evidence_span)
                         
                         # Store LLM artifacts
-                        result.llm_artifacts[f"method_card_{doc_card.doc_id}"] = method_result
+                        result.llm_artifacts[f"study_card_{doc_card.doc_id}"] = study_result
                         
-                        # Save method card to database
-                        await self._save_method_card_to_db(method_result["method_card"])
+                        # Save study card to database
+                        await self._save_study_card_to_db(study_result["study_card"])
                         
                         # Save quotes to database
                         await self._save_quotes_to_db(field_quotes, doc_card.doc_id, trial_id)
-                        logger.info(f"Method card generated for document {doc_card.doc_id} with {len(field_quotes)} quotes")
+                        logger.info(f"Study card generated for document {doc_card.doc_id} with {len(field_quotes)} quotes")
                         
                         # Results factsheet generation
                         results_data = {
@@ -392,7 +340,7 @@ class StudyCardPipeline:
                             # Collect field quotes as evidence spans
                             field_quotes = results_result.get("field_quotes", [])
                             for quote in field_quotes:
-                                evidence_span = EvidenceSpan(
+                                evidence_span = Span(
                                     doc_id=str(doc_card.doc_id),
                                     quote=quote.evidence_quote,
                                     section="Results",
@@ -445,7 +393,7 @@ class StudyCardPipeline:
                             
                             # Save quotes to database
                             await self._save_quotes_to_db(field_quotes, doc_card.doc_id, trial_id)
-                            logger.info(f"Gate assessments generated for document {doc_card.doc_id} with {len(field_quotes)} quotes")
+                            logger.info(f"Pattern detections generated for document {doc_card.doc_id}")
                             
                 except Exception as e:
                     logger.warning(f"LLM processing failed for document {doc_card.doc_id}: {e}")
@@ -456,19 +404,19 @@ class StudyCardPipeline:
             # Log comprehensive summary of all generated artifacts
             logger.info("🎯 STUDY CARD PIPELINE SUMMARY:")
             logger.info(f"   📄 Documents Processed: {len(result.document_cards)}")
-            logger.info(f"   📋 Method Cards Generated: {1 if result.method_card else 0}")
+            logger.info(f"   📋 Study Cards Generated: {1 if result.study_card else 0}")
             logger.info(f"   📊 Results Factsheets Generated: {1 if result.results_factsheet else 0}")
-            logger.info(f"   🚪 Gate Assessments Generated: {len(result.gate_assessments)}")
+            logger.info(f"   🚪 Pattern Detections Generated: {len(result.pattern_detections)}")
             logger.info(f"   📝 Total Evidence Spans: {len(result.evidence_spans)}")
             logger.info(f"   🔧 LLM Artifacts Stored: {len(result.llm_artifacts)}")
             
             # Add warnings for empty artifacts
-            if not result.method_card:
-                logger.warning("⚠️  WARNING: No method card generated!")
+            if not result.study_card:
+                logger.warning("⚠️  WARNING: No study card generated!")
             if not result.results_factsheet:
                 logger.warning("⚠️  WARNING: No results factsheet generated!")
-            if not result.gate_assessments:
-                logger.warning("⚠️  WARNING: No gate assessments generated!")
+            if not result.pattern_detections:
+                logger.warning("⚠️  WARNING: No pattern detections generated!")
             if not result.evidence_spans:
                 logger.warning("⚠️  WARNING: No evidence spans generated!")
             if not result.llm_artifacts:
@@ -520,9 +468,9 @@ class StudyCardPipeline:
                 logger.info("🎉 QUALITY GATE VALIDATION DETAILS:")
                 logger.info(f"   📄 Documents Analyzed: {len(result.document_cards)} (≥ 1 required)")
                 logger.info(f"   📝 Quotes Extracted: {len(result.evidence_spans)} (≥ {min_quotes} required)")
-                logger.info(f"   📋 Method Card: {'✅ Generated' if result.method_card else '❌ Missing'}")
+                logger.info(f"   📋 Study Card: {'✅ Generated' if result.study_card else '❌ Missing'}")
                 logger.info(f"   📊 Results Factsheet: {'✅ Generated' if result.results_factsheet else '❌ Missing'}")
-                logger.info(f"   🚪 Gate Assessments: {'✅ Generated' if result.gate_assessments else '❌ Missing'}")
+                logger.info(f"   🔍 Pattern Detections: {'✅ Generated' if result.pattern_detections else '❌ Missing'}")
                 logger.info(f"   🔧 LLM Artifacts: {len(result.llm_artifacts)} (≥ {min_llm_artifacts} required)")
             
             # Stage: Decision Record Generation
@@ -534,7 +482,7 @@ class StudyCardPipeline:
                 logger.info("🎯 DECISION RECORD GENERATED:")
                 logger.info(f"   Decision: {decision_record.decision}")
                 logger.info(f"   Posterior Success: {decision_record.posterior_success}")
-                logger.info(f"   Gates Assessed: {len(decision_record.gates)}")
+                logger.info(f"   Pattern Assessments: {len(decision_record.gates)}")
                 logger.info(f"   Risk Factors: {len(decision_record.risk_factors)}")
                 logger.info(f"   Mitigation Strategies: {len(decision_record.mitigation_strategies)}")
             else:
@@ -547,10 +495,12 @@ class StudyCardPipeline:
             
             logger.info(f"Study card pipeline completed successfully for trial {trial_id}")
             logger.info(f"Generated {len(result.document_cards)} document cards, {len(result.evidence_spans)} evidence spans")
-            if result.method_card:
-                logger.info("Method card generated successfully")
+            if result.study_card:
+                logger.info("Study card generated and persisted successfully")
             if result.results_factsheet:
-                logger.info("Results factsheet generated successfully")
+                logger.info("Results factsheet generated and persisted successfully")
+            if result.pattern_detections:
+                logger.info(f"Pattern detections generated and persisted successfully ({len(result.pattern_detections)} patterns)")
             
             return result
             
@@ -561,17 +511,17 @@ class StudyCardPipeline:
             result.processing_time_seconds = (result.end_time - result.start_time).total_seconds()
             return result
     
-    async def _save_method_card_to_db(self, method_card):
-        """Save method card to database."""
+    async def _save_study_card_to_db(self, study_card):
+        """Save study card to database."""
         try:
             import json
             from ncfd.db.session import session_scope
             from sqlalchemy import text
             
             with session_scope() as session:
-                # Insert method card into database
+                # Insert study card into database
                 session.execute(text("""
-                    INSERT INTO method_cards (
+                           INSERT INTO study_cards (
                         doc_id, design_archetype, is_blinded, analysis_set, population_description,
                         stratification_factors, covariate_adjustment, primary_endpoint, secondary_endpoints,
                         summary_measure, alpha_level, is_one_sided, multiplicity_adjustment,
@@ -589,37 +539,37 @@ class StudyCardPipeline:
                         :adjudication_committee, NOW(), NOW()
                     )
                 """), {
-                    'doc_id': method_card.doc_id,
-                    'design_archetype': getattr(method_card, 'design_archetype', None),
-                    'is_blinded': getattr(method_card, 'is_blinded', None),
-                    'analysis_set': json.dumps(getattr(method_card, 'analysis_set', None)) if getattr(method_card, 'analysis_set', None) is not None else None,
-                    'population_description': getattr(method_card, 'population_description', None),
-                    'stratification_factors': json.dumps(getattr(method_card, 'stratification_factors', [])),
-                    'covariate_adjustment': json.dumps(getattr(method_card, 'covariate_adjustment', [])),
-                    'primary_endpoint': getattr(method_card, 'primary_endpoint', None),
-                    'secondary_endpoints': json.dumps(getattr(method_card, 'secondary_endpoints', [])),
-                    'summary_measure': getattr(method_card, 'summary_measure', None),
-                    'alpha_level': getattr(method_card, 'alpha_level', None),
-                    'is_one_sided': getattr(method_card, 'is_one_sided', None),
-                    'multiplicity_adjustment': getattr(method_card, 'multiplicity_adjustment', None),
-                    'sample_size_reassessment': getattr(method_card, 'sample_size_reassessment', None),
-                    'interim_looks': json.dumps(getattr(method_card, 'interim_looks', [])),
-                    'interim_timing': getattr(method_card, 'interim_timing', None),
-                    'spending_function': getattr(method_card, 'spending_function', None),
-                    'stop_rules': json.dumps(getattr(method_card, 'stop_rules', [])),
-                    'missingness_assumption': getattr(method_card, 'missingness_assumption', None),
-                    'missingness_pattern': getattr(method_card, 'missingness_pattern', None),
-                    'imputation_method': getattr(method_card, 'imputation_method', None),
-                    'estimand': getattr(method_card, 'estimand', None),
-                    'intercurrent_events_policy': getattr(method_card, 'intercurrent_events_policy', None),
-                    'endpoint_ascertainment': getattr(method_card, 'endpoint_ascertainment', None),
-                    'assessment_interval': getattr(method_card, 'assessment_interval', None),
-                    'adjudication_committee': getattr(method_card, 'adjudication_committee', None)
+                    'doc_id': study_card.doc_id,
+                    'design_archetype': getattr(study_card, 'design_archetype', None),
+                    'is_blinded': getattr(study_card, 'is_blinded', None),
+                    'analysis_set': json.dumps(getattr(study_card, 'analysis_set', None)) if getattr(study_card, 'analysis_set', None) is not None else None,
+                    'population_description': getattr(study_card, 'population_description', None),
+                    'stratification_factors': json.dumps(getattr(study_card, 'stratification_factors', [])),
+                    'covariate_adjustment': json.dumps(getattr(study_card, 'covariate_adjustment', [])),
+                    'primary_endpoint': getattr(study_card, 'primary_endpoint', None),
+                    'secondary_endpoints': json.dumps(getattr(study_card, 'secondary_endpoints', [])),
+                    'summary_measure': getattr(study_card, 'summary_measure', None),
+                    'alpha_level': getattr(study_card, 'alpha_level', None),
+                    'is_one_sided': getattr(study_card, 'is_one_sided', None),
+                    'multiplicity_adjustment': getattr(study_card, 'multiplicity_adjustment', None),
+                    'sample_size_reassessment': getattr(study_card, 'sample_size_reassessment', None),
+                    'interim_looks': json.dumps(getattr(study_card, 'interim_looks', [])),
+                    'interim_timing': getattr(study_card, 'interim_timing', None),
+                    'spending_function': getattr(study_card, 'spending_function', None),
+                    'stop_rules': json.dumps(getattr(study_card, 'stop_rules', [])),
+                    'missingness_assumption': getattr(study_card, 'missingness_assumption', None),
+                    'missingness_pattern': getattr(study_card, 'missingness_pattern', None),
+                    'imputation_method': getattr(study_card, 'imputation_method', None),
+                    'estimand': getattr(study_card, 'estimand', None),
+                    'intercurrent_events_policy': getattr(study_card, 'intercurrent_events_policy', None),
+                    'endpoint_ascertainment': getattr(study_card, 'endpoint_ascertainment', None),
+                    'assessment_interval': getattr(study_card, 'assessment_interval', None),
+                    'adjudication_committee': getattr(study_card, 'adjudication_committee', None)
                 })
                 session.commit()
-                logger.info(f"Method card saved to database for doc_id: {method_card.doc_id}")
+                logger.info(f"Study card saved to database for doc_id: {study_card.doc_id}")
         except Exception as e:
-            logger.error(f"Failed to save method card to database: {e}")
+            logger.error(f"Failed to save study card to database: {e}")
     
     async def _save_results_factsheet_to_db(self, results_factsheet):
         """Save results factsheet to database."""
@@ -631,7 +581,7 @@ class StudyCardPipeline:
             with session_scope() as session:
                 # Insert results factsheet into database
                 session.execute(text("""
-                    INSERT INTO results_factsheets (
+                           INSERT INTO factsheets (
                         doc_id, results, primary_endpoint_results, secondary_endpoint_results,
                         safety_results, primary_analysis_set, secondary_analysis_sets,
                         total_enrolled, completed_primary_endpoint, dropout_rate,
@@ -660,65 +610,30 @@ class StudyCardPipeline:
         except Exception as e:
             logger.error(f"Failed to save results factsheet to database: {e}")
     
-    async def _save_gate_assessment_to_db(self, gate_assessment, trial_id):
-        """Save gate assessment to database with upsert to handle unique constraint violations."""
-        try:
-            from ncfd.db.session import session_scope
-            from sqlalchemy import text
-            
-            with session_scope() as session:
-                # Use upsert to handle unique constraint violations
-                session.execute(text("""
-                    INSERT INTO gates (
-                        trial_id, g_id, fired_bool, supporting_s_ids, lr_used, rationale_text
-                    ) VALUES (
-                        :trial_id, :g_id, :fired_bool, :supporting_s_ids, :lr_used, :rationale_text
-                    )
-                    ON CONFLICT (trial_id, g_id) DO UPDATE SET
-                        fired_bool = EXCLUDED.fired_bool,
-                        supporting_s_ids = EXCLUDED.supporting_s_ids,
-                        lr_used = EXCLUDED.lr_used,
-                        rationale_text = EXCLUDED.rationale_text
-                """), {
-                    'trial_id': trial_id,
-                    'g_id': getattr(gate_assessment, 'gate_id', 'G1'),
-                    'fired_bool': getattr(gate_assessment, 'status', 'UNCERTAIN') == 'PASS',
-                    'supporting_s_ids': None,  # Not available in GateAssessment model
-                    'lr_used': None,  # Not available in GateAssessment model
-                    'rationale_text': '; '.join(getattr(gate_assessment, 'rationale', [])) if getattr(gate_assessment, 'rationale', []) else None
-                })
-                session.commit()
-                logger.info(f"Gate assessment upserted to database for trial_id: {trial_id}, gate_id: {getattr(gate_assessment, 'gate_id', 'G1')}, status: {getattr(gate_assessment, 'status', 'UNCERTAIN')}")
-        except Exception as e:
-            logger.error(f"Failed to save gate assessment to database: {e}")
     
     async def _save_quotes_to_db(self, field_quotes, doc_id, trial_id):
-        """Save field quotes to evidence_spans table."""
+        """Save field quotes to spans table."""
         try:
             from ncfd.db.session import session_scope
-            from sqlalchemy import text
+            from ncfd.db.models import Span as DBSpan
             
             if not field_quotes:
                 logger.info(f"No field quotes to save for doc_id: {doc_id}")
                 return
             
             with session_scope() as session:
-                # Insert quotes into evidence_spans table
+                # Insert quotes into spans table using ORM
                 for quote in field_quotes:
-                    session.execute(text("""
-                        INSERT INTO evidence_spans (
-                            doc_id, quote, section, confidence, created_at, updated_at
-                        ) VALUES (
-                            :doc_id, :quote, :section, :confidence, NOW(), NOW()
-                        )
-                    """), {
-                        'doc_id': str(doc_id),  # Convert to string as per table schema
-                        'quote': getattr(quote, 'evidence_quote', ''),
-                        'section': getattr(quote, 'section', 'Unknown'),
-                        'confidence': getattr(quote, 'confidence', 0.8)
-                    })
+                    db_span = DBSpan(
+                        doc_id=int(doc_id),  # Convert to int as per table schema
+                        quote=getattr(quote, 'evidence_quote', ''),
+                        section=getattr(quote, 'section', 'Unknown'),
+                        confidence=getattr(quote, 'confidence', 0.8),
+                        created_at=datetime.now(timezone.utc)
+                    )
+                    session.add(db_span)
                 session.commit()
-                logger.info(f"Saved {len(field_quotes)} quotes to evidence_spans table for doc_id: {doc_id}, trial_id: {trial_id}")
+                logger.info(f"Saved {len(field_quotes)} quotes to spans table for doc_id: {doc_id}, trial_id: {trial_id}")
         except Exception as e:
             logger.error(f"Failed to save quotes to database: {e}")
     
@@ -845,19 +760,22 @@ class StudyCardPipeline:
                     
                     if matching_doc_card:
                         prioritized_doc_cards.append(matching_doc_card)
+                        # Ensure consistent key type for raw_doc_texts lookup
+                        doc_id_key = str(candidate['doc_id'])
+                        
                         # Always prioritize EnhancedRetriever's raw text first (it has the full retrieved text)
-                        if candidate['doc_id'] in raw_doc_texts and raw_doc_texts[candidate['doc_id']]:
-                            prioritized_raw_texts[candidate['doc_id']] = raw_doc_texts[candidate['doc_id']]
-                            logger.info(f"DEBUG: Using EnhancedRetriever text for doc_id {candidate['doc_id']} (length: {len(raw_doc_texts[candidate['doc_id']])})")
+                        if doc_id_key in raw_doc_texts and raw_doc_texts[doc_id_key]:
+                            prioritized_raw_texts[doc_id_key] = raw_doc_texts[doc_id_key]
+                            logger.info(f"DEBUG: Using EnhancedRetriever text for doc_id {candidate['doc_id']} (key={doc_id_key}, length: {len(raw_doc_texts[doc_id_key])})")
                         elif candidate['has_full_text'] and candidate['fulltext_text']:
-                            prioritized_raw_texts[candidate['doc_id']] = candidate['fulltext_text']
-                            logger.info(f"DEBUG: Using database fulltext for doc_id {candidate['doc_id']} (length: {len(candidate['fulltext_text'])})")
+                            prioritized_raw_texts[doc_id_key] = candidate['fulltext_text']
+                            logger.info(f"DEBUG: Using database fulltext for doc_id {candidate['doc_id']} (key={doc_id_key}, length: {len(candidate['fulltext_text'])})")
                         elif candidate['has_abstract'] and candidate['abstract_text']:
-                            prioritized_raw_texts[candidate['doc_id']] = candidate['abstract_text']
-                            logger.info(f"DEBUG: Using database abstract for doc_id {candidate['doc_id']} (length: {len(candidate['abstract_text'])})")
+                            prioritized_raw_texts[doc_id_key] = candidate['abstract_text']
+                            logger.info(f"DEBUG: Using database abstract for doc_id {candidate['doc_id']} (key={doc_id_key}, length: {len(candidate['abstract_text'])})")
                         else:
-                            prioritized_raw_texts[candidate['doc_id']] = ""
-                            logger.warning(f"DEBUG: No text available for doc_id {candidate['doc_id']}")
+                            prioritized_raw_texts[doc_id_key] = ""
+                            logger.warning(f"DEBUG: No text available for doc_id {candidate['doc_id']} (key={doc_id_key})")
                 
                 logger.info(f"Document prioritization applied: {len(prioritized_doc_cards)} documents selected from {len(candidates)} candidates")
                 
@@ -906,8 +824,8 @@ class StudyCardPipeline:
                 # Use filtered cards or fall back to limited cards
                 final_cards = filtered_cards if filtered_cards else limited_cards
                 
-                # Build corresponding raw texts
-                final_raw_texts = {card.doc_id: raw_doc_texts.get(card.doc_id, "") for card in final_cards}
+                # Build corresponding raw texts (ensure consistent string keys)
+                final_raw_texts = {str(card.doc_id): raw_doc_texts.get(str(card.doc_id), "") for card in final_cards}
                 
                 logger.info(f"Fallback prioritization: {len(final_cards)} documents selected from {len(document_cards)} candidates")
                 
@@ -920,7 +838,7 @@ class StudyCardPipeline:
                 logger.error(f"Fallback prioritization also failed: {fallback_error}")
                 # Last resort: return first document only
                 single_card = document_cards[:1] if document_cards else []
-                single_raw_texts = {card.doc_id: raw_doc_texts.get(card.doc_id, "") for card in single_card}
+                single_raw_texts = {str(card.doc_id): raw_doc_texts.get(str(card.doc_id), "") for card in single_card}
                 return {'document_cards': single_card, 'raw_doc_texts': single_raw_texts}, {"error": str(e), "fallback_failed": True}
     
     def _determine_document_priority(self, r_score, r_tier, s_score, s_tier, has_full_text, has_abstract, doc=None):
@@ -1159,16 +1077,22 @@ class StudyCardPipeline:
                 review_committee="AutomatedAnalysis"
             )
             
-            # Add gate assessments
-            for gate_assessment in result.gate_assessments:
-                # Convert gate status to probability
-                p_gate = self._convert_gate_status_to_probability(gate_assessment.status)
+            # Add pattern detections as gate assessments
+            for pattern_detection in result.pattern_detections:
+                # Convert pattern severity to probability
+                p_pattern = self._convert_pattern_severity_to_probability(pattern_detection.severity)
+                
+                # Convert pattern detection to gate assessment format
+                gate_id = f"{pattern_detection.family_id}_{pattern_detection.pattern_id}"
+                # Convert SeverityLevel enum to status (0=grey, 1=yellow, 2=red)
+                severity_value = pattern_detection.severity.value
+                status = "FAIL" if severity_value >= 2 else "PASS" if severity_value == 0 else "UNCERTAIN"
                 
                 decision_record.add_gate_assessment(
-                    gate_id=gate_assessment.gate_id,
-                    status=gate_assessment.status,
-                    p_gate=p_gate,
-                    rationale=gate_assessment.rationale[0] if gate_assessment.rationale else ""
+                    gate_id=gate_id,
+                    status=status,
+                    p_gate=p_pattern,
+                    rationale=f"{pattern_detection.family_id}/{pattern_detection.pattern_id} ({pattern_detection.severity}): {pattern_detection.rationale}"
                 )
             
             # Calculate overall success probability
@@ -1178,12 +1102,12 @@ class StudyCardPipeline:
                     decision_record.set_posterior_success(overall_success)
             
             # Generate comprehensive analysis using synthesis components
-            await self._generate_comprehensive_analysis(decision_record, result, trial_context)
+            self._generate_comprehensive_analysis(decision_record, result, trial_context)
             
-            # Update decision based on gate assessments
+            # Update decision based on pattern assessments
             decision_record._update_decision_from_gates()
             
-            logger.info(f"Generated decision record with {len(decision_record.gates)} gates, decision: {decision_record.decision}")
+            logger.info(f"Generated decision record with {len(decision_record.gates)} pattern assessments, decision: {decision_record.decision}")
             return decision_record
             
         except Exception as e:
@@ -1199,21 +1123,38 @@ class StudyCardPipeline:
         }
         return status_mapping.get(status, 0.5)
     
-    async def _generate_comprehensive_analysis(self, decision_record: DecisionRecord, result: StudyCardPipelineResult, trial_context: Dict[str, Any]) -> None:
+    def _convert_pattern_severity_to_probability(self, severity) -> float:
+        """Convert pattern severity to probability of success."""
+        # Handle SeverityLevel enum (0=grey, 1=yellow, 2=red)
+        if hasattr(severity, 'value'):
+            severity_value = severity.value
+        else:
+            # Fallback for string values (shouldn't happen with SeverityLevel enum)
+            severity_map = {"grey": 0, "yellow": 1, "red": 2}
+            severity_value = severity_map.get(severity, 1)
+        
+        # Convert severity value to probability (higher severity = lower success probability)
+        probability_map = {
+            0: 0.9,  # grey - low risk
+            1: 0.7,  # yellow - moderate risk  
+            2: 0.1   # red - very high risk
+        }
+        return probability_map.get(severity_value, 0.5)
+    
+    def _generate_comprehensive_analysis(self, decision_record: DecisionRecord, result: StudyCardPipelineResult, trial_context: Dict[str, Any]) -> None:
         """Generate comprehensive analysis using synthesis components."""
         try:
-            # Use EvidenceConstrainedSynthesizer for narrative generation
-            from ..synthesis import EvidenceConstrainedSynthesizer
             
-            synthesizer = EvidenceConstrainedSynthesizer()
-            
-            # Generate risk factors from gate assessments
+            # Generate risk factors from pattern detections
             risk_factors = []
-            for gate_assessment in result.gate_assessments:
-                if gate_assessment.status == "FAIL":
-                    risk_factors.append(f"Gate {gate_assessment.gate_id} failed: {gate_assessment.rationale[0] if gate_assessment.rationale else 'No rationale provided'}")
-                elif gate_assessment.status == "UNCERTAIN":
-                    risk_factors.append(f"Gate {gate_assessment.gate_id} uncertain: {gate_assessment.rationale[0] if gate_assessment.rationale else 'No rationale provided'}")
+            for pattern_detection in result.pattern_detections:
+                severity_value = pattern_detection.severity.value
+                severity_name = pattern_detection.severity.name.lower()  # grey, yellow, amber, red
+                
+                if severity_value >= 2:  # amber (2) or red (3)
+                    risk_factors.append(f"Pattern {pattern_detection.family_id}/{pattern_detection.pattern_id} ({severity_name}): {pattern_detection.rationale}")
+                elif severity_value == 1:  # yellow
+                    risk_factors.append(f"Pattern {pattern_detection.family_id}/{pattern_detection.pattern_id} (yellow): {pattern_detection.rationale}")
             
             # Add risk factors to decision record
             for risk in risk_factors:
@@ -1222,10 +1163,10 @@ class StudyCardPipeline:
             # Generate mitigation strategies
             mitigation_strategies = []
             if decision_record.failed_gates > 0:
-                mitigation_strategies.append("Request additional data or clarification for failed gates")
+                mitigation_strategies.append("Request additional data or clarification for failed pattern assessments")
                 mitigation_strategies.append("Consider alternative endpoints or analysis approaches")
             if decision_record.uncertain_gates > 0:
-                mitigation_strategies.append("Conduct additional analysis for uncertain gates")
+                mitigation_strategies.append("Conduct additional analysis for uncertain pattern assessments")
                 mitigation_strategies.append("Seek expert review for ambiguous findings")
             
             # Add mitigation strategies
@@ -1235,11 +1176,11 @@ class StudyCardPipeline:
             # Generate decision rationale
             rationale_parts = []
             if decision_record.failed_gates > 0:
-                rationale_parts.append(f"{decision_record.failed_gates} gate(s) failed, indicating significant concerns")
+                rationale_parts.append(f"{decision_record.failed_gates} pattern assessment(s) failed, indicating significant concerns")
             if decision_record.uncertain_gates > 0:
-                rationale_parts.append(f"{decision_record.uncertain_gates} gate(s) uncertain, requiring additional analysis")
+                rationale_parts.append(f"{decision_record.uncertain_gates} pattern assessment(s) uncertain, requiring additional analysis")
             if decision_record.passed_gates > 0:
-                rationale_parts.append(f"{decision_record.passed_gates} gate(s) passed, indicating positive signals")
+                rationale_parts.append(f"{decision_record.passed_gates} pattern assessment(s) passed, indicating positive signals")
             
             if rationale_parts:
                 decision_record.add_decision_rationale("; ".join(rationale_parts))
@@ -1313,8 +1254,8 @@ class StudyCardPipeline:
                                 # Store in database
                                 await self._store_fulltext(doc_info['doc_id'], full_text, source='PMC')
                                 
-                                # Update raw_doc_texts for immediate use
-                                raw_doc_texts[doc_info['doc_id']] = full_text
+                                # Update raw_doc_texts for immediate use (ensure consistent string keys)
+                                raw_doc_texts[str(doc_info['doc_id'])] = full_text
                                 
                                 logger.info(f"✅ Retrieved {len(full_text)} characters for PMID {doc_info['pmid']}")
                             else:
@@ -1377,23 +1318,32 @@ class StudyCardPipeline:
     async def _save_pattern_detection_to_db(self, pattern_detection: Any, trial_id: str) -> bool:
         """Save pattern detection to database."""
         try:
-            from ..db.session import get_session
-            from ..pattern_families.models import PatternDetection as PatternDetectionModel
+            from ncfd.db.session import session_scope
+            from sqlalchemy import text
             
-            async with get_session() as session:
-                # Convert PatternDetection dataclass to SQLAlchemy model
-                db_detection = PatternDetectionModel(
-                    trial_id=int(trial_id),
-                    run_id="pattern_families_run",
-                    family_id=pattern_detection.family_id,
-                    pattern_id=pattern_detection.pattern_id,
-                    severity=pattern_detection.severity.value,
-                    confidence=pattern_detection.confidence,
-                    rationale=pattern_detection.rationale,
-                    evidence_spans=pattern_detection.evidence_spans
-                )
-                session.add(db_detection)
+            with session_scope() as session:
+                # Insert pattern detection into database
+                import json
+                session.execute(text("""
+                    INSERT INTO pattern_detections (
+                        trial_id, run_id, family_id, pattern_id, severity, 
+                        confidence, rationale, evidence_spans, detected_at, created_at
+                    ) VALUES (
+                        :trial_id, :run_id, :family_id, :pattern_id, :severity,
+                        :confidence, :rationale, :evidence_spans, NOW(), NOW()
+                    )
+                """), {
+                    'trial_id': int(trial_id),
+                    'run_id': "pattern_families_run",
+                    'family_id': pattern_detection.family_id,
+                    'pattern_id': pattern_detection.pattern_id,
+                    'severity': pattern_detection.severity.value,  # SeverityLevel enum value (0-3)
+                    'confidence': pattern_detection.confidence,
+                    'rationale': pattern_detection.rationale,
+                    'evidence_spans': json.dumps(pattern_detection.evidence_spans) if pattern_detection.evidence_spans else None
+                })
                 session.commit()
+                logger.info(f"Pattern detection saved to database for trial_id: {trial_id}")
                 return True
                 
         except Exception as e:

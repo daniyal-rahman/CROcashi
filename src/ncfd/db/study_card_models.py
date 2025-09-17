@@ -76,41 +76,5 @@ class Factsheet(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
-class GateAssessment(Base):
-    """SQLAlchemy model for gate_assessments table."""
-    __tablename__ = 'gate_assessments'
-    
-    id = Column(Integer, primary_key=True)
-    gate_id = Column(String, nullable=False)
-    status = Column(String, nullable=False)
-    p_gate = Column(Float, nullable=True)
-    rationale = Column(JSON, nullable=True)
-    sensitivity = Column(JSON, nullable=True)
-    computed_values = Column(JSON, nullable=True)
-    threshold_comparisons = Column(JSON, nullable=True)
-    assessment_method = Column(String, nullable=True)
-    confidence_in_assessment = Column(Float, nullable=True)
-    assessment_notes = Column(JSON, nullable=True)
-    next_steps = Column(JSON, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
-
-
-class Span(Base):
-    """SQLAlchemy model for spans table."""
-    __tablename__ = 'spans'
-    
-    id = Column(Integer, primary_key=True)
-    doc_id = Column(String, nullable=False)
-    quote = Column(Text, nullable=False)
-    section = Column(String, nullable=False)
-    page = Column(Integer, nullable=True)
-    char_start = Column(Integer, nullable=True)
-    char_end = Column(Integer, nullable=True)
-    confidence = Column(Float, nullable=True)
-    table_id = Column(String, nullable=True)
-    table_row = Column(Integer, nullable=True)
-    table_col = Column(Integer, nullable=True)
-    snippet_hash = Column(String, nullable=True)
-    bbox_json = Column(JSON, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+# GateAssessment model removed - using Pattern Families system instead
+# Span model removed - using the main Span model from models.py instead

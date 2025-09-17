@@ -13,7 +13,7 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-from ...db.models import Document, DocumentText, BaseSpan
+from ...db.models import Document, DocumentText, Span as DBSpan
 from ...db.session import session_scope
 
 logger = logging.getLogger(__name__)
@@ -85,9 +85,9 @@ class AbstractSpanIndexer:
                     return result
                 
                 # Check if spans already exist
-                existing_spans = session.query(BaseSpan).filter(
-                    BaseSpan.doc_id == doc_id,
-                    BaseSpan.section == self.section_name
+                existing_spans = session.query(Span).filter(
+                    Span.doc_id == doc_id,
+                    Span.section == self.section_name
                 ).count()
                 
                 if existing_spans > 0 and not force_reindex:
@@ -98,9 +98,9 @@ class AbstractSpanIndexer:
                 
                 # Clear existing spans if force reindex
                 if force_reindex and existing_spans > 0:
-                    session.query(BaseSpan).filter(
-                        BaseSpan.doc_id == doc_id,
-                        BaseSpan.section == self.section_name
+                    session.query(Span).filter(
+                        Span.doc_id == doc_id,
+                        Span.section == self.section_name
                     ).delete()
                     logger.info(f"Cleared {existing_spans} existing spans for document {doc_id}")
                 
@@ -121,23 +121,19 @@ class AbstractSpanIndexer:
                         char_start = char_offset
                     char_end = char_start + len(sentence)
                     
-                    # Create base span
-                    base_span = BaseSpan(
+                    # Create span using current schema
+                    db_span = DBSpan(
                         doc_id=doc_id,
+                        quote=sentence.strip(),  # Use 'quote' field instead of 'text'
                         section=self.section_name,
                         page=None,  # Abstracts don't have page numbers
                         char_start=char_start,
                         char_end=char_end,
-                        text=sentence.strip(),
-                        text_original=sentence.strip(),
-                        is_table_cell=False,
-                        table_id=None,
-                        row=None,
-                        col=None,
+                        confidence=1.0,  # Default confidence for abstract spans
                         created_at=datetime.now(timezone.utc)
                     )
                     
-                    session.add(base_span)
+                    session.add(db_span)
                     spans_created += 1
                     char_offset = char_end
                 
@@ -303,7 +299,7 @@ class AbstractSpanIndexer:
                     stats['abstract_length'] = len(doc_text.abstract_text)
                 
                 # Count spans by section
-                spans = session.query(BaseSpan).filter(BaseSpan.doc_id == doc_id).all()
+                spans = session.query(Span).filter(Span.doc_id == doc_id).all()
                 stats['span_count'] = len(spans)
                 
                 sections = {}
