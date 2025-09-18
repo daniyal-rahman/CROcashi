@@ -27,6 +27,11 @@ class PatternFamilyDetector(BaseLLMGenerator):
         self.logger = logging.getLogger(__name__)
         self.config = self._load_config()
         self.patterns = self._load_patterns()
+        
+        # Log initialization status
+        self.logger.info(f"PatternFamilyDetector initialized with {len(self.patterns)} patterns from {self.config_path}")
+        if not self.patterns:
+            self.logger.warning("No patterns loaded - pattern detection will not work")
     
     async def process(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -61,6 +66,7 @@ class PatternFamilyDetector(BaseLLMGenerator):
             # Detect patterns
             detections = await self.detect_patterns(doc_id, [{"text": raw_doc_text, "doc_id": doc_id}], trial_context)
             
+            self.logger.info(f"Generated {len(detections)} pattern detections for document {doc_id}")
             return {
                 "pattern_detections": detections,
                 "success": True,
@@ -68,31 +74,52 @@ class PatternFamilyDetector(BaseLLMGenerator):
             }
             
         except Exception as e:
-            self.logger.error(f"Pattern detection failed: {str(e)}")
+            error_msg = str(e)
+            self.logger.error(f"Pattern detection failed: {error_msg}")
+            
+            # Check for the specific float subscriptable error
+            if 'float' in error_msg and 'subscriptable' in error_msg:
+                self.logger.error("🚨 Detected 'float' object is not subscriptable error!")
+                self.logger.error("This indicates the LLM returned malformed JSON with numbers instead of detection objects.")
+                self.logger.error("The LLM response likely contained something like: {'detections': [0.95, 0.87]} instead of proper detection objects.")
+            
             return {
                 "pattern_detections": [],
                 "success": False,
-                "error_message": str(e)
+                "error_message": error_msg
             }
     
     def _load_config(self) -> Dict[str, Any]:
         """Load Pattern Families configuration."""
         config_file = Path(self.config_path)
         if not config_file.exists():
-            self.logger.warning(f"Config file not found: {self.config_path}")
+            self.logger.error(f"Config file not found: {self.config_path}")
             return {}
         
-        with open(config_file, 'r') as f:
-            return yaml.safe_load(f)
+        try:
+            with open(config_file, 'r') as f:
+                config = yaml.safe_load(f)
+            self.logger.info(f"Successfully loaded config from {self.config_path}")
+            return config
+        except Exception as e:
+            self.logger.error(f"Failed to load config from {self.config_path}: {e}")
+            return {}
     
     def _load_patterns(self) -> Dict[str, Dict[str, Any]]:
         """Load pattern configurations."""
         patterns = {}
         
         if 'families' not in self.config:
+            self.logger.error("No 'families' section found in pattern_families.yaml config")
             return patterns
         
+        # Log loaded patterns
+        total_patterns = 0
         for family_id, family_data in self.config['families'].items():
+            pattern_count = len(family_data.get('patterns', {}))
+            total_patterns += pattern_count
+            self.logger.info(f"Loaded {pattern_count} patterns for family {family_id}")
+            
             for pattern_id, pattern_data in family_data.get('patterns', {}).items():
                 full_pattern_id = f"{family_id}{pattern_id}"
                 patterns[full_pattern_id] = {
@@ -104,6 +131,7 @@ class PatternFamilyDetector(BaseLLMGenerator):
                     'severity_rules': pattern_data.get('severity_rules', {})
                 }
         
+        self.logger.info(f"Total patterns loaded: {total_patterns}")
         return patterns
     
     async def detect_patterns(self, 
@@ -112,19 +140,31 @@ class PatternFamilyDetector(BaseLLMGenerator):
                             trial_context: Dict[str, Any]) -> List[PatternDetection]:
         """Detect patterns using LLM."""
         
-        # Build prompt
-        prompt = self._build_detection_prompt(documents, trial_context)
-        
-        # Call LLM
-        response = await self._extract_with_llm("", trial_context, prompt)
-        
-        # Parse response
-        detections = self._parse_llm_response(response)
-        
-        # Apply deterministic guards
-        detections = self._apply_deterministic_guards(detections, trial_context)
-        
-        return detections
+        try:
+            # Validate inputs
+            if not documents:
+                self.logger.warning("No documents provided for pattern detection")
+                return []
+            
+            # Build prompt
+            prompt = self._build_detection_prompt(documents, trial_context)
+            self.logger.debug(f"Built prompt with {len(documents)} documents")
+            
+            # Call LLM
+            response = await self._extract_with_llm("", trial_context, prompt)
+            
+            # Parse response
+            detections = self._parse_llm_response(response)
+            self.logger.info(f"Parsed {len(detections)} pattern detections from LLM response")
+            
+            # Apply deterministic guards
+            detections = self._apply_deterministic_guards(detections, trial_context)
+            
+            return detections
+            
+        except Exception as e:
+            self.logger.error(f"Pattern detection failed for trial {trial_id}: {e}")
+            return []
     
     def _get_data_key(self) -> str:
         """Return the key for the main data in the LLM response."""
@@ -155,17 +195,33 @@ class PatternFamilyDetector(BaseLLMGenerator):
                 json_output=True
             )
             
-            # Parse the response
+            # Parse the response using robust JSON parsing
             result = response.content
+            self.logger.debug(f"LLM raw response type: {type(result)}")
+            self.logger.debug(f"LLM raw response content: {str(result)[:500]}...")
+            
             if isinstance(result, str):
-                import json
-                result = json.loads(result)
+                # Use robust JSON parsing like other generators
+                from ...llm.json_parser import parse_llm_json_response
+                parsed_result = parse_llm_json_response(result, expected_fields=["detections"])
+                if parsed_result:
+                    result = parsed_result
+                    self.logger.info(f"Successfully parsed LLM response with {len(result.get('detections', []))} detections")
+                else:
+                    self.logger.error(f"Failed to parse LLM response: {result}")
+                    return {"detections": []}
+            elif isinstance(result, (int, float)):
+                self.logger.error(f"LLM returned a number ({result}) instead of JSON. This will cause parsing errors.")
+                return {"detections": []}
+            elif not isinstance(result, dict):
+                self.logger.error(f"LLM returned unexpected type {type(result)}: {result}")
+                return {"detections": []}
             
             return result
             
         except Exception as e:
             self.logger.error(f"LLM pattern detection failed: {e}")
-            return {"pattern_detections": []}
+            return {"detections": []}
     
     def _build_detection_prompt(self, documents: List[Dict[str, Any]], trial_context: Dict[str, Any]) -> str:
         """Build LLM prompt for pattern detection."""
@@ -191,18 +247,20 @@ Document Text Slices:
 {text_slices}
 
 For each family F1-F9, identify 0-3 applicable patterns with:
-- family_id (F1-F9)
-- pattern_id (F1P1-F9P4)  
-- severity (0-3: Grey/Yellow/Amber/Red)
-- confidence (0-1)
-- rationale (brief explanation)
-- evidence_spans (doc_id + snippet_hash)
+- family_id (F1-F9) - MUST be string format like "F1", "F2", etc.
+- pattern_id (F1P1-F9P4) - MUST be string format like "F1P1", "F2P1", etc.
+- severity (0-3: Grey/Yellow/Amber/Red) - MUST be integer
+- confidence (0-1) - MUST be float
+- rationale (brief explanation) - MUST be string
+- evidence_spans (doc_id + snippet_hash) - MUST be array
 
 Severity Rubric:
 - 3 (Red): Likely to materially invalidate result or approval path
 - 2 (Amber): Can swing outcome with reasonable probability  
 - 1 (Yellow): Adds meaningful risk but unlikely decisive alone
 - 0 (Grey): Not present/insufficient evidence
+
+IMPORTANT: Use exact string formats for family_id and pattern_id. Use integers for severity.
 
 Respond in JSON format:
 {{
@@ -243,8 +301,16 @@ Severity Rules: {pattern['severity_rules']}
         slices = []
         
         for doc in documents[:3]:  # Limit to 3 documents for token management
-            doc_text = doc.get('content', '')[:2000]  # Limit text length
-            slices.append(f"Document {doc.get('doc_id', 'unknown')}:\n{doc_text}\n")
+            # Try multiple field names for text content
+            doc_text = (doc.get('text', '') or 
+                       doc.get('content', '') or 
+                       doc.get('fulltext_text', '') or 
+                       doc.get('abstract_text', ''))[:2000]  # Limit text length
+            
+            if doc_text:
+                slices.append(f"Document {doc.get('doc_id', 'unknown')}:\n{doc_text}\n")
+            else:
+                self.logger.warning(f"No text content found for document {doc.get('doc_id', 'unknown')}")
         
         return "\n".join(slices)
     
@@ -252,24 +318,78 @@ Severity Rules: {pattern['severity_rules']}
         """Parse LLM response into PatternDetection objects."""
         try:
             if 'detections' not in response:
+                self.logger.warning("No 'detections' field found in LLM response")
+                self.logger.debug(f"Response keys: {list(response.keys())}")
                 return []
             
             detections = []
-            for detection_data in response['detections']:
-                detection = PatternDetection(
-                    family_id=detection_data['family_id'],
-                    pattern_id=detection_data['pattern_id'],
-                    severity=SeverityLevel(detection_data['severity']),
-                    confidence=detection_data['confidence'],
-                    rationale=detection_data['rationale'],
-                    evidence_spans=detection_data.get('evidence_spans', [])
-                )
-                detections.append(detection)
+            detection_list = response['detections']
             
+            if not isinstance(detection_list, list):
+                self.logger.error(f"Expected 'detections' to be a list, got {type(detection_list)}")
+                return []
+            
+            for i, detection_data in enumerate(detection_list):
+                try:
+                    # Validate that detection_data is a dictionary
+                    if not isinstance(detection_data, dict):
+                        self.logger.error(f"Detection {i} is not a dictionary, got {type(detection_data)}: {detection_data}")
+                        self.logger.error(f"This indicates the LLM returned malformed JSON. Expected detection objects but got {type(detection_data)} values.")
+                        continue
+                    
+                    # Validate required fields
+                    required_fields = ['family_id', 'pattern_id', 'severity', 'confidence', 'rationale']
+                    missing_fields = [field for field in required_fields if field not in detection_data]
+                    if missing_fields:
+                        self.logger.warning(f"Detection {i} missing fields: {missing_fields}")
+                        continue
+                    
+                    # Normalize family_id and pattern_id to string format
+                    family_id = str(detection_data['family_id']).replace('.0', '')
+                    pattern_id = str(detection_data['pattern_id']).replace('.0', '')
+                    
+                    # Convert numeric family/pattern IDs to proper format
+                    if family_id.isdigit():
+                        family_id = f"F{family_id}"
+                    if pattern_id.isdigit():
+                        pattern_id = f"{family_id}P{pattern_id}"
+                    
+                    # Update detection_data with normalized values
+                    detection_data['family_id'] = family_id
+                    detection_data['pattern_id'] = pattern_id
+                    
+                    # Validate severity value (allow 0-3 as per SeverityLevel enum)
+                    severity_value = detection_data['severity']
+                    if not isinstance(severity_value, int) or severity_value < 0 or severity_value > 3:
+                        self.logger.warning(f"Invalid severity value {severity_value} for detection {i}")
+                        continue
+                    
+                    # Validate confidence value
+                    confidence_value = detection_data['confidence']
+                    if not isinstance(confidence_value, (int, float)) or confidence_value < 0 or confidence_value > 1:
+                        self.logger.warning(f"Invalid confidence value {confidence_value} for detection {i}")
+                        continue
+                    
+                    detection = PatternDetection(
+                        family_id=detection_data['family_id'],
+                        pattern_id=detection_data['pattern_id'],
+                        severity=SeverityLevel(severity_value),
+                        confidence=float(confidence_value),
+                        rationale=detection_data['rationale'],
+                        evidence_spans=detection_data.get('evidence_spans', [])
+                    )
+                    detections.append(detection)
+                    
+                except Exception as e:
+                    self.logger.error(f"Error parsing detection {i}: {e}")
+                    continue
+            
+            self.logger.info(f"Successfully parsed {len(detections)} valid pattern detections")
             return detections
             
         except Exception as e:
             self.logger.error(f"Error parsing LLM response: {e}")
+            self.logger.debug(f"Response content: {response}")
             return []
     
     def _apply_deterministic_guards(self, detections: List[PatternDetection], trial_context: Dict[str, Any]) -> List[PatternDetection]:

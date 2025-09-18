@@ -338,27 +338,58 @@ class AbstractProcessor:
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """Compute R/S scores for documents and store them directly in document records."""
         try:
-            # This would integrate with the R/S scoring system
-            # For now, return documents as-is with placeholder scores
+            # Import R/S scorer
+            from .rs_scorer import RSScorer
+            
+            # Initialize R/S scorer
+            rs_scorer = RSScorer()
+            
+            # Get trial phase for scoring context
+            trial_phase = None
+            try:
+                from ncfd.db.session import session_scope
+                from ncfd.db.models import Trial
+                with session_scope() as session:
+                    trial = session.query(Trial).filter(Trial.trial_id == trial_id).first()
+                    if trial:
+                        trial_phase = trial.phase
+            except Exception as e:
+                logger.warning(f"Could not get trial phase for R/S scoring: {e}")
+            
             documents_scored = []
             
             for doc in documents:
-                # Placeholder R/S scoring logic
-                r_score = 0.5  # Would be computed based on relevance
-                s_score = 0.3  # Would be computed based on shortability
-                
-                # Determine R/S tiers
-                r_tier = self._determine_r_tier(r_score)
-                s_tier = self._determine_s_tier(s_score)
-                
-                # Add R/S scores directly to document
-                doc['r_score'] = r_score
-                doc['r_tier'] = r_tier
-                doc['s_score'] = s_score
-                doc['s_tier'] = s_tier
-                doc['r_components'] = {'placeholder': 'R components would go here'}
-                doc['s_components'] = {'placeholder': 'S components would go here'}
-                doc['rs_decided_at'] = datetime.now(timezone.utc)
+                try:
+                    # Calculate real R/S scores
+                    rs_result = rs_scorer.score_document(
+                        doc=doc,
+                        trial_asset=trial_asset,
+                        trial_indication=trial_indication,
+                        trial_nct=trial_nct,
+                        trial_phase=trial_phase
+                    )
+                    
+                    # Add R/S scores to document
+                    doc['r_score'] = rs_result.r_score
+                    doc['r_tier'] = rs_result.r_tier
+                    doc['s_score'] = rs_result.s_score
+                    doc['s_tier'] = rs_result.s_tier
+                    doc['r_components'] = rs_result.r_components
+                    doc['s_components'] = rs_result.s_components
+                    doc['rs_decided_at'] = datetime.now(timezone.utc)
+                    
+                    logger.debug(f"Document {doc.get('pmid', 'unknown')}: R={rs_result.r_score:.3f} ({rs_result.r_tier}), S={rs_result.s_score:.3f} ({rs_result.s_tier})")
+                    
+                except Exception as e:
+                    logger.error(f"Error scoring document {doc.get('pmid', 'unknown')}: {e}")
+                    # Use default scores for error cases
+                    doc['r_score'] = 0.0
+                    doc['r_tier'] = "R0"
+                    doc['s_score'] = 0.0
+                    doc['s_tier'] = "S0"
+                    doc['r_components'] = {'error': str(e)}
+                    doc['s_components'] = {'error': str(e)}
+                    doc['rs_decided_at'] = datetime.now(timezone.utc)
                 
                 documents_scored.append(doc)
             

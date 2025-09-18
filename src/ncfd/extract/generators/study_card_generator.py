@@ -174,6 +174,13 @@ class LLMStudyCardGenerator(BaseLLMGenerator):
                 
                 for quote_data in result.get("field_quotes", []):
                     logger.info(f"DEBUG: Processing quote_data: {quote_data}")
+                    
+                    # Validate that quote_data is a dictionary
+                    if not isinstance(quote_data, dict):
+                        logger.error(f"Quote data is not a dictionary, got {type(quote_data)}: {quote_data}")
+                        logger.error("This indicates the LLM returned malformed JSON with numbers instead of quote objects.")
+                        continue
+                    
                     field_quotes.append(EvidenceField(
                         field_name=quote_data.get("field_name", ""),
                         value=quote_data.get("value"),
@@ -393,6 +400,14 @@ Only include fields where you found clear evidence in the document. If a field i
                     logger.error(f"DEBUG: JSON parsing failed")
                     logger.error(f"DEBUG: Raw response: {result}")
                     return {}
+            elif isinstance(result, (int, float)):
+                # Handle case where LLM returns a number instead of JSON
+                logger.error(f"LLM returned a number instead of JSON: {result}")
+                return {}
+            elif not isinstance(result, dict):
+                # Handle other unexpected types
+                logger.error(f"LLM returned unexpected type {type(result)}: {result}")
+                return {}
             
             return result
             

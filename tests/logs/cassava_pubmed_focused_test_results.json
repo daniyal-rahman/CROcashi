@@ -1,0 +1,648 @@
+{
+  "test_info": {
+    "start_time": "2025-09-18T23:05:32.395760+00:00",
+    "test_name": "Cassava PubMed Focused Test",
+    "version": "1.0",
+    "end_time": "2025-09-18T23:05:40.335647+00:00",
+    "duration_seconds": 7.939887
+  },
+  "database_setup": {
+    "status": "success",
+    "tables_created": true,
+    "data_cleared": true,
+    "company_seeded": true
+  },
+  "ctgov_seeding": {
+    "status": "success",
+    "trials_seeded": 2,
+    "trials": [
+      {
+        "trial_id": 23,
+        "nct_id": "NCT04388254",
+        "title": "A Phase 2, Randomized, Double-Blind, Placebo-Controlled Study of PTI-125 in Patients with Mild-to-Moderate Alzheimer's Disease",
+        "phase": "PHASE2"
+      },
+      {
+        "trial_id": 24,
+        "nct_id": "NCT05515666",
+        "title": "A Phase 3, Randomized, Double-Blind, Placebo-Controlled Study of Simufilam in Patients with Mild-to-Moderate Alzheimer's Disease",
+        "phase": "PHASE3"
+      }
+    ]
+  },
+  "pubmed_processing": {
+    "status": "success",
+    "main_trial": "NCT05515666",
+    "trials_processed": 1,
+    "documents_created": 20,
+    "document_links": 20,
+    "retrieval_documents": 20,
+    "processed_documents": 14,
+    "document_details": [
+      {
+        "pmid": "39239266",
+        "title": "Expression of concern: Simufilam suppresses overactive mTOR and restores its sensitivity to insulin ...",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": "PMC11375796"
+      },
+      {
+        "pmid": "39009358",
+        "title": "Scientist who worked on Cassava's Alzheimer drug simufilam charged with fraud.",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": null
+      },
+      {
+        "pmid": "33935797",
+        "title": "Editorial: \"Novel Pain Therapeutics: From Basic Research to Clinical Translation and Rehabilitation\"...",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": "PMC8080444"
+      },
+      {
+        "pmid": "36934371",
+        "title": "Assessing preparedness for Alzheimer disease-modifying therapies in Australasian health care systems...",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": null
+      },
+      {
+        "pmid": "34295950",
+        "title": "Altered filamin A enables amyloid beta-induced tau hyperphosphorylation and neuroinflammation in Alz...",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": "PMC8294116"
+      },
+      {
+        "pmid": "40141124",
+        "title": "Comment on Wang et al. Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's...",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": "PMC11942311"
+      },
+      {
+        "pmid": "37457922",
+        "title": "Simufilam suppresses overactive mTOR and restores its sensitivity to insulin in Alzheimer's disease ...",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": "PMC10339288"
+      },
+      {
+        "pmid": "37762230",
+        "title": "Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's Disease.",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": "PMC10531384"
+      },
+      {
+        "pmid": "38215913",
+        "title": "Navigating the dementia landscape: Biomarkers and emerging therapies.",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": null
+      },
+      {
+        "pmid": "22815492",
+        "title": "Reducing amyloid-related Alzheimer's disease pathogenesis by a small molecule targeting filamin A.",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": "PMC6621293"
+      },
+      {
+        "pmid": "28438486",
+        "title": "PTI-125 binds and reverses an altered conformation of filamin A to reduce Alzheimer's disease pathog...",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": null
+      },
+      {
+        "pmid": "36625928",
+        "title": "A Review of Scientific Ethics Issues Associated with the Recently Approved Drugs for Alzheimer's Dis...",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": null
+      },
+      {
+        "pmid": "38484070",
+        "title": "'Damning' FDA inspection report undermines Alzheimer's drug.",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": null
+      },
+      {
+        "pmid": "32920628",
+        "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients.",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": null
+      },
+      {
+        "pmid": "36457865",
+        "title": "Promising candidates from drug clinical trials: Implications for clinical treatment of Alzheimer's d...",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": "PMC9706102"
+      },
+      {
+        "pmid": "33188449",
+        "title": "Role of actin cytoskeleton in podocytes.",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": "PMC8116355"
+      },
+      {
+        "pmid": "32075941",
+        "title": "Filamin A inhibition reduces seizure activity in a mouse model of focal cortical malformations.",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": "PMC12290962"
+      },
+      {
+        "pmid": "39361735",
+        "title": "Firm misled investors on Alzheimer's drug, SEC charges.",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": null
+      },
+      {
+        "pmid": "37291958",
+        "title": "Targeting \u03b17 nicotinic acetylcholine receptors and their protein interactions in Alzheimer's disease...",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": null
+      },
+      {
+        "pmid": "40299221",
+        "title": "Unraveling the Immune Puzzle: Role of Immunomodulation in Alzheimer's Disease.",
+        "source_type": "Paper",
+        "pubtype": null,
+        "has_full_text": null,
+        "pmcid": null
+      }
+    ],
+    "pipeline_result": {
+      "success": true,
+      "documents_processed": 20,
+      "errors": [],
+      "error_count": 0,
+      "stages_completed": 2
+    }
+  },
+  "document_analysis": {
+    "status": "success",
+    "total_documents": 20,
+    "source_types": {
+      "Paper": 20
+    },
+    "pubtypes": {
+      "Unknown": 20
+    },
+    "review_articles": {
+      "count": 1,
+      "articles": [
+        {
+          "pmid": "36625928",
+          "title": "A Review of Scientific Ethics Issues Associated with the Recently Approved Drugs for Alzheimer's Dis...",
+          "pubtype": "Unknown",
+          "source_type": "Paper"
+        }
+      ]
+    },
+    "news_articles": {
+      "count": 0,
+      "articles": []
+    },
+    "clinical_trials": {
+      "count": 1,
+      "articles": [
+        {
+          "pmid": "36457865",
+          "title": "Promising candidates from drug clinical trials: Implications for clinical treatment of Alzheimer's d...",
+          "pubtype": "Unknown",
+          "source_type": "Paper"
+        }
+      ]
+    },
+    "other_documents": {
+      "count": 18,
+      "articles": [
+        {
+          "pmid": "39239266",
+          "title": "Expression of concern: Simufilam suppresses overactive mTOR and restores its sensitivity to insulin ...",
+          "pubtype": "Unknown",
+          "source_type": "Paper"
+        },
+        {
+          "pmid": "39009358",
+          "title": "Scientist who worked on Cassava's Alzheimer drug simufilam charged with fraud.",
+          "pubtype": "Unknown",
+          "source_type": "Paper"
+        },
+        {
+          "pmid": "33935797",
+          "title": "Editorial: \"Novel Pain Therapeutics: From Basic Research to Clinical Translation and Rehabilitation\"...",
+          "pubtype": "Unknown",
+          "source_type": "Paper"
+        },
+        {
+          "pmid": "36934371",
+          "title": "Assessing preparedness for Alzheimer disease-modifying therapies in Australasian health care systems...",
+          "pubtype": "Unknown",
+          "source_type": "Paper"
+        },
+        {
+          "pmid": "34295950",
+          "title": "Altered filamin A enables amyloid beta-induced tau hyperphosphorylation and neuroinflammation in Alz...",
+          "pubtype": "Unknown",
+          "source_type": "Paper"
+        },
+        {
+          "pmid": "40141124",
+          "title": "Comment on Wang et al. Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's...",
+          "pubtype": "Unknown",
+          "source_type": "Paper"
+        },
+        {
+          "pmid": "37457922",
+          "title": "Simufilam suppresses overactive mTOR and restores its sensitivity to insulin in Alzheimer's disease ...",
+          "pubtype": "Unknown",
+          "source_type": "Paper"
+        },
+        {
+          "pmid": "37762230",
+          "title": "Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's Disease.",
+          "pubtype": "Unknown",
+          "source_type": "Paper"
+        },
+        {
+          "pmid": "38215913",
+          "title": "Navigating the dementia landscape: Biomarkers and emerging therapies.",
+          "pubtype": "Unknown",
+          "source_type": "Paper"
+        },
+        {
+          "pmid": "22815492",
+          "title": "Reducing amyloid-related Alzheimer's disease pathogenesis by a small molecule targeting filamin A.",
+          "pubtype": "Unknown",
+          "source_type": "Paper"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  "filtering_analysis": {
+    "status": "success",
+    "total_documents": 20,
+    "quality_metrics": {
+      "high_quality": 1,
+      "medium_quality": 16,
+      "low_quality": 3,
+      "unclear_quality": 0
+    },
+    "filtering_issues": [],
+    "recommendations": [
+      "Review search terms and filtering criteria - more low-quality than high-quality content"
+    ]
+  },
+  "guardrails_analysis": {
+    "status": "success",
+    "total_documents": 20,
+    "guardrails_metrics": {
+      "passed_guardrails": 13,
+      "failed_guardrails": 7,
+      "unclear_guardrails": 0
+    },
+    "guardrails_issues": [
+      {
+        "pmid": "33935797",
+        "title": "Editorial: \"Novel Pain Therapeutics: From Basic Research to Clinical Translation and Rehabilitation\"...",
+        "reason": "Off-topic content detected: ['pain therapeutics']",
+        "risk_score": 0.2,
+        "rejection_details": {
+          "off_topic": [
+            "pain therapeutics"
+          ]
+        },
+        "issue": "Failed guardrails - Off-topic content detected: ['pain therapeutics']"
+      },
+      {
+        "pmid": "40141124",
+        "title": "Comment on Wang et al. Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's...",
+        "reason": "High-risk early stage content (risk: 0.60)",
+        "risk_score": 0.6000000000000001,
+        "rejection_details": {
+          "high_risk": {
+            "risk_score": 0.6000000000000001,
+            "threshold": 0.6,
+            "components": {
+              "high_risk_keywords": [
+                "comment",
+                "novel",
+                "suggested"
+              ],
+              "medium_risk_keywords": [],
+              "high_count": 3,
+              "medium_count": 0,
+              "risk_score": 0.6000000000000001
+            }
+          }
+        },
+        "issue": "Failed guardrails - High-risk early stage content (risk: 0.60)"
+      },
+      {
+        "pmid": "37457922",
+        "title": "Simufilam suppresses overactive mTOR and restores its sensitivity to insulin in Alzheimer's disease ...",
+        "reason": "High-risk early stage content (risk: 0.60)",
+        "risk_score": 0.6000000000000001,
+        "rejection_details": {
+          "high_risk": {
+            "risk_score": 0.6000000000000001,
+            "threshold": 0.6,
+            "components": {
+              "high_risk_keywords": [
+                "candidate"
+              ],
+              "medium_risk_keywords": [
+                "small molecule",
+                "phase 3",
+                "mechanism",
+                "lymphocyte"
+              ],
+              "high_count": 1,
+              "medium_count": 4,
+              "risk_score": 0.6000000000000001
+            }
+          }
+        },
+        "issue": "Failed guardrails - High-risk early stage content (risk: 0.60)"
+      },
+      {
+        "pmid": "37762230",
+        "title": "Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's Disease.",
+        "reason": "High-risk early stage content (risk: 0.70)",
+        "risk_score": 0.7000000000000001,
+        "rejection_details": {
+          "high_risk": {
+            "risk_score": 0.7000000000000001,
+            "threshold": 0.6,
+            "components": {
+              "high_risk_keywords": [
+                "novel",
+                "candidate"
+              ],
+              "medium_risk_keywords": [
+                "small molecule",
+                "phase 3",
+                "mechanism"
+              ],
+              "high_count": 2,
+              "medium_count": 3,
+              "risk_score": 0.7000000000000001
+            }
+          }
+        },
+        "issue": "Failed guardrails - High-risk early stage content (risk: 0.70)"
+      },
+      {
+        "pmid": "32920628",
+        "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients.",
+        "reason": "High-risk early stage content (risk: 0.70)",
+        "risk_score": 0.7,
+        "rejection_details": {
+          "high_risk": {
+            "risk_score": 0.7,
+            "threshold": 0.6,
+            "components": {
+              "high_risk_keywords": [
+                "candidate"
+              ],
+              "medium_risk_keywords": [
+                "small molecule",
+                "mechanism",
+                "biomarker",
+                "lymphocyte",
+                "preclinical"
+              ],
+              "high_count": 1,
+              "medium_count": 5,
+              "risk_score": 0.7
+            }
+          }
+        },
+        "issue": "Failed guardrails - High-risk early stage content (risk: 0.70)"
+      },
+      {
+        "pmid": "33188449",
+        "title": "Role of actin cytoskeleton in podocytes.",
+        "reason": "Off-topic content detected: ['diabetes']",
+        "risk_score": 0.2,
+        "rejection_details": {
+          "off_topic": [
+            "diabetes"
+          ]
+        },
+        "issue": "Failed guardrails - Off-topic content detected: ['diabetes']"
+      },
+      {
+        "pmid": "37291958",
+        "title": "Targeting \u03b17 nicotinic acetylcholine receptors and their protein interactions in Alzheimer's disease...",
+        "reason": "High-risk early stage content (risk: 0.60)",
+        "risk_score": 0.6000000000000001,
+        "rejection_details": {
+          "high_risk": {
+            "risk_score": 0.6000000000000001,
+            "threshold": 0.6,
+            "components": {
+              "high_risk_keywords": [
+                "novel",
+                "candidate"
+              ],
+              "medium_risk_keywords": [
+                "phase 3",
+                "biomarker"
+              ],
+              "high_count": 2,
+              "medium_count": 2,
+              "risk_score": 0.6000000000000001
+            }
+          }
+        },
+        "issue": "Failed guardrails - High-risk early stage content (risk: 0.60)"
+      }
+    ],
+    "rejection_summary": {
+      "off_topic": 2,
+      "high_risk": 5,
+      "irrelevant": 0,
+      "non_scientific": 0
+    },
+    "recommendations": [
+      "Pre-LLM guardrails are working - filtering inappropriate content"
+    ]
+  },
+  "errors": [],
+  "warnings": [],
+  "expected_papers_check": {
+    "status": "success",
+    "total_expected": 3,
+    "found": 3,
+    "missing": 0,
+    "found_papers": [
+      {
+        "title": "Simufilam Reverses Aberrant Receptor Interactions",
+        "year": 2023,
+        "description": "Mechanism paper (2023): FLNA\u2013\u03b17nAChR receptor interactions (Cell Mol Neurobiol)",
+        "pmcid": "PMC10531384",
+        "found_by": "pmcid",
+        "doc_id": 160,
+        "pmid": "37762230",
+        "rank": 1,
+        "r_score": 0.68,
+        "s_score": 0.7,
+        "r_tier": "R2",
+        "s_tier": "S3"
+      },
+      {
+        "title": "Simufilam suppresses overactive mTOR and restores its",
+        "year": 2023,
+        "description": "Mechanism paper (2023): mTOR/lymphocytes (Frontiers in Aging)",
+        "pmcid": "PMC10339288",
+        "found_by": "pmcid",
+        "doc_id": 159,
+        "pmid": "37457922",
+        "rank": 1,
+        "r_score": 0.68,
+        "s_score": 0.6,
+        "r_tier": "R2",
+        "s_tier": "S2"
+      },
+      {
+        "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients",
+        "year": 2020,
+        "description": "JPAD 2020 Phase 2a trial paper (PTI-125 reduces AD biomarkers)",
+        "pmcid": null,
+        "found_by": "title_match",
+        "doc_id": 166,
+        "pmid": "32920628",
+        "rank": 9,
+        "r_score": 0.6,
+        "s_score": 0.7,
+        "r_tier": "R2",
+        "s_tier": "S3"
+      }
+    ],
+    "missing_papers": [],
+    "top_documents": [
+      {
+        "doc_id": 159,
+        "pmid": "37457922",
+        "title": "Simufilam suppresses overactive mTOR and restores its sensitivity to insulin in Alzheimer's disease patient lymphocytes.",
+        "r_score": 0.68,
+        "s_score": 0.6,
+        "r_tier": "R2",
+        "s_tier": "S2"
+      },
+      {
+        "doc_id": 160,
+        "pmid": "37762230",
+        "title": "Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's Disease.",
+        "r_score": 0.68,
+        "s_score": 0.7,
+        "r_tier": "R2",
+        "s_tier": "S3"
+      },
+      {
+        "doc_id": 163,
+        "pmid": "38215913",
+        "title": "Navigating the dementia landscape: Biomarkers and emerging therapies.",
+        "r_score": 0.68,
+        "s_score": 0.4,
+        "r_tier": "R2",
+        "s_tier": "S1"
+      },
+      {
+        "doc_id": 175,
+        "pmid": "37291958",
+        "title": "Targeting \u03b17 nicotinic acetylcholine receptors and their protein interactions in Alzheimer's disease drug development.",
+        "r_score": 0.68,
+        "s_score": 0.6,
+        "r_tier": "R2",
+        "s_tier": "S2"
+      },
+      {
+        "doc_id": 157,
+        "pmid": "34295950",
+        "title": "Altered filamin A enables amyloid beta-induced tau hyperphosphorylation and neuroinflammation in Alzheimer's disease.",
+        "r_score": 0.6,
+        "s_score": 0.4,
+        "r_tier": "R2",
+        "s_tier": "S1"
+      },
+      {
+        "doc_id": 158,
+        "pmid": "40141124",
+        "title": "Comment on Wang et al. Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's Disease. Int. J. Mol. Sci. 2023, 24, 13927.",
+        "r_score": 0.6,
+        "s_score": 0.6,
+        "r_tier": "R2",
+        "s_tier": "S2"
+      },
+      {
+        "doc_id": 164,
+        "pmid": "22815492",
+        "title": "Reducing amyloid-related Alzheimer's disease pathogenesis by a small molecule targeting filamin A.",
+        "r_score": 0.6,
+        "s_score": 0.3,
+        "r_tier": "R2",
+        "s_tier": "S1"
+      },
+      {
+        "doc_id": 165,
+        "pmid": "28438486",
+        "title": "PTI-125 binds and reverses an altered conformation of filamin A to reduce Alzheimer's disease pathogenesis.",
+        "r_score": 0.6,
+        "s_score": 0.3,
+        "r_tier": "R2",
+        "s_tier": "S1"
+      },
+      {
+        "doc_id": 166,
+        "pmid": "32920628",
+        "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients.",
+        "r_score": 0.6,
+        "s_score": 0.7,
+        "r_tier": "R2",
+        "s_tier": "S3"
+      },
+      {
+        "doc_id": 169,
+        "pmid": "36457865",
+        "title": "Promising candidates from drug clinical trials: Implications for clinical treatment of Alzheimer's disease in China.",
+        "r_score": 0.6,
+        "s_score": 0.2,
+        "r_tier": "R2",
+        "s_tier": "S1"
+      }
+    ]
+  }
+}

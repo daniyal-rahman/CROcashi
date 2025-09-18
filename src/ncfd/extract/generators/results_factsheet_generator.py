@@ -237,6 +237,13 @@ Only include fields where you found clear evidence in the document. If a field i
             
             for quote_data in result.get("field_quotes", []):
                 logger.info(f"DEBUG: Processing quote_data: {quote_data}")
+                
+                # Validate that quote_data is a dictionary
+                if not isinstance(quote_data, dict):
+                    logger.error(f"Quote data is not a dictionary, got {type(quote_data)}: {quote_data}")
+                    logger.error("This indicates the LLM returned malformed JSON with numbers instead of quote objects.")
+                    continue
+                
                 field_quotes.append(EvidenceField(
                     field_name=quote_data.get("field_name", ""),
                     value=quote_data.get("value"),
@@ -310,6 +317,14 @@ Only include fields where you found clear evidence in the document. If a field i
                         logger.error(f"DEBUG: JSON parsing failed on attempt {attempt + 1}")
                         logger.error(f"DEBUG: Raw response: {result}")
                         continue
+                elif isinstance(result, (int, float)):
+                    # Handle case where LLM returns a number instead of JSON
+                    logger.error(f"LLM returned a number instead of JSON on attempt {attempt + 1}: {result}")
+                    continue
+                elif not isinstance(result, dict):
+                    # Handle other unexpected types
+                    logger.error(f"LLM returned unexpected type {type(result)} on attempt {attempt + 1}: {result}")
+                    continue
                 
                 # If we got here, we have a valid result but no field quotes
                 logger.warning(f"DEBUG: Attempt {attempt + 1} returned valid JSON but 0 field quotes, retrying...")

@@ -23,7 +23,7 @@ from .entity_pack_builder import EntityPackBuilder, EntityPack
 from .query_builder import MultiTierQueryBuilder, QueryTier
 from .policy_engine import RetrievalPolicy
 from .document_scorer import AdvancedDocumentScorer, ScoringOutput
-from .guardrails import GuardrailsSystem, GuardrailConfig
+# Guardrails moved to pre-LLM stage
 from .ctgov_discovery import CTgovIntegration
 from ..client import PubMedClient
 from ..db_service import PubMedDBService
@@ -57,15 +57,8 @@ class RetrievalProcessor:
         self.query_builder = MultiTierQueryBuilder(config)
         self.policy_engine = RetrievalPolicy(config.get('policy_config', {}))
         self.document_scorer = AdvancedDocumentScorer(config.get('scoring_config', {}))
-        # Use stage-appropriate guardrails configuration
-        guardrails_config_dict = config.get('guardrails_config', {})
-        if guardrails_config_dict:
-            # If config provided, use it but ensure stage is set
-            guardrails_config_dict['stage'] = 'retrieval'
-            self.guardrails = GuardrailsSystem(GuardrailConfig(**guardrails_config_dict))
-        else:
-            # Use retrieval-stage defaults (lenient)
-            self.guardrails = GuardrailsSystem(GuardrailConfig.for_retrieval_stage())
+        # Guardrails removed from retrieval stage - moved to pre-LLM stage
+        self.guardrails = None
         self.ctgov_integration = CTgovIntegration(config.get('ctgov_config', {}))
         # Initialize PubMed client with individual parameters
         client_config = config.get('client_config', {})
@@ -198,8 +191,8 @@ class RetrievalProcessor:
             # Step 4: Apply policy engine validation (must/should/cannot)
             validated_documents = await self._apply_policy_engine(all_pmids, entity_pack)
             
-            # Step 6: Apply guardrails (content filtering)
-            final_documents = await self._apply_guardrails(validated_documents, entity_pack)
+            # Step 6: Guardrails removed - moved to pre-LLM stage
+            final_documents = validated_documents
             
             # Store RAW documents found during retrieval (before filtering)
             if all_pmids:
@@ -248,7 +241,7 @@ class RetrievalProcessor:
                         'retrieval_tier': query_tier,
                         'query_tier': query_tier,
                         'policy_engine_passed': False,
-                        'guardrails_passed': False,
+                        'guardrails_passed': True,  # Guardrails moved to pre-LLM stage
                         'created_at': datetime.now(timezone.utc)
                     })
                 
@@ -414,7 +407,7 @@ class RetrievalProcessor:
             # Log policy/guardrail status
             logger.info("Policy/guardrail status:")
             logger.info(f"  policy_engine = {'enabled' if self.policy_engine else 'disabled'}")
-            logger.info(f"  guardrails = {'enabled' if self.guardrails else 'disabled'}")
+            logger.info(f"  guardrails = disabled (moved to pre-LLM stage)")
             logger.info(f"  filters = {{require_indication_signal: false, require_field_coverage: false}}")
             
             # Apply policy engine validation
@@ -470,30 +463,4 @@ class RetrievalProcessor:
             # Return tuples with zero scores for error case
             return [(doc, ScoringOutput(total_score=0.0, base_score=0.0, policy_score=0.0, publication_type_bonus=0.0, mesh_bonus=0.0, nct_bonus=0.0, recency_bonus=0.0)) for doc in documents]
     
-    async def _apply_guardrails(self, documents: List[Dict[str, Any]], entity_pack: EntityPack) -> List[Dict[str, Any]]:
-        """Apply guardrails for content filtering."""
-        try:
-            if not self.guardrails:
-                logger.warning("Guardrails not available, skipping filtering")
-                return documents
-            
-            # Apply guardrails filtering to each document
-            filtered_docs = []
-            for document in documents:
-                guardrail_results = self.guardrails.validate_document(document, entity_pack)
-                if not self.guardrails.should_reject_document(guardrail_results):
-                    filtered_docs.append(document)
-            
-            # Log detailed guardrail results
-            rejection_summary = self.guardrails.get_rejection_summary()
-            logger.info(f"Guardrails applied to {len(documents)} documents: {len(filtered_docs)} passed")
-            if any(rejection_summary.values()):
-                logger.info(f"Rejection reasons: {rejection_summary}")
-            else:
-                logger.info("No documents rejected by guardrails")
-            
-            return filtered_docs
-            
-        except Exception as e:
-            logger.error(f"Error applying guardrails: {e}")
-            return documents
+    # Guardrails method removed - moved to pre-LLM stage

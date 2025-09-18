@@ -67,10 +67,22 @@ class StudyCardPipeline:
         
         # Core LLM-first workers
         from ..extract.generators import LLMStudyCardGenerator, PatternFamilyDetector
+        from ..ingest.pubmed.retrieval.pre_llm_guardrails import PreLLMGuardrailsSystem, PreLLMGuardrailsConfig
         
         self.llm_study_generator = LLMStudyCardGenerator()
         self.llm_results_generator = LLMResultsFactsheetGenerator()
         self.pattern_detector = PatternFamilyDetector()
+        
+        # Pre-LLM guardrails system
+        guardrails_config = PreLLMGuardrailsConfig(
+            reject_off_topic=True,
+            reject_high_risk=True,
+            high_risk_threshold=0.6,
+            require_relevance=True,
+            log_decisions=True,
+            log_rejections=True
+        )
+        self.pre_llm_guardrails = PreLLMGuardrailsSystem(guardrails_config)
         
         
         logger.info("StudyCardPipeline initialized with LLM-first architecture")
@@ -230,20 +242,72 @@ class StudyCardPipeline:
             
             # Process each document with our working LLM components
             logger.info(f"🔍 STARTING LLM PROCESSING for {len(result.document_cards)} documents")
+            
+            # Apply pre-LLM guardrails to filter documents
+            documents_to_process = []
+            guardrails_rejections = []
+            
             for i, doc_card in enumerate(result.document_cards):
                 # Ensure consistent key type for lookup (raw_doc_texts keys are strings)
                 doc_id_key = str(doc_card.doc_id)
                 doc_text = raw_doc_texts.get(doc_id_key, "")
-                logger.info(f"🔍 PROCESSING DOCUMENT {i+1}/{len(result.document_cards)}: doc_id={doc_card.doc_id} (key={doc_id_key})")
+                logger.info(f"🔍 CHECKING DOCUMENT {i+1}/{len(result.document_cards)}: doc_id={doc_card.doc_id} (key={doc_id_key})")
                 logger.info(f"   📄 Doc text length: {len(doc_text) if doc_text else 0} characters")
                 logger.info(f"   📄 Doc text preview: {doc_text[:200] if doc_text else 'NO TEXT'}...")
-                logger.info(f"   🔑 Available raw_doc_texts keys: {list(raw_doc_texts.keys())}")
-                logger.info(f"   🔍 Key lookup: '{doc_id_key}' in raw_doc_texts = {doc_id_key in raw_doc_texts}")
                 
                 if not doc_text:
                     logger.error(f"❌ ERROR: No text available for document {doc_card.doc_id} (key={doc_id_key})")
                     logger.error(f"   Available keys: {list(raw_doc_texts.keys())}")
                     continue
+                
+                # Apply pre-LLM guardrails
+                try:
+                    # Get document from database for guardrails check
+                    from ....db.session import session_scope
+                    from ....db.models import Document
+                    
+                    with session_scope() as session:
+                        document = session.query(Document).filter(Document.doc_id == doc_card.doc_id).first()
+                        if not document:
+                            logger.warning(f"Document {doc_card.doc_id} not found in database, skipping guardrails")
+                            documents_to_process.append((doc_card, doc_text))
+                            continue
+                        
+                        # Apply guardrails check
+                        guardrails_result = self.pre_llm_guardrails.should_process_document(document, trial_context.get('entity_pack'))
+                        
+                        if guardrails_result.should_process:
+                            logger.info(f"✅ Document {doc_card.doc_id} passed guardrails (risk: {guardrails_result.risk_score:.2f})")
+                            documents_to_process.append((doc_card, doc_text))
+                        else:
+                            logger.info(f"🚫 Document {doc_card.doc_id} rejected by guardrails: {guardrails_result.reason}")
+                            guardrails_rejections.append({
+                                'doc_id': doc_card.doc_id,
+                                'title': document.title,
+                                'reason': guardrails_result.reason,
+                                'risk_score': guardrails_result.risk_score,
+                                'rejection_details': guardrails_result.rejection_details
+                            })
+                            
+                except Exception as e:
+                    logger.error(f"Error applying guardrails to document {doc_card.doc_id}: {e}")
+                    # If guardrails fail, process the document anyway
+                    documents_to_process.append((doc_card, doc_text))
+            
+            # Log guardrails summary
+            logger.info(f"🛡️ Pre-LLM Guardrails Summary:")
+            logger.info(f"   📊 Total documents: {len(result.document_cards)}")
+            logger.info(f"   ✅ Approved for LLM: {len(documents_to_process)}")
+            logger.info(f"   🚫 Rejected: {len(guardrails_rejections)}")
+            
+            if guardrails_rejections:
+                logger.info(f"   🚫 Rejection reasons:")
+                for rejection in guardrails_rejections:
+                    logger.info(f"      - PMID {rejection['doc_id']}: {rejection['reason']} (risk: {rejection['risk_score']:.2f})")
+            
+            # Process only approved documents
+            for i, (doc_card, doc_text) in enumerate(documents_to_process):
+                logger.info(f"🔍 PROCESSING DOCUMENT {i+1}/{len(documents_to_process)}: doc_id={doc_card.doc_id}")
                 
                 # Use our working LLM components with concurrency control
                 try:
@@ -369,6 +433,12 @@ class StudyCardPipeline:
                         )
                         logger.info(f"DEBUG: Pattern result for doc {doc_card.doc_id}: success={pattern_result.get('success')}, has_pattern_detections={bool(pattern_result.get('pattern_detections'))}")
                         
+                        # Check for pattern detection errors
+                        if not pattern_result.get("success", False):
+                            error_msg = pattern_result.get("error_message", "Unknown error")
+                            logger.warning(f"Pattern detection failed for doc {doc_card.doc_id}: {error_msg}")
+                            result.warnings.append(f"Pattern detection failed for document {doc_card.doc_id}: {error_msg}")
+                        
                         # Log detailed pattern detections output
                         if pattern_result.get("pattern_detections"):
                             pattern_detections = pattern_result["pattern_detections"]
@@ -379,6 +449,8 @@ class StudyCardPipeline:
                                 logger.info(f"      Severity: {getattr(detection, 'severity', 'N/A')}")
                                 logger.info(f"      Confidence: {getattr(detection, 'confidence', 'N/A')}")
                                 logger.info(f"      Rationale: {getattr(detection, 'rationale', 'N/A')[:100]}...")
+                        else:
+                            logger.warning(f"⚠️  No pattern detections generated for doc {doc_card.doc_id}")
                         
                         # Store pattern detections for later scoring
                         if pattern_result.get("pattern_detections"):
@@ -391,9 +463,9 @@ class StudyCardPipeline:
                             for pattern_detection in pattern_result["pattern_detections"]:
                                 await self._save_pattern_detection_to_db(pattern_detection, trial_context.get("trial_id"))
                             
-                            # Save quotes to database
-                            await self._save_quotes_to_db(field_quotes, doc_card.doc_id, trial_id)
                             logger.info(f"Pattern detections generated for document {doc_card.doc_id}")
+                        else:
+                            logger.warning(f"No pattern detections to save for document {doc_card.doc_id}")
                             
                 except Exception as e:
                     logger.warning(f"LLM processing failed for document {doc_card.doc_id}: {e}")

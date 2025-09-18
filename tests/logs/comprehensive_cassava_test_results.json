@@ -1,10 +1,10 @@
 {
   "test_info": {
-    "start_time": "2025-09-18T18:19:42.727182+00:00",
+    "start_time": "2025-09-18T22:45:46.964641+00:00",
     "test_name": "Comprehensive Cassava Pipeline Test",
     "version": "1.0",
-    "end_time": "2025-09-18T18:25:48.160911+00:00",
-    "duration_seconds": 365.433729
+    "end_time": "2025-09-18T22:50:28.405778+00:00",
+    "duration_seconds": 281.441137
   },
   "database_setup": {
     "status": "success",
@@ -50,7 +50,7 @@
     "document_links": 0,
     "pubmed_documents": 0,
     "retrieval_documents": 20,
-    "processed_documents": 16,
+    "processed_documents": 14,
     "retrieval_metrics": {},
     "document_details": [
       {
@@ -70,6 +70,13 @@
       {
         "pmid": "36934371",
         "title": "Assessing preparedness for Alzheimer disease-modifying therapies in Australasian health care systems...",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "37762230",
+        "title": "Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's Disease.",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
@@ -96,29 +103,22 @@
         "guardrails_passed": false
       },
       {
-        "pmid": "37762230",
-        "title": "Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's Disease.",
-        "retrieval_tier": "Unknown",
-        "policy_engine_passed": false,
-        "guardrails_passed": false
-      },
-      {
-        "pmid": "32920628",
-        "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients.",
-        "retrieval_tier": "Unknown",
-        "policy_engine_passed": false,
-        "guardrails_passed": false
-      },
-      {
-        "pmid": "22815492",
-        "title": "Reducing amyloid-related Alzheimer's disease pathogenesis by a small molecule targeting filamin A.",
-        "retrieval_tier": "Unknown",
-        "policy_engine_passed": false,
-        "guardrails_passed": false
-      },
-      {
         "pmid": "28438486",
         "title": "PTI-125 binds and reverses an altered conformation of filamin A to reduce Alzheimer's disease pathog...",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "38215913",
+        "title": "Navigating the dementia landscape: Biomarkers and emerging therapies.",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "33935797",
+        "title": "Editorial: \"Novel Pain Therapeutics: From Basic Research to Clinical Translation and Rehabilitation\"...",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
@@ -159,17 +159,17 @@
           "Quality gate: Results section missing - no results factsheet generated"
         ],
         "warnings": [
-          "LLM processing failed for document 4: 'float' object is not subscriptable",
-          "LLM processing failed for document 18: 'float' object is not subscriptable",
-          "LLM processing failed for document 10: 'float' object is not subscriptable"
+          "LLM processing failed for document 6: 'float' object is not subscriptable",
+          "LLM processing failed for document 13: 'float' object is not subscriptable",
+          "LLM processing failed for document 8: 'float' object is not subscriptable"
         ]
       }
     ]
   },
   "orchestrator_testing": {
     "status": "success",
-    "execution_id": "cassava_test_1758219582",
-    "total_processing_time": 186.196127,
+    "execution_id": "cassava_test_1758235547",
+    "total_processing_time": 123.395611,
     "ctgov_result": {
       "success": false,
       "trials_processed": 0
@@ -209,18 +209,16 @@
   },
   "errors": [],
   "warnings": [
-    "\u26a0\ufe0f  WARNING: 1 expected Cassava papers were NOT retrieved:",
-    "   \u2022 2021: Effects of simufilam on CSF biomarkers in Alzheimer's (CSF biomarker effects paper)",
     "\u26a0\ufe0f  PMCID DETECTION ISSUE: PMID 39239266 should have PMCID PMC11543719 but has PMC11375796",
     "\u26a0\ufe0f  PMCID DETECTION ISSUE: PMID 37762230 should have PMCID PMC10530843 but has PMC10531384",
     "\u26a0\ufe0f  PMCID DETECTION ISSUE: PMID 33188449 should have PMCID PMC7664001 but has PMC8116355",
     "\u26a0\ufe0f  PMCID DETECTION ISSUE: PMID 32075941 should have PMCID PMC7342663 but has PMC12290962",
     "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 39239266 has PMCID PMC11375796 but no full text content retrieved",
+    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 37762230 has PMCID PMC10531384 but no full text content retrieved",
     "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 37457922 has PMCID PMC10339288 but no full text content retrieved",
     "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 34295950 has PMCID PMC8294116 but no full text content retrieved",
-    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 37762230 has PMCID PMC10531384 but no full text content retrieved",
-    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 22815492 has PMCID PMC6621293 but no full text content retrieved",
     "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 33935797 has PMCID PMC8080444 but no full text content retrieved",
+    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 22815492 has PMCID PMC6621293 but no full text content retrieved",
     "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 33188449 has PMCID PMC8116355 but no full text content retrieved",
     "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 32075941 has PMCID PMC12290962 but no full text content retrieved",
     "Gate pass check failed: name 'passed_assessments_result' is not defined",

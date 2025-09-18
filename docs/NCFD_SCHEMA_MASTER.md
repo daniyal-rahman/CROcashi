@@ -345,6 +345,8 @@ src/ncfd/
 │   └── runtime_text/      # Runtime text processing
 ├── ingest/                # Data ingestion pipelines
 │   ├── pubmed/            # PubMed literature processing
+│   │   └── retrieval/     # PubMed retrieval and filtering
+│   │       └── pre_llm_guardrails.py  # Pre-LLM content filtering
 │   ├── text/              # Text processing utilities
 │   └── uspto/             # USPTO patent processing
 ├── llm/                   # LLM provider management
@@ -368,6 +370,7 @@ src/ncfd/
 | `EntityPack` | In-memory entity management | `entities/schema.py` |
 | `StudyCard` | Study methodology model | `extract/models/study_card.py` |
 | `SynthesisDoc` | Evidence synthesis model | `synthesis/evidence_constrained_synthesis.py` |
+| `PreLLMGuardrailsSystem` | Pre-LLM content filtering | `ingest/pubmed/retrieval/pre_llm_guardrails.py` |
 
 ### Key Functions
 

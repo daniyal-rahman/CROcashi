@@ -217,43 +217,25 @@ CASSAVA_ASSETS = [
     }
 ]
 
-# Specific Cassava papers that should be retrieved
+# Specific Cassava papers that should be retrieved (focused on 3 key studies)
 EXPECTED_CASSAVA_PAPERS = [
     {
         "pmcid": "PMC10531384",
         "year": 2023,
         "title": "Simufilam Reverses Aberrant Receptor Interactions",
-        "description": "Key simufilam mechanism paper"
+        "description": "Mechanism paper (2023): FLNA–α7nAChR receptor interactions (Cell Mol Neurobiol)"
     },
     {
         "pmcid": "PMC10339288", 
         "year": 2023,
         "title": "Simufilam suppresses overactive mTOR and restores its",
-        "description": "Important mTOR pathway paper"
-    },
-    {
-        "pmcid": "PMC6621293",
-        "year": 2012,
-        "title": "Reducing amyloid-related Alzheimer's disease pathogenesis",
-        "description": "Historical amyloid pathogenesis paper"
-    },
-    {
-        "pmcid": None,  # No PMCID available
-        "year": 2017,
-        "title": "PTI-125 binds and reverses an altered conformation of filamin A",
-        "description": "Key filamin A binding paper (Expression of Concern in 2022)"
+        "description": "Mechanism paper (2023): mTOR/lymphocytes (Frontiers in Aging)"
     },
     {
         "pmcid": None,  # No PMCID available
         "year": 2020,
         "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients",
-        "description": "Clinical biomarker reduction paper"
-    },
-    {
-        "pmcid": None,  # Likely available in Europe PMC
-        "year": 2021,
-        "title": "Effects of simufilam on CSF biomarkers in Alzheimer's",
-        "description": "CSF biomarker effects paper"
+        "description": "JPAD 2020 Phase 2a trial paper (PTI-125 reduces AD biomarkers)"
     }
 ]
 
@@ -412,7 +394,10 @@ class ComprehensiveCassavaTest:
             # Phase 5: Study Card Pipeline Testing (direct test)
             await self._test_study_card_pipeline()
             
-            # Phase 6: Validation and Reporting
+            # Phase 6: Guardrails Analysis
+            await self._analyze_guardrails()
+            
+            # Phase 7: Validation and Reporting
             await self._validate_results()
             
             # Final reporting
@@ -1109,6 +1094,10 @@ class ComprehensiveCassavaTest:
                         paper_info["found_by"] = "pmcid"
                         paper_info["doc_id"] = doc.doc_id
                         paper_info["pmid"] = doc.pmid
+                        paper_info["r_score"] = float(doc.r_score) if doc.r_score is not None else None
+                        paper_info["s_score"] = float(doc.s_score) if doc.s_score is not None else None
+                        paper_info["r_tier"] = doc.r_tier
+                        paper_info["s_tier"] = doc.s_tier
                         break
             
             # If not found by PMCID, try title matching
@@ -1123,6 +1112,10 @@ class ComprehensiveCassavaTest:
                             paper_info["doc_id"] = doc.doc_id
                             paper_info["pmid"] = doc.pmid
                             paper_info["pmcid"] = doc.pmcid
+                            paper_info["r_score"] = float(doc.r_score) if doc.r_score is not None else None
+                            paper_info["s_score"] = float(doc.s_score) if doc.s_score is not None else None
+                            paper_info["r_tier"] = doc.r_tier
+                            paper_info["s_tier"] = doc.s_tier
                             break
             
             if found:
@@ -1147,7 +1140,9 @@ class ComprehensiveCassavaTest:
         if found_papers:
             logger.info(f"✅ Found {len(found_papers)} expected Cassava papers:")
             for paper in found_papers:
-                logger.info(f"   • {paper['year']}: {paper['title']} (found by {paper['found_by']})")
+                score_info = f"R:{paper['r_score']:.3f}" if paper['r_score'] is not None else "R:N/A"
+                score_info += f" S:{paper['s_score']:.3f}" if paper['s_score'] is not None else " S:N/A"
+                logger.info(f"   • {paper['year']}: {paper['title']} (PMID: {paper['pmid']}) - {score_info}")
         
         # Store results
         if "validation_results" not in self.results:
@@ -1160,6 +1155,109 @@ class ComprehensiveCassavaTest:
             "found_papers": found_papers,
             "missing_papers": missing_papers
         }
+    
+    async def _analyze_guardrails(self):
+        """Analyze guardrails effectiveness using the new pre-LLM guardrails system."""
+        logger.info("🛡️ Phase 6: Analyzing guardrails effectiveness")
+        
+        try:
+            from ncfd.ingest.pubmed.retrieval.pre_llm_guardrails import PreLLMGuardrailsSystem, PreLLMGuardrailsConfig
+            from ncfd.entities.schema import EntityPack, AssetInfo, IndicationInfo, MechanismInfo
+            
+            with session_scope() as session:
+                # Get all documents
+                documents = session.query(Document).all()
+                
+                if not documents:
+                    logger.warning("No documents found for guardrails analysis")
+                    self.results["guardrails_analysis"] = {
+                        "status": "no_documents",
+                        "total_documents": 0
+                    }
+                    return
+                
+                # Initialize pre-LLM guardrails system
+                guardrails_config = PreLLMGuardrailsConfig(
+                    reject_off_topic=True,
+                    reject_high_risk=True,
+                    high_risk_threshold=0.6,
+                    require_relevance=True,
+                    log_decisions=False,  # Reduce noise in test
+                    log_rejections=False
+                )
+                guardrails = PreLLMGuardrailsSystem(guardrails_config)
+                
+                # Create entity pack for Cassava
+                entity_pack = EntityPack(
+                    entity_id='cassava_test',
+                    company=None,
+                    asset=AssetInfo(canonical='simufilam', aliases=['PTI-125', 'PTI 125']),
+                    mechanism=MechanismInfo(targets=['filamin A', 'FLNA']),
+                    indications=IndicationInfo(primary=['alzheimer disease'], synonyms=['alzheimer', 'ad']),
+                    registries=None,
+                    publishers=None,
+                    date_ranges=None
+                )
+                
+                # Analyze guardrails effectiveness
+                guardrails_issues = []
+                guardrails_metrics = {
+                    "passed_guardrails": 0,
+                    "failed_guardrails": 0,
+                    "unclear_guardrails": 0
+                }
+                
+                for doc in documents:
+                    # Apply pre-LLM guardrails check
+                    result = guardrails.should_process_document(doc, entity_pack)
+                    
+                    if result.should_process:
+                        guardrails_metrics["passed_guardrails"] += 1
+                    else:
+                        guardrails_metrics["failed_guardrails"] += 1
+                        guardrails_issues.append({
+                            "pmid": doc.pmid,
+                            "title": doc.title[:100] + "..." if doc.title and len(doc.title) > 100 else doc.title,
+                            "reason": result.reason,
+                            "risk_score": result.risk_score,
+                            "rejection_details": result.rejection_details,
+                            "issue": f"Failed guardrails - {result.reason}"
+                        })
+                
+                # Generate guardrails recommendations
+                recommendations = []
+                
+                if guardrails_metrics["failed_guardrails"] > 0:
+                    recommendations.append("Pre-LLM guardrails are working - filtering inappropriate content")
+                
+                if guardrails_metrics["failed_guardrails"] > guardrails_metrics["passed_guardrails"]:
+                    recommendations.append("Guardrails may be too strict - consider adjusting thresholds")
+                
+                # Get rejection summary
+                rejection_summary = guardrails.get_rejection_summary()
+                
+                self.results["guardrails_analysis"] = {
+                    "status": "success",
+                    "total_documents": len(documents),
+                    "guardrails_metrics": guardrails_metrics,
+                    "guardrails_issues": guardrails_issues[:10],  # First 10 issues
+                    "rejection_summary": rejection_summary,
+                    "recommendations": recommendations
+                }
+                
+                logger.info(f"✅ Guardrails analysis completed")
+                logger.info(f"📊 Guardrails metrics: {guardrails_metrics}")
+                logger.info(f"📊 Rejection summary: {rejection_summary}")
+                logger.info(f"⚠️  Guardrails issues: {len(guardrails_issues)}")
+                logger.info(f"💡 Recommendations: {len(recommendations)}")
+                
+        except Exception as e:
+            logger.error(f"Guardrails analysis failed: {str(e)}")
+            self.results["guardrails_analysis"] = {
+                "status": "failed",
+                "error": str(e)
+            }
+            raise
     
     async def _check_pmcid_detection_issues(self, session: Session):
         """Check for PMCID detection issues and log warnings for papers that should have full text."""
@@ -1495,6 +1593,7 @@ class ComprehensiveCassavaTest:
             ("PubMed Processing", self.results["pubmed_processing"]),
             ("Study Card Generation", self.results["study_card_generation"]),
             ("Orchestrator Testing", self.results["orchestrator_testing"]),
+            ("Guardrails Analysis", self.results["guardrails_analysis"]),
             ("Validation", self.results["validation_results"])
         ]
         
@@ -1567,6 +1666,22 @@ class ComprehensiveCassavaTest:
                 print(f"\n🧠 Independent LLM Analysis Metrics (via Orchestrator):")
                 print(f"   • Status: ❌ Not executed or failed")
                 print(f"   • Reason: Independent analysis not included in orchestrator execution")
+        
+        # Guardrails analysis results
+        if "guardrails_analysis" in self.results and self.results["guardrails_analysis"].get("status") == "success":
+            guardrails = self.results["guardrails_analysis"]
+            print(f"\n🛡️ Guardrails Analysis Results:")
+            print(f"   • Passed guardrails: {guardrails['guardrails_metrics']['passed_guardrails']}")
+            print(f"   • Failed guardrails: {guardrails['guardrails_metrics']['failed_guardrails']}")
+            print(f"   • Guardrails issues: {len(guardrails['guardrails_issues'])}")
+            
+            if 'rejection_summary' in guardrails:
+                print(f"   • Rejection summary: {guardrails['rejection_summary']}")
+            
+            if guardrails['recommendations']:
+                print(f"   • Recommendations:")
+                for rec in guardrails['recommendations']:
+                    print(f"     - {rec}")
         
         # Comprehensive validation checks
         if "validation_results" in self.results and self.results["validation_results"].get("status") == "success":

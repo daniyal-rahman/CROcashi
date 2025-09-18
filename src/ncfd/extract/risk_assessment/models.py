@@ -20,7 +20,8 @@ class SeverityLevel(Enum):
     """Severity levels for pattern detection."""
     GREY = 0    # Not present/insufficient evidence
     YELLOW = 1  # Adds meaningful risk but unlikely decisive
-    RED = 2     # Likely to materially invalidate result
+    AMBER = 2   # Can swing outcome with reasonable probability
+    RED = 3     # Likely to materially invalidate result or approval path
 
 @dataclass
 class PatternDetection:
@@ -79,7 +80,7 @@ class PatternDetection(Base):
     
     # Constraints
     __table_args__ = (
-        CheckConstraint('severity >= 0 AND severity <= 2', name='ck_severity_range'),
+        CheckConstraint('severity >= 0 AND severity <= 3', name='ck_severity_range'),
         CheckConstraint('confidence >= 0 AND confidence <= 1', name='ck_confidence_range'),
         Index('idx_pattern_detections_trial', 'trial_id'),
         Index('idx_pattern_detections_family', 'family_id'),
