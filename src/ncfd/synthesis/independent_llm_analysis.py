@@ -81,7 +81,7 @@ class LiteratureReviewAgent:
             async with session.post(self.base_url, headers=headers, json=data) as response:
                 if response.status == 200:
                     result = await response.json()
-                    return result["choices"][0]["message"]["content"]
+                    return result["choices"][0]["message"]["text"]
                 else:
                     error_text = await response.text()
                     raise Exception(f"API call failed: {response.status} - {error_text}")
@@ -174,8 +174,8 @@ IMPORTANT:
 
         try:
             response = await self._make_api_call([
-                {"role": "system", "content": "You are a clinical research expert specializing in literature review and trial analysis."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "text": "You are a clinical research expert specializing in literature review and trial analysis."},
+                {"role": "user", "text": prompt}
             ])
             
             # Parse JSON response
@@ -271,7 +271,7 @@ class IndependentAnalysisAgent:
             async with session.post(self.base_url, headers=headers, json=data) as response:
                 if response.status == 200:
                     result = await response.json()
-                    return result["choices"][0]["message"]["content"]
+                    return result["choices"][0]["message"]["text"]
                 else:
                     error_text = await response.text()
                     raise Exception(f"API call failed: {response.status} - {error_text}")
@@ -359,8 +359,8 @@ STRONG RED FLAGS (only include if VERY strong):
 
         try:
             response = await self._make_api_call([
-                {"role": "system", "content": "You are a senior clinical research analyst with expertise in trial prediction and risk assessment."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "text": "You are a senior clinical research analyst with expertise in trial prediction and risk assessment."},
+                {"role": "user", "text": prompt}
             ])
             
             # Parse JSON response

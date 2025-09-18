@@ -173,7 +173,7 @@ class EnhancedRetriever(BaseWorker):
                         # The standardized format is used elsewhere, but here we need the integer for matching
                         doc_card = DocumentCard(
                             doc_id=doc.doc_id,  # Use integer doc_id for prioritization matching
-                            doc_type="Paper",
+                            doc_type="paper",
                             title=title,
                             year=doc.published_at.year if doc.published_at else 2023
                         )
@@ -199,7 +199,7 @@ class EnhancedRetriever(BaseWorker):
         if disease and intervention:
             doc_card = DocumentCard(
                 doc_id=f"ctgov:{trial_context.get('trial_id', 'NCT12345')}",
-                doc_type="Paper", 
+                doc_type="paper", 
                 title=f"Study of {intervention} in {disease}",
                 year=2023
             )
@@ -235,14 +235,52 @@ class EnhancedRetriever(BaseWorker):
         return f"db:{doc.doc_id}"
     
     def _get_raw_document_text(self, doc_id: str) -> str:
-        """Get raw text content from document, checking document_text as fallback."""
+        """Get raw text content from document using runtime generation."""
+        try:
+            # Import here to avoid circular imports
+            from ..runtime_text.text_cache import DocumentTextCache
+            
+            # Initialize cache (will be reused across calls)
+            if not hasattr(self, '_text_cache'):
+                self._text_cache = DocumentTextCache()
+            
+            # Use async method in sync context
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we're already in an async context, we need to handle this differently
+                    # For now, fall back to the old method
+                    return self._get_raw_document_text_fallback(doc_id)
+                else:
+                    return loop.run_until_complete(self._text_cache.get_document_text(doc_id, prefer_fulltext=True))
+            except RuntimeError:
+                # No event loop, create one
+                return asyncio.run(self._text_cache.get_document_text(doc_id, prefer_fulltext=True))
+                    
+        except Exception as e:
+            logger.error(f"Error getting raw text for {doc_id}: {e}")
+            # Fall back to old method
+            return self._get_raw_document_text_fallback(doc_id)
+    
+    def _get_raw_document_text_fallback(self, doc_id: str) -> str:
+        """Fallback method for getting document text (original implementation)."""
         try:
             with get_session() as session:
                 internal_doc_id = self._resolve_external_doc_id(session, doc_id)
                 if not internal_doc_id:
                     return ""
                 
-                # Get text from document_text table (fulltext first, then abstracts)
+                # Get document from documents table
+                document = session.query(Document).filter(
+                    Document.doc_id == internal_doc_id
+                ).first()
+                
+                if not document:
+                    logger.warning(f"Document {internal_doc_id} not found in documents table")
+                    return ""
+                
+                # Try to get text from document_text table (if it exists from processing)
                 doc_text = session.query(DocumentText).filter(
                     DocumentText.doc_id == internal_doc_id
                 ).first()
@@ -253,7 +291,7 @@ class EnhancedRetriever(BaseWorker):
                         fulltext_length = len(doc_text.fulltext_text)
                         # Quality check: ensure fulltext is substantial
                         if fulltext_length >= 500:  # Minimum length for methods/results extraction
-                            print(f"Retrieved {fulltext_length} characters of fulltext from document_text")
+                            logger.info(f"Retrieved {fulltext_length} characters of fulltext from document_text")
                             return doc_text.fulltext_text
                         else:
                             logger.info(f"Fulltext too short ({fulltext_length} chars) for document {internal_doc_id}, falling back to abstract...")
@@ -261,7 +299,7 @@ class EnhancedRetriever(BaseWorker):
                     # Fallback to abstract - accept abstracts for LLM processing
                     if doc_text.abstract_text:
                         abstract_length = len(doc_text.abstract_text)
-                        print(f"Retrieved {abstract_length} characters of abstract text from document_text")
+                        logger.info(f"Retrieved {abstract_length} characters of abstract text from document_text")
                         
                         # Accept abstracts for LLM processing (more flexible than before)
                         if abstract_length >= 100:  # Lowered threshold for abstract acceptance
@@ -271,29 +309,11 @@ class EnhancedRetriever(BaseWorker):
                             logger.warning(f"Abstract too short ({abstract_length} chars) for quality study card generation")
                             return doc_text.abstract_text  # Still return it, let LLM decide
                 
-                # If no text found in traditional tables, try processed_documents table
-                # Extract trial_id from doc_id if it's in the format we created
-                if doc_id.startswith('db:'):
-                    try:
-                        doc_id_int = int(doc_id.split(':')[1])
-                        processed_doc = session.query(Document).filter(
-                            Document.doc_id == doc_id_int,
-                            Document.processing_stage == 'processed'
-                        ).first()
-                        
-                        if processed_doc and processed_doc.abstract:
-                            abstract_length = len(processed_doc.abstract)
-                            print(f"Retrieved {abstract_length} characters of abstract from processed_documents")
-                            return processed_doc.abstract
-                    except (ValueError, IndexError):
-                        pass
-                
-                print(f"No text content found for document {internal_doc_id}")
+                logger.info(f"No text found in document_text for {internal_doc_id}")
                 return ""
                     
         except Exception as e:
             logger.error(f"Error getting raw text for {doc_id}: {e}")
-            print(f"Error getting raw text for {doc_id}: {e}")
             return ""
     
     def validate_fulltext_availability(self, trial_context: Dict[str, Any]) -> Tuple[bool, List[str]]:
@@ -359,7 +379,7 @@ class EnhancedRetriever(BaseWorker):
                             if len(doc_text.fulltext_text) >= 1500:
                                 adequate_fulltext_count += 1
                         
-                        # Note: text pages table has been removed, only using document_text table
+                        # Note: Using document_text table for text content
                 
                 # Validation criteria
                 if adequate_fulltext_count == 0:

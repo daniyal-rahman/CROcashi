@@ -59,7 +59,7 @@ class PatternFamilyDetector(BaseLLMGenerator):
                 }
             
             # Detect patterns
-            detections = await self.detect_patterns(doc_id, [{"content": raw_doc_text, "doc_id": doc_id}], trial_context)
+            detections = await self.detect_patterns(doc_id, [{"text": raw_doc_text, "doc_id": doc_id}], trial_context)
             
             return {
                 "pattern_detections": detections,
@@ -132,17 +132,17 @@ class PatternFamilyDetector(BaseLLMGenerator):
     
     def _build_standard_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
         """Build the standard prompt for the first attempt."""
-        documents = [{"content": doc_text, "doc_id": doc_id}]
+        documents = [{"text": doc_text, "doc_id": doc_id}]
         return self._build_detection_prompt(documents, trial_context)
     
     def _build_simplified_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
         """Build a simplified prompt for the second attempt."""
-        documents = [{"content": doc_text[:2000], "doc_id": doc_id}]  # Truncate for simplicity
+        documents = [{"text": doc_text[:2000], "doc_id": doc_id}]  # Truncate for simplicity
         return self._build_detection_prompt(documents, trial_context)
     
     def _build_minimal_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
         """Build a minimal prompt for the third attempt."""
-        documents = [{"content": doc_text[:1000], "doc_id": doc_id}]  # Further truncate
+        documents = [{"text": doc_text[:1000], "doc_id": doc_id}]  # Further truncate
         return self._build_detection_prompt(documents, trial_context)
     
     async def _extract_with_llm(self, doc_text: str, trial_context: Dict[str, Any], prompt: str) -> Dict[str, Any]:

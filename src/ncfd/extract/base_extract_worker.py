@@ -14,7 +14,7 @@ import logging
 
 
 @dataclass
-class WorkerResult:
+class WorkerOutput:
     """Result from a worker execution."""
     success: bool
     output: Any
@@ -40,11 +40,11 @@ class BaseWorker(ABC):
         self.logger = logging.getLogger(f"ncfd.extract.workers.{name.lower()}")
         
     @abstractmethod
-    def process(self, inputs: Dict[str, Any]) -> WorkerResult:
+    def process(self, inputs: Dict[str, Any]) -> WorkerOutput:
         """Process inputs and return results. Must be implemented by subclasses."""
         pass
     
-    def execute(self, inputs: Dict[str, Any]) -> WorkerResult:
+    def execute(self, inputs: Dict[str, Any]) -> WorkerOutput:
         """Execute the worker with timing and error handling."""
         start_time = datetime.now(timezone.utc)
         self.execution_count += 1
@@ -52,7 +52,7 @@ class BaseWorker(ABC):
         try:
             # Validate inputs
             if not self._validate_inputs(inputs):
-                return WorkerResult(
+                return WorkerOutput(
                     success=False,
                     output=None,
                     error_message="Input validation failed",
@@ -83,7 +83,7 @@ class BaseWorker(ABC):
             self.error_count += 1
             self.total_execution_time += execution_time
             
-            return WorkerResult(
+            return WorkerOutput(
                 success=False,
                 output=None,
                 error_message=str(e),

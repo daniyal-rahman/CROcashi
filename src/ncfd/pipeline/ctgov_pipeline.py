@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class CtgovPipelineResult:
+class CtgovPipelineOutput:
     """Result of CT.gov pipeline execution."""
     success: bool
     start_time: datetime

@@ -411,8 +411,8 @@ def decide_with_llm_research(
             resp = cli.responses.create(
                 model=model,
                 input=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user}
+                    {"role": "system", "text": system},
+                    {"role": "user", "text": user}
                 ],
                 tools=[{"type": "web_search_preview"}],
             )
@@ -422,8 +422,8 @@ def decide_with_llm_research(
             resp = cli.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user}
+                    {"role": "system", "text": system},
+                    {"role": "user", "text": user}
                 ],
                 response_format={"type": "json_object"},
             )

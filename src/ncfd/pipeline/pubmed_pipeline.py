@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class PubMedPipelineResult:
+class PubMedPipelineOutput:
     """Result of PubMed pipeline execution."""
     success: bool
     start_time: datetime
@@ -73,8 +73,8 @@ class PubMedPipeline:
         self.pubmed_config = config
         
         # Pipeline state
-        self.pipeline_results: List[PubMedPipelineResult] = []
-        self.current_execution: Optional[PubMedPipelineResult] = None
+        self.pipeline_results: List[PubMedPipelineOutput] = []
+        self.current_execution: Optional[PubMedPipelineOutput] = None
         
         # Initialize components
         self._initialize_components()
@@ -104,7 +104,7 @@ class PubMedPipeline:
                      max_results: int = 1000,
                      trial_nct_ids: Optional[List[str]] = None,
                      trial_phases: Optional[List[str]] = None,
-                     company_names: Optional[List[str]] = None) -> PubMedPipelineResult:
+                     company_names: Optional[List[str]] = None) -> PubMedPipelineOutput:
         """
         Execute PubMed pipeline for specified trials.
         
@@ -118,7 +118,7 @@ class PubMedPipeline:
             company_names: List of company names
             
         Returns:
-            PubMedPipelineResult with execution details
+            PubMedPipelineOutput with execution details
         """
         start_time = datetime.now(timezone.utc)
         logger.info(f"Starting PubMed pipeline execution for {len(trial_ids) if trial_ids else 'all'} trials")
@@ -204,7 +204,7 @@ class PubMedPipeline:
             
             end_time = datetime.now(timezone.utc)
             
-            result = PubMedPipelineResult(
+            result = PubMedPipelineOutput(
                 success=len(total_errors) == 0,
                 start_time=start_time,
                 end_time=end_time,
@@ -228,7 +228,7 @@ class PubMedPipeline:
             logger.error(error_msg)
             
             end_time = datetime.now(timezone.utc)
-            result = PubMedPipelineResult(
+            result = PubMedPipelineOutput(
                 success=False,
                 start_time=start_time,
                 end_time=end_time,
@@ -351,7 +351,7 @@ class PubMedPipeline:
     
     async def run_daily_ingestion(self, 
                                  force_full_scan: bool = False,
-                                 max_trials: Optional[int] = None) -> PubMedPipelineResult:
+                                 max_trials: Optional[int] = None) -> PubMedPipelineOutput:
         """
         Run daily PubMed ingestion for all trials.
         
@@ -360,7 +360,7 @@ class PubMedPipeline:
             max_trials: Maximum number of trials to process
             
         Returns:
-            PubMedPipelineResult with execution details
+            PubMedPipelineOutput with execution details
         """
         logger.info(f"Starting daily PubMed ingestion (force_full_scan={force_full_scan})")
         

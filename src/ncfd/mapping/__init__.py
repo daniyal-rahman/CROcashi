@@ -10,7 +10,7 @@ The LLM tier serves as a learning system that discovers new company relationship
 and feeds them back into the database for better future matching.
 """
 
-from .simple_resolver import resolve_sponsor_simple, SimpleResolver, ResolutionResult
+from .simple_resolver import resolve_sponsor_simple, SimpleResolver, ResolutionOutput
 from .simple_persist import (
     save_resolution, 
     add_to_review_queue, 
@@ -25,7 +25,7 @@ __all__ = [
     # Main resolver
     "resolve_sponsor_simple",
     "SimpleResolver", 
-    "ResolutionResult",
+    "ResolutionOutput",
     
     # Persistence
     "save_resolution",

@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class StudyCardPipelineResult:
+class StudyCardPipelineOutput:
     """Result of study card pipeline execution."""
     trial_id: str
     success: bool
@@ -76,7 +76,7 @@ class StudyCardPipeline:
         logger.info("StudyCardPipeline initialized with LLM-first architecture")
     
     
-    def _validate_study_card_quality(self, result: StudyCardPipelineResult) -> Tuple[bool, List[str]]:
+    def _validate_study_card_quality(self, result: StudyCardPipelineOutput) -> Tuple[bool, List[str]]:
         """
         Validate study card quality to prevent degenerate cards.
         
@@ -138,7 +138,7 @@ class StudyCardPipeline:
         
         return len(errors) == 0, errors
     
-    def _check_database_persistence(self, result: StudyCardPipelineResult) -> List[str]:
+    def _check_database_persistence(self, result: StudyCardPipelineOutput) -> List[str]:
         """Check that artifacts were actually persisted to the database."""
         errors = []
         
@@ -181,10 +181,10 @@ class StudyCardPipeline:
         
         return errors
     
-    async def execute(self, trial_id: str, trial_context: Dict[str, Any]) -> StudyCardPipelineResult:
+    async def execute(self, trial_id: str, trial_context: Dict[str, Any]) -> StudyCardPipelineOutput:
         """Execute the complete study card pipeline with LLM-first architecture."""
         start_time = datetime.now(timezone.utc)
-        result = StudyCardPipelineResult(
+        result = StudyCardPipelineOutput(
             trial_id=trial_id,
             success=False,
             start_time=start_time,
@@ -1064,7 +1064,7 @@ class StudyCardPipeline:
         }
         return self.retriever.process(inputs)
     
-    async def _generate_decision_record(self, result: StudyCardPipelineResult, trial_context: Dict[str, Any]) -> Optional[DecisionRecord]:
+    async def _generate_decision_record(self, result: StudyCardPipelineOutput, trial_context: Dict[str, Any]) -> Optional[DecisionRecord]:
         """Generate a comprehensive decision record from gate assessments and other artifacts."""
         try:
             from ..extract.models.decision_record import DecisionRecord
@@ -1141,7 +1141,7 @@ class StudyCardPipeline:
         }
         return probability_map.get(severity_value, 0.5)
     
-    def _generate_comprehensive_analysis(self, decision_record: DecisionRecord, result: StudyCardPipelineResult, trial_context: Dict[str, Any]) -> None:
+    def _generate_comprehensive_analysis(self, decision_record: DecisionRecord, result: StudyCardPipelineOutput, trial_context: Dict[str, Any]) -> None:
         """Generate comprehensive analysis using synthesis components."""
         try:
             

@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class SecPipelineResult:
+class SecPipelineOutput:
     """Result of SEC pipeline execution."""
     success: bool
     start_time: datetime

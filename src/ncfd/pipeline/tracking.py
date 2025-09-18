@@ -18,7 +18,7 @@ from ..db.session import get_session
 
 
 @dataclass
-class ChangeDetectionResult:
+class ChangeDetectionOutput:
     """Result of change detection analysis."""
     has_changes: bool
     material_changes: bool
@@ -85,7 +85,7 @@ class TrialVersionTracker:
     def track_trial_changes(self, 
                            trial_id: str,
                            new_study_card: Dict[str, Any],
-                           run_id: Optional[str] = None) -> ChangeDetectionResult:
+                           run_id: Optional[str] = None) -> ChangeDetectionOutput:
         """
         Track changes for a trial and detect material modifications.
         
@@ -95,7 +95,7 @@ class TrialVersionTracker:
             run_id: Run identifier for tracking
             
         Returns:
-            ChangeDetectionResult with change analysis
+            ChangeDetectionOutput with change analysis
         """
         try:
             with get_session() as session:
@@ -110,7 +110,7 @@ class TrialVersionTracker:
                 
                 if not existing_versions:
                     # First version, no changes to detect
-                    return ChangeDetectionResult(
+                    return ChangeDetectionOutput(
                         has_changes=False,
                         material_changes=False,
                         change_summary=[],
@@ -139,7 +139,7 @@ class TrialVersionTracker:
                     sample_size=new_study_card.get("sample_size"),
                     analysis_plan_text=new_study_card.get("analysis_plan_text", ""),
                     changes_jsonb={
-                        "change_detection_result": asdict(ChangeDetectionResult(
+                        "change_detection_result": asdict(ChangeDetectionOutput(
                             has_changes=len(changes) > 0,
                             material_changes=material_changes,
                             change_summary=change_summary,
@@ -173,7 +173,7 @@ class TrialVersionTracker:
                 self.logger.info(f"Tracked changes for trial {trial_id}: {len(changes)} changes, "
                                f"material: {material_changes}, score: {change_score:.3f}")
                 
-                return ChangeDetectionResult(
+                return ChangeDetectionOutput(
                     has_changes=len(changes) > 0,
                     material_changes=material_changes,
                     change_summary=change_summary,
@@ -632,7 +632,7 @@ class TrialVersionTracker:
 # Convenience functions
 def track_trial_changes(trial_id: str,
                        new_study_card: Dict[str, Any],
-                       run_id: Optional[str] = None) -> ChangeDetectionResult:
+                       run_id: Optional[str] = None) -> ChangeDetectionOutput:
     """Track changes for a trial."""
     tracker = TrialVersionTracker()
     return tracker.track_trial_changes(trial_id, new_study_card, run_id)

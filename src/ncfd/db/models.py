@@ -38,27 +38,29 @@ class Base(DeclarativeBase):
 # Enums (Postgres types will be created in baseline)
 # ---------------------------------------------------------------------------
 
-ExchangeEnum = PGEnum(
-    "NASDAQ", "NYSE", "NYSE_AM", "OTCQX", "OTCQB", name="exchange_enum", create_type=True
+PhaseEnum = PGEnum(
+    "PHASE1", "PHASE2", "PHASE3", "PHASE4",
+    "PHASE2_PHASE3", "PHASE1_PHASE2", "PHASE3_PHASE4",
+    "EARLY_PHASE1",
+    name="phase_enum", create_type=True
 )
-PhaseEnum = PGEnum("P2", "P2B", "P2_3", "P3", name="phase_enum", create_type=True)
 DocTypeEnum = PGEnum(
-    "PR", "8K", "Abstract", "Poster", "Paper", "Registry", "FDA", name="doc_type_enum", create_type=True
+    "pr", "8k", "abstract", "poster", "paper", "registry", "fda", name="doc_type_enum", create_type=True
 )
 OAStatusEnum = PGEnum(
     "oa_gold", "oa_green", "accepted_ms", "embargoed", "unknown", name="oa_status_enum", create_type=True
 )
 CoverageLevelEnum = PGEnum("high", "med", "low", name="coverage_level_enum", create_type=True)
 TrialStatusEnum = PGEnum(
-    "Recruiting",
-    "Active, not recruiting",
-    "Completed",
-    "Terminated",
-    "Suspended",
-    "Withdrawn",
-    "Not yet recruiting",
-    "Enrolling by invitation",
-    "Unknown status",
+    "recruiting",
+    "active_not_recruiting",
+    "completed",
+    "terminated",
+    "suspended",
+    "withdrawn",
+    "not_yet_recruiting",
+    "enrolling_by_invitation",
+    "unknown_status",
     name="trial_status_enum",
     create_type=True,
 )
@@ -114,7 +116,7 @@ class CompanyAlias(Base):
     __tablename__ = "company_aliases"
 
     alias_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    company_id: Mapped[int] = mapped_column(Integer, ForeignKey("companies.company_id"), nullable=False)
+    company_id: Mapped[int] = mapped_column(Integer, ForeignKey("companies.company_id", ondelete="CASCADE"), nullable=False)
     alias: Mapped[str] = mapped_column(Text, nullable=False)
     alias_norm: Mapped[str] = mapped_column(Text, nullable=False)
     alias_type: Mapped[str] = mapped_column(Text, nullable=False)
@@ -137,7 +139,8 @@ class Security(Base):
     security_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.company_id", ondelete="CASCADE"), nullable=False)
     ticker: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    exchange: Mapped[str] = mapped_column(ExchangeEnum, nullable=False)
+    exchange_id: Mapped[int] = mapped_column(Integer, ForeignKey("exchanges.exchange_id"), nullable=False)
+    cik: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_adr: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -146,11 +149,34 @@ class Security(Base):
     )
 
     company: Mapped["Company"] = relationship(back_populates="securities")
+    exchange: Mapped["Exchange"] = relationship(back_populates="securities")
 
     __table_args__ = (
-        Index("idx_securities_exchange", "exchange"),
+        Index("idx_securities_exchange_id", "exchange_id"),
+        Index("idx_securities_cik", "cik"),
         Index("idx_securities_company_id", "company_id"),
         Index("idx_securities_active", "active"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Exchange Lookup
+# ---------------------------------------------------------------------------
+
+class Exchange(Base):
+    """Exchange lookup table."""
+    __tablename__ = "exchanges"
+    
+    exchange_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    is_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    
+    # Relationships
+    securities: Mapped[List["Security"]] = relationship(back_populates="exchange")
+    
+    __table_args__ = (
+        Index("idx_exchanges_code", "code"),
     )
 
 
@@ -671,6 +697,9 @@ class Document(Base):
         Index("ix_documents_sha256", "sha256"),
         Index("ix_documents_source_url", "source_url"),
         Index("ix_documents_processing_stage", "processing_stage"),
+        Index("ix_documents_r_tier", "r_tier"),
+        Index("ix_documents_s_tier", "s_tier"),
+        Index("ix_documents_status", "status"),
         CheckConstraint("source_type::text = ANY (ARRAY['PR','IR','SEC','Registry','Abstract','Poster','Paper','FDA','Patent']::text[])", name='ck_documents_source_type'),
         CheckConstraint("status::text = ANY (ARRAY['discovered','fetched','parsed','linked','failed']::text[])", name='ck_documents_status'),
         CheckConstraint("processing_stage::text = ANY (ARRAY['raw'::text, 'processed'::text])", name='ck_documents_processing_stage'),
@@ -1075,4 +1104,94 @@ class LLMDiscovery(Base):
     __table_args__ = (
         Index("idx_llm_discoveries_nct_id", "nct_id"),
         Index("idx_llm_discoveries_company_id", "discovered_company_id"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Study Card Models (consolidated from study_card_models.py)
+# ---------------------------------------------------------------------------
+
+class StudyCard(Base):
+    """SQLAlchemy model for study_cards table."""
+    __tablename__ = 'study_cards'
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    doc_id: Mapped[str] = mapped_column(String, ForeignKey("documents.doc_id"), nullable=False)
+    design_archetype: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    is_blinded: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    analysis_set: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    population_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    stratification_factors: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    covariate_adjustment: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    primary_endpoint: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    secondary_endpoints: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    summary_measure: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    alpha_level: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    is_one_sided: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    multiplicity_adjustment: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    sample_size_reassessment: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    interim_looks: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    interim_timing: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    spending_function: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    stop_rules: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    missingness_assumption: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    missingness_pattern: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    imputation_method: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    estimand: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    intercurrent_events_policy: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    endpoint_ascertainment: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    assessment_interval: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    adjudication_committee: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # New versioning columns
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    authored_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    model_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    p_fail: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    gates_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    summary_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    risks_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    methods_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    document: Mapped[Optional["Document"]] = relationship("Document", foreign_keys=[doc_id], primaryjoin="StudyCard.doc_id == Document.doc_id")
+
+    __table_args__ = (
+        Index("idx_study_cards_doc_id", "doc_id"),
+        Index("idx_study_cards_version", "version"),
+        Index("idx_study_cards_created_at", "created_at"),
+        Index("idx_study_cards_design_archetype", "design_archetype"),
+        Index("idx_study_cards_model_name", "model_name"),
+    )
+
+
+class Factsheet(Base):
+    """SQLAlchemy model for factsheets table."""
+    __tablename__ = 'factsheets'
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    doc_id: Mapped[str] = mapped_column(String, ForeignKey("documents.doc_id"), nullable=False)
+    results: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    primary_endpoint_results: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    secondary_endpoint_results: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    safety_results: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    primary_analysis_set: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    secondary_analysis_sets: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    total_enrolled: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    completed_primary_endpoint: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    dropout_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    follow_up_completion: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    document: Mapped[Optional["Document"]] = relationship("Document", foreign_keys=[doc_id], primaryjoin="Factsheet.doc_id == Document.doc_id")
+
+    __table_args__ = (
+        Index("idx_factsheets_doc_id", "doc_id"),
+        Index("idx_factsheets_created_at", "created_at"),
+        Index("idx_factsheets_total_enrolled", "total_enrolled"),
+        Index("idx_factsheets_dropout_rate", "dropout_rate"),
     )

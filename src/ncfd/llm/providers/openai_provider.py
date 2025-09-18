@@ -260,14 +260,14 @@ class OpenAIProvider(BaseLLMProvider):
         if request.system:
             messages.append({
                 "role": "system",
-                "content": request.system
+                "text": request.system
             })
         
         # Add conversation messages
         for msg in request.messages:
             messages.append({
                 "role": msg.role,
-                "content": msg.content
+                "text": msg.content
             })
         
         return messages
@@ -353,7 +353,7 @@ class OpenAIProvider(BaseLLMProvider):
                     "index": 0,
                     "message": {
                         "role": "assistant",
-                        "content": response.output_text if hasattr(response, 'output_text') else str(response)
+                        "text": response.output_text if hasattr(response, 'output_text') else str(response)
                     },
                     "finish_reason": "stop"
                 }],

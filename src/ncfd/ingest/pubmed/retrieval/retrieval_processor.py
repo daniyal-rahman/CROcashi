@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class RetrievalResult:
+class RetrievalOutput:
     """Result from retrieval processing."""
     success: bool
     documents: List[Dict[str, Any]]
@@ -89,7 +89,7 @@ class RetrievalProcessor:
         company_name: Optional[str] = None,
         company_aliases: Optional[List[str]] = None,
         max_results: Optional[int] = None
-    ) -> RetrievalResult:
+    ) -> RetrievalOutput:
         """
         Execute complete retrieval pipeline (Steps 1-6) with dual persistence.
         
@@ -104,7 +104,7 @@ class RetrievalProcessor:
             max_results: Maximum results to process
             
         Returns:
-            RetrievalResult with discovered documents
+            RetrievalOutput with discovered documents
         """
         start_time = datetime.now(timezone.utc)
         session_id = str(uuid.uuid4())
@@ -136,7 +136,7 @@ class RetrievalProcessor:
             logger.info(f"  Asset canonical: {entity_pack.asset.canonical}")
             
             if not entity_pack:
-                return RetrievalResult(
+                return RetrievalOutput(
                     success=False,
                     documents=[],
                     query_metadata={},
@@ -164,7 +164,7 @@ class RetrievalProcessor:
             # Step 3: Build multi-tier queries (A, B, C, D)
             query_tiers = self.query_builder.build_all_queries(entity_pack)
             if not query_tiers:
-                return RetrievalResult(
+                return RetrievalOutput(
                     success=False,
                     documents=[],
                     query_metadata={},
@@ -178,7 +178,7 @@ class RetrievalProcessor:
             # Step 3: Execute multi-tier queries with union + dedupe
             all_pmids, tier_results = await self._execute_multi_tier_queries(query_tiers, max_results)
             if not all_pmids:
-                return RetrievalResult(
+                return RetrievalOutput(
                     success=True,
                     documents=[],
                     query_metadata={'multi_tier_queries': len(query_tiers)},
@@ -312,7 +312,7 @@ class RetrievalProcessor:
             
             logger.info(f"Retrieval processing completed in {execution_time:.2f}s: {len(scored_documents)} documents (stored for human verification)")
             
-            return RetrievalResult(
+            return RetrievalOutput(
                 success=True,
                 documents=scored_documents,
                 query_metadata={
@@ -338,7 +338,7 @@ class RetrievalProcessor:
             # Log failure - no session tracking needed in simplified approach
             logger.error(f"Retrieval processing failed for session {retrieval_session_id}")
             
-            return RetrievalResult(
+            return RetrievalOutput(
                 success=False,
                 documents=[],
                 query_metadata={},

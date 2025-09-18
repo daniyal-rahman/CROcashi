@@ -61,7 +61,7 @@ def extract_study_card_from_document(document_path):
 
 
 @dataclass
-class IngestionResult:
+class IngestionOutput:
     """Result of document ingestion process."""
     success: bool
     trial_id: Optional[str] = None
@@ -111,7 +111,7 @@ class DocumentIngestionPipeline:
     def ingest_document(self, 
                        document_path: Union[str, Path],
                        trial_metadata: Optional[Dict[str, Any]] = None,
-                       run_id: Optional[str] = None) -> IngestionResult:
+                       run_id: Optional[str] = None) -> IngestionOutput:
         """
         Ingest a single document and extract trial data.
         
@@ -121,14 +121,14 @@ class DocumentIngestionPipeline:
             run_id: Run identifier for tracking
             
         Returns:
-            IngestionResult with success status and extracted data
+            IngestionOutput with success status and extracted data
         """
         start_time = datetime.now(timezone.utc)
         
         try:
             # Validate document path
             if not Path(document_path).exists():
-                return IngestionResult(
+                return IngestionOutput(
                     success=False,
                     error_message=f"Document not found: {document_path}"
                 )
@@ -139,7 +139,7 @@ class DocumentIngestionPipeline:
             # Extract study card from document
             study_card = extract_study_card_from_document(document_path)
             if not study_card:
-                return IngestionResult(
+                return IngestionOutput(
                     success=False,
                     error_message="Failed to extract study card from document"
                 )
@@ -147,7 +147,7 @@ class DocumentIngestionPipeline:
             # Validate extracted data
             validation_errors = self._validate_study_card(study_card)
             if validation_errors and self.validation_strictness == "strict":
-                return IngestionResult(
+                return IngestionOutput(
                     success=False,
                     validation_errors=validation_errors,
                     error_message="Validation failed in strict mode"
@@ -177,7 +177,7 @@ class DocumentIngestionPipeline:
             
             self.logger.info(f"Successfully ingested document: {document_path} -> Trial {trial_id}")
             
-            return IngestionResult(
+            return IngestionOutput(
                 success=True,
                 trial_id=trial_id,
                 version_id=version_id,
@@ -195,7 +195,7 @@ class DocumentIngestionPipeline:
             processing_time = (datetime.now(timezone.utc) - start_time).total_seconds()
             self.logger.error(f"Document ingestion failed: {document_path}, Error: {e}")
             
-            return IngestionResult(
+            return IngestionOutput(
                 success=False,
                 error_message=str(e),
                 processing_time=processing_time
@@ -204,7 +204,7 @@ class DocumentIngestionPipeline:
     def batch_ingest_documents(self, 
                               document_paths: List[Union[str, Path]],
                               trial_metadata_list: Optional[List[Dict[str, Any]]] = None,
-                              run_id: Optional[str] = None) -> List[IngestionResult]:
+                              run_id: Optional[str] = None) -> List[IngestionOutput]:
         """
         Ingest multiple documents in batch.
         
@@ -214,7 +214,7 @@ class DocumentIngestionPipeline:
             run_id: Run identifier for tracking
             
         Returns:
-            List of IngestionResult objects
+            List of IngestionOutput objects
         """
         results = []
         
@@ -474,7 +474,7 @@ class DocumentIngestionPipeline:
 # Convenience functions
 def ingest_document(document_path: Union[str, Path],
                    trial_metadata: Optional[Dict[str, Any]] = None,
-                   run_id: Optional[str] = None) -> IngestionResult:
+                   run_id: Optional[str] = None) -> IngestionOutput:
     """Ingest a single document."""
     pipeline = DocumentIngestionPipeline()
     return pipeline.ingest_document(document_path, trial_metadata, run_id)
@@ -482,7 +482,7 @@ def ingest_document(document_path: Union[str, Path],
 
 def batch_ingest_documents(document_paths: List[Union[str, Path]],
                           trial_metadata_list: Optional[List[Dict[str, Any]]] = None,
-                          run_id: Optional[str] = None) -> List[IngestionResult]:
+                          run_id: Optional[str] = None) -> List[IngestionOutput]:
     """Ingest multiple documents in batch."""
     pipeline = DocumentIngestionPipeline()
     return pipeline.batch_ingest_documents(document_paths, trial_metadata_list, run_id)

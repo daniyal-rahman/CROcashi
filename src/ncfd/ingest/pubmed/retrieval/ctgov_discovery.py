@@ -47,7 +47,7 @@ class TrialInfo:
 
 
 @dataclass
-class CTgovDiscoveryResult:
+class CTgovDiscoveryOutput:
     """Result from CT.gov trial discovery."""
     trials_found: int
     nct_ids: List[str]
@@ -184,7 +184,7 @@ class CTgovTrialDiscoverer:
         
         logger.info(f"Initialized CT.gov trial discoverer with config: {self.config}")
     
-    async def discover_trials(self, entity_pack: EntityPack) -> CTgovDiscoveryResult:
+    async def discover_trials(self, entity_pack: EntityPack) -> CTgovDiscoveryOutput:
         """
         Discover trials for an entity pack.
         
@@ -202,7 +202,7 @@ class CTgovTrialDiscoverer:
             # Check if discovery is enabled
             if not self.config.enable_trial_discovery:
                 self.logger.info("CT.gov trial discovery disabled")
-                return CTgovDiscoveryResult(
+                return CTgovDiscoveryOutput(
                     trials_found=0,
                     nct_ids=[],
                     trial_info=[],
@@ -242,7 +242,7 @@ class CTgovTrialDiscoverer:
                                f"({len(api_response.get('studies', []))} from term search + {len(nct_ids) - len(api_response.get('studies', []))} from NCT backfill), "
                                f"{len(nct_ids)} NCT IDs, {len(linked_pmids)} linked PMIDs")
                 
-                return CTgovDiscoveryResult(
+                return CTgovDiscoveryOutput(
                     trials_found=len(trial_info),
                     nct_ids=nct_ids,
                     trial_info=trial_info,
@@ -256,7 +256,7 @@ class CTgovTrialDiscoverer:
             error_msg = f"CT.gov trial discovery failed: {str(e)}"
             self.logger.error(error_msg, exc_info=True)
             
-            return CTgovDiscoveryResult(
+            return CTgovDiscoveryOutput(
                 trials_found=0,
                 nct_ids=[],
                 trial_info=[],
@@ -504,7 +504,7 @@ class CTgovIntegration:
         self.nct_backfill = NCTBackfillQuery()
         self.logger = logging.getLogger(__name__)
     
-    async def discover_and_build_queries(self, entity_pack: EntityPack) -> Tuple[List[str], CTgovDiscoveryResult]:
+    async def discover_and_build_queries(self, entity_pack: EntityPack) -> Tuple[List[str], CTgovDiscoveryOutput]:
         """
         Discover trials and build NCT backfill queries.
         
@@ -530,7 +530,7 @@ class CTgovIntegration:
             
         except Exception as e:
             self.logger.error(f"CT.gov integration failed: {e}")
-            return [], CTgovDiscoveryResult(
+            return [], CTgovDiscoveryOutput(
                 trials_found=0,
                 nct_ids=[],
                 trial_info=[],

@@ -22,10 +22,10 @@ import json
 from dataclasses import dataclass, field, asdict
 
 # Core pipeline imports
-from .ctgov_pipeline import CtgovPipeline, CtgovPipelineResult
-from .sec_pipeline import SecPipeline, SecPipelineResult
-from .study_card_pipeline import StudyCardPipeline, StudyCardPipelineResult
-from .pubmed_pipeline import PubMedPipeline, PubMedPipelineResult
+from .ctgov_pipeline import CtgovPipeline, CtgovPipelineOutput
+from .sec_pipeline import SecPipeline, SecPipelineOutput
+from .study_card_pipeline import StudyCardPipeline, StudyCardPipelineOutput
+from .pubmed_pipeline import PubMedPipeline, PubMedPipelineOutput
 from .asset_resolver import AssetResolver
 from .tracking import TrialVersionTracker
 from .early_stopping import should_stop_early, initialize_top_k_guard, update_top_k_guard
@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class OrchestrationResult:
+class OrchestrationOutput:
     """Result of orchestrated pipeline execution."""
     execution_id: str
     start_time: datetime
@@ -158,7 +158,7 @@ class PipelineOrchestrator:
         self._load_orchestration_state()
         
         # Current execution tracking
-        self.current_execution: Optional[OrchestrationResult] = None
+        self.current_execution: Optional[OrchestrationOutput] = None
         
         self.logger.info("Unified orchestrator initialized successfully")
     
@@ -167,7 +167,7 @@ class PipelineOrchestrator:
     # MAIN PIPELINE EXECUTION METHODS
     # ============================================================================
     
-    async def run_full_pipeline(self, force_full_scan: bool = False) -> OrchestrationResult:
+    async def run_full_pipeline(self, force_full_scan: bool = False) -> OrchestrationOutput:
         """
         Run the complete pipeline with all components.
         
@@ -175,7 +175,7 @@ class PipelineOrchestrator:
             force_full_scan: Whether to force a full scan instead of incremental
             
         Returns:
-            OrchestrationResult with execution details
+            OrchestrationOutput with execution details
         """
         execution_id = f"pipeline_{int(time.time())}"
         start_time = datetime.now(timezone.utc)
@@ -183,7 +183,7 @@ class PipelineOrchestrator:
         self.logger.info(f"Starting full pipeline execution: {execution_id}")
         
         # Initialize execution result
-        self.current_execution = OrchestrationResult(
+        self.current_execution = OrchestrationOutput(
             execution_id=execution_id,
             start_time=start_time,
             end_time=start_time  # Will be updated
@@ -1069,7 +1069,7 @@ class PipelineOrchestrator:
             'status': 'unknown'
         }
     
-    def get_execution_history(self, limit: Optional[int] = None) -> List[OrchestrationResult]:
+    def get_execution_history(self, limit: Optional[int] = None) -> List[OrchestrationOutput]:
         """Get execution history."""
         if limit:
             return self.execution_history[-limit:]
@@ -1090,7 +1090,7 @@ class PipelineOrchestrator:
         start_date: datetime,
         end_date: datetime,
         pipelines: Optional[List[str]] = None
-    ) -> OrchestrationResult:
+    ) -> OrchestrationOutput:
         """
         Run backfill for specified date range and pipelines.
         
@@ -1100,7 +1100,7 @@ class PipelineOrchestrator:
             pipelines: List of pipeline names to backfill (None = all)
             
         Returns:
-            OrchestrationResult with backfill details
+            OrchestrationOutput with backfill details
         """
         execution_id = f"backfill_{int(time.time())}"
         start_time = datetime.now(timezone.utc)
@@ -1108,7 +1108,7 @@ class PipelineOrchestrator:
         self.logger.info(f"Starting backfill: {execution_id} from {start_date} to {end_date}")
         
         # Initialize execution result
-        self.current_execution = OrchestrationResult(
+        self.current_execution = OrchestrationOutput(
             execution_id=execution_id,
             start_time=start_time,
             end_time=start_time  # Will be updated

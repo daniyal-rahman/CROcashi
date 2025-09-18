@@ -24,7 +24,7 @@ class QueryTier:
 
 
 @dataclass
-class QueryResult:
+class QueryOutput:
     """Result from multi-tier query execution."""
     tier_type: str
     query_string: str
@@ -616,7 +616,7 @@ class QueryUnion:
         """Initialize query union processor."""
         self.logger = logging.getLogger(__name__)
     
-    def union_results(self, query_results: List[QueryResult]) -> Tuple[List[str], Dict[str, Any]]:
+    def union_results(self, query_results: List[QueryOutput]) -> Tuple[List[str], Dict[str, Any]]:
         """
         Union results from multiple queries and deduplicate.
         

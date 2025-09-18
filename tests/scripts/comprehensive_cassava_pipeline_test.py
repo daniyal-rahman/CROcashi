@@ -152,27 +152,66 @@ CASSAVA_COMPANY = {
     ]
 }
 
+def deduplicate_and_canonicalize_aliases(aliases: List[str]) -> Dict[str, List[str]]:
+    """
+    Deduplicate and canonicalize aliases, returning both a set for uniqueness
+    and a display list for presentation.
+    
+    This fixes the issue where aliases like ['simufilam', 'Simufilam', 'SIMUFILAM']
+    were appearing repeatedly. The function:
+    1. Normalizes aliases (lowercase, strip whitespace) for deduplication
+    2. Keeps the first occurrence of each normalized alias
+    3. Returns both a canonical set (for uniqueness checks) and display list (for presentation)
+    
+    Args:
+        aliases: List of alias strings (may contain duplicates)
+        
+    Returns:
+        Dict with 'canonical_set' (Set[str]) and 'display_list' (List[str])
+    """
+    # Normalize aliases for deduplication (lowercase, strip whitespace)
+    normalized_to_original = {}
+    for alias in aliases:
+        normalized = alias.strip().lower()
+        if normalized and normalized not in normalized_to_original:
+            normalized_to_original[normalized] = alias.strip()
+    
+    # Create canonical set (normalized) and display list (original)
+    canonical_set = set(normalized_to_original.keys())
+    display_list = list(normalized_to_original.values())
+    
+    return {
+        'canonical_set': canonical_set,
+        'display_list': display_list
+    }
+
 # Real-world asset data with comprehensive aliases
+# Note: Raw aliases contain duplicates (e.g., 'simufilam', 'Simufilam', 'SIMUFILAM')
+# These are deduplicated using the utility function below
+_raw_cassava_aliases = [
+    "PTI-125", "PTI 125", "PTI125", "PTI_125",
+    "filamin A inhibitor", "FLNA inhibitor", "filamin-A inhibitor",
+    "simufilam", "Simufilam", "SIMUFILAM",
+    "PTI-125HCl", "PTI-125 HCl"
+]
+
+_cassava_alias_data = deduplicate_and_canonicalize_aliases(_raw_cassava_aliases)
+
 CASSAVA_ASSETS = [
     {
         "name": "simufilam",
-        "aliases": [
-            "PTI-125", "PTI 125", "PTI125", "PTI_125",
-            "filamin A inhibitor", "FLNA inhibitor", "filamin-A inhibitor",
-            "simufilam", "Simufilam", "SIMUFILAM",
-            "PTI-125HCl", "PTI-125 HCl"
-        ],
+        "aliases": _cassava_alias_data['display_list'],
         "mechanism": "filamin A inhibitor",
-        "mechanism_aliases": [
+        "mechanism_aliases": deduplicate_and_canonicalize_aliases([
             "filamin A", "FLNA", "filamin-A", "filamin A protein",
             "amyloid", "tau", "amyloid-beta", "Aβ", "beta-amyloid"
-        ],
+        ])['display_list'],
         "indication": "Alzheimer's disease",
-        "indication_aliases": [
+        "indication_aliases": deduplicate_and_canonicalize_aliases([
             "Alzheimer Disease", "Alzheimer's Disease", "AD",
             "dementia", "cognitive impairment", "mild cognitive impairment",
             "MCI", "Alzheimer dementia", "senile dementia"
-        ],
+        ])['display_list'],
         "phase": "Phase 3",
         "trial_ids": ["NCT05515666", "NCT04388254", "NCT03838185", "NCT03838186"]
     }
@@ -434,7 +473,7 @@ class ComprehensiveCassavaTest:
             # Delete in order to respect foreign key constraints
             tables_to_clear = [
                 "trial_doc_candidates", "document_links",
-                "document_entities", "document_citations", "document_text",
+                "document_entities", "document_citations",
                 "pubmed_meta", "pmc_meta", "documents", "studies",
                 "trial_versions", "trials", "company_aliases", "companies",
                 "assets", "asset_ownership", "signals", "gates", "scores",
@@ -588,18 +627,25 @@ class ComprehensiveCassavaTest:
                     raise ValueError("Main trial NCT05515666 not found for PubMed processing")
                 
                 # Comprehensive search terms for better document retrieval
-                comprehensive_asset_names = [
+                raw_asset_names = [
                     "simufilam", "Simufilam", "SIMUFILAM",
                     "PTI-125", "PTI 125", "PTI125", "PTI_125",
                     "PTI-125HCl", "PTI-125 HCl",
                     "filamin A inhibitor", "FLNA inhibitor", "filamin-A inhibitor"
                 ]
                 
-                comprehensive_indications = [
+                # Deduplicate and canonicalize aliases
+                asset_alias_data = deduplicate_and_canonicalize_aliases(raw_asset_names)
+                comprehensive_asset_names = asset_alias_data['display_list']
+                
+                # Deduplicate and canonicalize indication terms
+                raw_indication_terms = [
                     "Alzheimer's disease", "Alzheimer Disease", "Alzheimer's Disease", "AD",
                     "dementia", "cognitive impairment", "mild cognitive impairment", "MCI",
                     "Alzheimer dementia", "senile dementia"
                 ]
+                indication_alias_data = deduplicate_and_canonicalize_aliases(raw_indication_terms)
+                comprehensive_indications = indication_alias_data['display_list']
                 
                 # Run PubMed pipeline for the main trial only
                 logger.info(f"Running PubMed pipeline for main trial {main_trial.nct_id} (ID: {main_trial.trial_id})...")

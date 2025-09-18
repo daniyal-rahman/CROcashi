@@ -61,7 +61,7 @@ class AssetIndicationNormalizer:
                 r'\b(refractory|resistant|relapsed|recurrent|metastatic|locally advanced)\b'
             ],
             'staging': [
-                r'\b(stage\s*[0-4IV]|grade\s*[1-5]|class\s*[A-C])\b',
+                r'\b(stage\s*[0-4]|grade\s*[1-5]|class\s*[A-C])\b',
                 r'\b(T[0-4]|N[0-3]|M[0-1])\b'  # TNM staging
             ],
             'demographics': [

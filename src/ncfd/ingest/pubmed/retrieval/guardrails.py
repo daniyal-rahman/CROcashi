@@ -37,7 +37,7 @@ class GuardrailConfig:
 
 
 @dataclass
-class GuardrailResult:
+class GuardrailOutput:
     """Result of guardrail validation."""
     
     passes_validation: bool
@@ -61,7 +61,7 @@ class GuardrailsSystem:
         self.config = config
         logger.info(f"Initialized guardrails system with config: {config}")
     
-    def validate_document(self, document: Dict[str, Any], entity_pack: EntityPack) -> List[GuardrailResult]:
+    def validate_document(self, document: Dict[str, Any], entity_pack: EntityPack) -> List[GuardrailOutput]:
         """
         Apply all guardrails to a document.
         
@@ -81,7 +81,7 @@ class GuardrailsSystem:
         
         return results
     
-    def _mechanism_only_drift_guard(self, document: Dict[str, Any], entity_pack: EntityPack) -> GuardrailResult:
+    def _mechanism_only_drift_guard(self, document: Dict[str, Any], entity_pack: EntityPack) -> GuardrailOutput:
         """
         Mechanism-only drift guard: Reject oncology content without must-link terms.
         
@@ -102,7 +102,7 @@ class GuardrailsSystem:
         
         # Apply guardrail logic
         if oncology_detected and not has_must_link:
-            return GuardrailResult(
+            return GuardrailOutput(
                 passes_validation=False,
                 guardrail_name="mechanism_only_drift_guard",
                 reason="Oncology content without must-link terms",
@@ -115,7 +115,7 @@ class GuardrailsSystem:
                 penalty_score=2.0
             )
         
-        return GuardrailResult(
+        return GuardrailOutput(
             passes_validation=True,
             guardrail_name="mechanism_only_drift_guard",
             reason="No oncology drift detected or must-link terms present",
@@ -125,7 +125,7 @@ class GuardrailsSystem:
             }
         )
     
-    def _indication_gate(self, document: Dict[str, Any], entity_pack: EntityPack) -> GuardrailResult:
+    def _indication_gate(self, document: Dict[str, Any], entity_pack: EntityPack) -> GuardrailOutput:
         """
         Indication gate: Require Alzheimer's disease signal.
         
@@ -155,7 +155,7 @@ class GuardrailsSystem:
         
         # Apply guardrail logic - accept if indication OR drug OR NCT ID is present
         if not has_indication_signal and not has_drug_signal and not has_nct_id:
-            return GuardrailResult(
+            return GuardrailOutput(
                 passes_validation=False,
                 guardrail_name="indication_gate",
                 reason="No indication signal found and no NCT ID",
@@ -170,7 +170,7 @@ class GuardrailsSystem:
                 penalty_score=1.0
             )
         
-        return GuardrailResult(
+        return GuardrailOutput(
             passes_validation=True,
             guardrail_name="indication_gate",
             reason="Indication signal found or NCT ID present",
@@ -181,7 +181,7 @@ class GuardrailsSystem:
             }
         )
     
-    def _field_coverage_guard(self, document: Dict[str, Any], entity_pack: EntityPack) -> GuardrailResult:
+    def _field_coverage_guard(self, document: Dict[str, Any], entity_pack: EntityPack) -> GuardrailOutput:
         """
         Field-coverage guard: Require drug in title/abstract or NCT in secondary ID.
         
@@ -219,7 +219,7 @@ class GuardrailsSystem:
             field_coverage_met = True  # No requirements
         
         if not field_coverage_met:
-            return GuardrailResult(
+            return GuardrailOutput(
                 passes_validation=False,
                 guardrail_name="field_coverage_guard",
                 reason="Insufficient field coverage",
@@ -237,7 +237,7 @@ class GuardrailsSystem:
                 penalty_score=1.5
             )
         
-        return GuardrailResult(
+        return GuardrailOutput(
             passes_validation=True,
             guardrail_name="field_coverage_guard",
             reason="Sufficient field coverage",
@@ -249,10 +249,10 @@ class GuardrailsSystem:
             }
         )
     
-    def get_total_penalty(self, guardrail_results: List[GuardrailResult]) -> float:
+    def get_total_penalty(self, guardrail_results: List[GuardrailOutput]) -> float:
         """Calculate total penalty score from all guardrail results."""
         return sum(result.penalty_score for result in guardrail_results if not result.passes_validation)
     
-    def should_reject_document(self, guardrail_results: List[GuardrailResult]) -> bool:
+    def should_reject_document(self, guardrail_results: List[GuardrailOutput]) -> bool:
         """Determine if document should be rejected based on guardrail results."""
         return any(not result.passes_validation for result in guardrail_results)

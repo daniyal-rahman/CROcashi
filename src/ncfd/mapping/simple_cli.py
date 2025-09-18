@@ -18,7 +18,7 @@ from rich.table import Table
 from sqlalchemy.orm import Session
 
 from ..db.session import get_session
-from .simple_resolver import SimpleResolver, ResolutionResult
+from .simple_resolver import SimpleResolver, ResolutionOutput
 from .simple_persist import get_resolution_stats
 
 app = typer.Typer(add_completion=False)

@@ -28,7 +28,7 @@ class ScoringConfig:
 
 
 @dataclass
-class ScoringResult:
+class ScoringOutput:
     """Result from advanced scoring."""
     total_score: float
     base_score: float
@@ -134,7 +134,7 @@ class AdvancedDocumentScorer:
         doc: Dict[str, Any], 
         entity_pack: EntityPack,
         policy_result: Optional[PolicyResult] = None
-    ) -> ScoringResult:
+    ) -> ScoringOutput:
         """
         Calculate sophisticated score for document.
         
@@ -199,7 +199,7 @@ class AdvancedDocumentScorer:
                 'total_score': total_score
             }
             
-            return ScoringResult(
+            return ScoringOutput(
                 total_score=total_score,
                 base_score=base_score,
                 policy_score=policy_score,
@@ -212,7 +212,7 @@ class AdvancedDocumentScorer:
             
         except Exception as e:
             self.logger.error(f"Error calculating advanced score: {e}")
-            return ScoringResult(
+            return ScoringOutput(
                 total_score=0.0,
                 base_score=0.0,
                 policy_score=0.0,
@@ -455,7 +455,7 @@ class AdvancedDocumentScorer:
         self, 
         documents: List[Dict[str, Any]], 
         entity_pack: EntityPack
-    ) -> List[Tuple[Dict[str, Any], ScoringResult]]:
+    ) -> List[Tuple[Dict[str, Any], ScoringOutput]]:
         """
         Rank documents by advanced scoring.
         

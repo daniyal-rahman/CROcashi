@@ -74,15 +74,15 @@ class EvidenceConstrainedSynthesizer:
             # Default configuration
             return SynthesisConfig(
                 field_precedence={
-                    "primary_endpoint": ["Registry", "Paper", "FDA", "PR", "Abstract"],
-                    "n_total": ["Registry", "Paper", "PR", "Abstract"],
-                    "effect_primary": ["Paper", "PR", "Registry", "Abstract"],
-                    "p_value": ["Paper", "PR", "Registry", "Abstract"],
-                    "itt_status": ["Paper", "PR", "Registry", "Abstract"],
-                    "dropout_missing_itt_pct": ["Paper", "PR", "Registry", "Abstract"],
-                    "interim_looks": ["Registry", "Paper", "PR", "Abstract"],
-                    "alpha_spending": ["Registry", "Paper", "PR", "Abstract"],
-                    "subgroup_multiplicity": ["Paper", "PR", "Registry", "Abstract"],
+                    "primary_endpoint": ["registry", "paper", "fda", "pr", "abstract"],
+                    "n_total": ["registry", "paper", "pr", "abstract"],
+                    "effect_primary": ["paper", "pr", "registry", "abstract"],
+                    "p_value": ["paper", "pr", "registry", "abstract"],
+                    "itt_status": ["paper", "pr", "registry", "abstract"],
+                    "dropout_missing_itt_pct": ["paper", "pr", "registry", "abstract"],
+                    "interim_looks": ["registry", "paper", "pr", "abstract"],
+                    "alpha_spending": ["registry", "paper", "pr", "abstract"],
+                    "subgroup_multiplicity": ["paper", "pr", "registry", "abstract"],
                 },
                 severity_buckets={
                     "critical": (0.90, 1.00),
@@ -149,7 +149,10 @@ class EvidenceConstrainedSynthesizer:
             if extracted.get("is_pivotal", False):
                 return True
             # Check phase from registry
-            if extracted.get("phase") in ["3", "III", "pivotal"]:
+            # Normalize phase from LLM output to CT.gov format
+            from ..ingest.phase_normalizer import PhaseNormalizer
+            normalized_phase = PhaseNormalizer.normalize(extracted.get("phase"))
+            if normalized_phase in ["PHASE3", "PHASE2_PHASE3"]:
                 return True
         return False
     
@@ -210,7 +213,7 @@ class EvidenceConstrainedSynthesizer:
         
         # Get sponsor info
         sponsor_val, sponsor_study_id, sponsor_span = self._resolve_field_with_precedence(
-            study_cards, "sponsor", ["Registry", "PR", "Paper", "Abstract"]
+            study_cards, "sponsor", ["registry", "pr", "paper", "abstract"]
         )
         if sponsor_val:
             trial_text += f" sponsored by {sponsor_val}"
@@ -218,7 +221,7 @@ class EvidenceConstrainedSynthesizer:
         
         # Get completion date
         completion_val, completion_study_id, completion_span = self._resolve_field_with_precedence(
-            study_cards, "est_primary_completion_date", ["Registry", "PR", "Paper", "Abstract"]
+            study_cards, "est_primary_completion_date", ["registry", "pr", "paper", "abstract"]
         )
         if completion_val:
             trial_text += f" with expected completion {completion_val}"
@@ -253,7 +256,7 @@ class EvidenceConstrainedSynthesizer:
         
         # Randomization/blinding
         rand_val, rand_study_id, rand_span = self._resolve_field_with_precedence(
-            study_cards, "randomization", ["Registry", "Paper", "PR", "Abstract"]
+            study_cards, "randomization", ["registry", "paper", "pr", "abstract"]
         )
         if rand_val:
             rand_text = f"Design: {rand_val}"

@@ -277,7 +277,6 @@ def clear_test_database():
         session.execute(text("DELETE FROM document_links"))
         session.execute(text("DELETE FROM document_entities"))
         session.execute(text("DELETE FROM document_citations"))
-        session.execute(text("DELETE FROM document_text"))
         session.execute(text("DELETE FROM pubmed_meta"))
         session.execute(text("DELETE FROM pmc_meta"))
         session.execute(text("DELETE FROM documents"))

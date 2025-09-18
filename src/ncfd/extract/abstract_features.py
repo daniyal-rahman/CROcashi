@@ -47,7 +47,7 @@ class AbstractFeatureExtractor:
             'nct_id': re.compile(r'\bNCT\d{8}\b', re.IGNORECASE),
             
             # Trial phases - fixed to catch all phases and support multiple formats
-            'phase': re.compile(r'\b(?:phase\s*)?([IViv12]+(?:/[23])?)\s*(?:trial|study|clinical)?', re.IGNORECASE),
+            'phase': re.compile(r'\b(?:phase\s*)?([12]+(?:/[23])?)\s*(?:trial|study|clinical)?', re.IGNORECASE),
             
             # Sample sizes
             'n_total': re.compile(r'\b(\d+(?:,\d+)*)\s*(?:patients?|subjects?|participants?|individuals?)', re.IGNORECASE),
@@ -190,28 +190,9 @@ class AbstractFeatureExtractor:
         if ent_type == 'nct_id':
             return normalized.upper()
         elif ent_type == 'phase':
-            # Normalize phase to standard format
-            phase_match = re.search(r'([IViv12]+(?:/[23])?)', normalized, re.IGNORECASE)
-            if phase_match:
-                phase = phase_match.group(1).upper()
-                # Convert roman numerals to numbers
-                roman_to_arabic = {
-                    'I': '1', 'II': '2', 'III': '3', 'IV': '4', 'V': '5',
-                    'i': '1', 'ii': '2', 'iii': '3', 'iv': '4', 'v': '5'
-                }
-                
-                if phase in roman_to_arabic:
-                    return f"PHASE{roman_to_arabic[phase]}"
-                elif phase in ['1', '2', '3', '4', '5']:
-                    return f"PHASE{phase}"
-                elif '/' in phase:  # Handle "2/3" format
-                    parts = phase.split('/')
-                    if len(parts) == 2 and parts[0] in ['2', '3'] and parts[1] in ['2', '3']:
-                        # For 2/3, use the higher phase (more relevant)
-                        return f"PHASE{max(int(parts[0]), int(parts[1]))}"
-                
-                # Fallback for unrecognized formats
-                return f"PHASE{phase}"
+            # Normalize phase from LLM/text extraction to CT.gov format
+            from ..ingest.phase_normalizer import PhaseNormalizer
+            return PhaseNormalizer.normalize(normalized)
         elif ent_type == 'n_total':
             # Remove commas and convert to number
             return re.sub(r'[^\d]', '', normalized)
@@ -279,8 +260,9 @@ class AbstractFeatureExtractor:
             if len(value) == 11:
                 bonus += 0.1
         elif ent_type == 'phase':
-            # Phase should be recognizable
-            if re.match(r'^[IViv12]+$', value, re.IGNORECASE):
+            # Phase should be recognizable (normalized to CT.gov format)
+            from ..ingest.phase_normalizer import PhaseNormalizer
+            if PhaseNormalizer.is_valid_phase(PhaseNormalizer.normalize(value)):
                 bonus += 0.1
         elif ent_type == 'n_total':
             # Sample size should be reasonable
@@ -312,10 +294,10 @@ class AbstractFeatureExtractor:
             metadata['context'] = text[context_start:context_end]
             
         elif ent_type == 'phase':
-            # Extract the phase number/letter
-            phase_match = re.search(r'([IViv12]+(?:/[23])?)', match.group(0), re.IGNORECASE)
-            if phase_match:
-                metadata['phase_value'] = phase_match.group(1).upper()
+            # Extract and normalize phase from LLM/text
+            from ..ingest.phase_normalizer import PhaseNormalizer
+            normalized_phase = PhaseNormalizer.normalize(match.group(0))
+            metadata['phase_value'] = normalized_phase
                 
         elif ent_type == 'n_total':
             # Extract the numeric value

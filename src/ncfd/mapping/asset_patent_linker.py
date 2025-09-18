@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class PatentLinkResult:
+class PatentLinkOutput:
     """Result of asset-patent linking operation."""
     asset_id: int
     patent_id: int
@@ -85,7 +85,7 @@ class AssetPatentLinker:
         
         logger.info("Initialized asset-patent linker")
     
-    def link_asset_to_patents(self, session: Session, asset_id: int) -> List[PatentLinkResult]:
+    def link_asset_to_patents(self, session: Session, asset_id: int) -> List[PatentLinkOutput]:
         """
         Link an asset to patents using multiple evidence sources.
         
@@ -132,7 +132,7 @@ class AssetPatentLinker:
         logger.info(f"Found {len(final_links)} total patent links for asset {asset_id}")
         return final_links
     
-    def link_patent_to_assets(self, session: Session, patent_id: int) -> List[PatentLinkResult]:
+    def link_patent_to_assets(self, session: Session, patent_id: int) -> List[PatentLinkOutput]:
         """
         Link a patent to assets (reverse direction).
         
@@ -160,7 +160,7 @@ class AssetPatentLinker:
             asset_matches = self._find_assets_by_text_mentions(session, patent_text)
             
             for asset_id, match_score, match_method in asset_matches:
-                link = PatentLinkResult(
+                link = PatentLinkOutput(
                     asset_id=asset_id,
                     patent_id=patent_id,
                     confidence_score=match_score,
@@ -172,7 +172,7 @@ class AssetPatentLinker:
         
         return linked_assets
     
-    def batch_link_assets(self, session: Session, asset_ids: List[int]) -> Dict[int, List[PatentLinkResult]]:
+    def batch_link_assets(self, session: Session, asset_ids: List[int]) -> Dict[int, List[PatentLinkOutput]]:
         """
         Link multiple assets to patents in batch.
         
@@ -232,7 +232,7 @@ class AssetPatentLinker:
             logger.error(f"Error getting asset {asset_id} with aliases: {e}")
             return None
     
-    def _find_inn_matches(self, session: Session, asset: Dict[str, Any]) -> List[PatentLinkResult]:
+    def _find_inn_matches(self, session: Session, asset: Dict[str, Any]) -> List[PatentLinkOutput]:
         """Find patents that mention the asset's INN exactly."""
         links = []
         
@@ -267,7 +267,7 @@ class AssetPatentLinker:
                     # High confidence for exact INN matches
                     confidence = 0.95
                     
-                    link = PatentLinkResult(
+                    link = PatentLinkOutput(
                         asset_id=asset['asset_id'],
                         patent_id=patent_id,
                         confidence_score=confidence,
@@ -286,7 +286,7 @@ class AssetPatentLinker:
         
         return links
     
-    def _find_code_mentions(self, session: Session, asset: Dict[str, Any]) -> List[PatentLinkResult]:
+    def _find_code_mentions(self, session: Session, asset: Dict[str, Any]) -> List[PatentLinkOutput]:
         """Find patents that mention internal asset codes."""
         links = []
         
@@ -325,7 +325,7 @@ class AssetPatentLinker:
                         # High confidence for internal code matches
                         confidence = 0.90
                         
-                        link = PatentLinkResult(
+                        link = PatentLinkOutput(
                             asset_id=asset['asset_id'],
                             patent_id=patent_id,
                             confidence_score=confidence,
@@ -345,7 +345,7 @@ class AssetPatentLinker:
         
         return links
     
-    def _find_temporal_matches(self, session: Session, asset: Dict[str, Any]) -> List[PatentLinkResult]:
+    def _find_temporal_matches(self, session: Session, asset: Dict[str, Any]) -> List[PatentLinkOutput]:
         """Find patents based on assignee company and temporal proximity."""
         links = []
         
@@ -375,7 +375,7 @@ class AssetPatentLinker:
                         # Medium confidence for temporal matches
                         confidence = 0.70 * temporal_score
                         
-                        link = PatentLinkResult(
+                        link = PatentLinkOutput(
                             asset_id=asset['asset_id'],
                             patent_id=patent_id,
                             confidence_score=confidence,
@@ -397,7 +397,7 @@ class AssetPatentLinker:
         
         return links
     
-    def _find_similarity_matches(self, session: Session, asset: Dict[str, Any]) -> List[PatentLinkResult]:
+    def _find_similarity_matches(self, session: Session, asset: Dict[str, Any]) -> List[PatentLinkOutput]:
         """Find patents based on text similarity."""
         links = []
         
@@ -431,7 +431,7 @@ class AssetPatentLinker:
                         # Lower confidence for similarity matches
                         confidence = 0.50 * similarity_score
                         
-                        link = PatentLinkResult(
+                        link = PatentLinkOutput(
                             asset_id=asset['asset_id'],
                             patent_id=patent_id,
                             confidence_score=confidence,
@@ -606,7 +606,7 @@ class AssetPatentLinker:
         
         return assets
     
-    def _deduplicate_and_score(self, links: List[PatentLinkResult]) -> List[PatentLinkResult]:
+    def _deduplicate_and_score(self, links: List[PatentLinkOutput]) -> List[PatentLinkOutput]:
         """Deduplicate links and keep the highest confidence for each asset-patent pair."""
         
         # Group by (asset_id, patent_id)
@@ -652,7 +652,7 @@ class AssetPatentLinker:
             'inn_suffix': re.compile(r'\b\w+(?:mab|tinib|ciclib|nib|parib|inib|zomib|mide|afil|pril|sartan|statin|prazole|oxacin|mycin|vir|rel|umab|zumab|ximab|omab)\b', re.IGNORECASE)
         }
     
-    def get_linking_stats(self, links: List[PatentLinkResult]) -> Dict[str, Any]:
+    def get_linking_stats(self, links: List[PatentLinkOutput]) -> Dict[str, Any]:
         """Get statistics about linking results."""
         total = len(links)
         high_confidence = sum(1 for link in links if link.is_high_confidence)

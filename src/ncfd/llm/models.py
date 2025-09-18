@@ -19,7 +19,7 @@ class LLMMessage:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "role": self.role,
-            "content": self.content
+            "text": self.content
         }
 
 
@@ -158,7 +158,7 @@ class LLMResponse:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         response_dict = {
-            "content": self.content,
+            "text": self.content,
             "model": self.model,
             "provider": self.provider,
             "usage": self.usage.to_dict(),
@@ -191,7 +191,7 @@ class LLMResponse:
         timestamp = datetime.fromisoformat(data["timestamp"]) if isinstance(data["timestamp"], str) else data["timestamp"]
         
         return cls(
-            content=data["content"],
+            content=data["text"],
             model=data["model"],
             provider=data["provider"],
             usage=usage,

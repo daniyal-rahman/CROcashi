@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ResolutionResult:
+class ResolutionOutput:
     """Result of sponsor resolution."""
     company_id: Optional[int]
     match_method: str  # exact, fuzzy, llm, manual, academic_skip
@@ -47,7 +47,7 @@ class SimpleResolver:
         self.session = session
         self.logger = logging.getLogger(__name__)
     
-    def resolve_sponsor(self, nct_id: str, sponsor_text: str) -> ResolutionResult:
+    def resolve_sponsor(self, nct_id: str, sponsor_text: str) -> ResolutionOutput:
         """
         Resolve sponsor text to company using three-tier approach.
         
@@ -56,10 +56,10 @@ class SimpleResolver:
             sponsor_text: Raw sponsor text from trial
             
         Returns:
-            ResolutionResult with company match or manual review flag
+            ResolutionOutput with company match or manual review flag
         """
         if not sponsor_text or not sponsor_text.strip():
-            return ResolutionResult(
+            return ResolutionOutput(
                 company_id=None,
                 match_method="manual",
                 confidence=0.0,
@@ -69,7 +69,7 @@ class SimpleResolver:
         # Step 1: Check academic blacklist
         if self._is_academic_sponsor(sponsor_text):
             self.logger.info(f"NCT {nct_id}: Academic sponsor detected: {sponsor_text}")
-            return ResolutionResult(
+            return ResolutionOutput(
                 company_id=None,
                 match_method="academic_skip",
                 confidence=0.95,
@@ -81,7 +81,7 @@ class SimpleResolver:
         if exact_result:
             self.logger.info(f"NCT {nct_id}: Exact match found: {exact_result.company_id}")
             self._save_resolution(nct_id, sponsor_text, exact_result.company_id, "exact", 1.0, exact_result.evidence)
-            return ResolutionResult(
+            return ResolutionOutput(
                 company_id=exact_result.company_id,
                 match_method="exact",
                 confidence=1.0,
@@ -93,7 +93,7 @@ class SimpleResolver:
         if fuzzy_result:
             self.logger.info(f"NCT {nct_id}: Fuzzy match found: {fuzzy_result.company_id}")
             self._save_resolution(nct_id, sponsor_text, fuzzy_result.company_id, "fuzzy", fuzzy_result.confidence, fuzzy_result.evidence)
-            return ResolutionResult(
+            return ResolutionOutput(
                 company_id=fuzzy_result.company_id,
                 match_method="fuzzy",
                 confidence=fuzzy_result.confidence,
@@ -109,7 +109,7 @@ class SimpleResolver:
             # Save LLM discovery for learning
             self._save_llm_discovery(nct_id, sponsor_text, llm_result)
             
-            return ResolutionResult(
+            return ResolutionOutput(
                 company_id=llm_result.company_id,
                 match_method="llm",
                 confidence=llm_result.confidence,
@@ -121,7 +121,7 @@ class SimpleResolver:
         self.logger.info(f"NCT {nct_id}: No match found, adding to manual review: {sponsor_text}")
         self._add_to_review_queue(nct_id, sponsor_text)
         
-        return ResolutionResult(
+        return ResolutionOutput(
             company_id=None,
             match_method="manual",
             confidence=0.0,
@@ -151,7 +151,7 @@ class SimpleResolver:
             self.logger.warning(f"Error checking academic blacklist: {e}")
             return False
     
-    def _fuzzy_match(self, sponsor_text: str) -> Optional[ResolutionResult]:
+    def _fuzzy_match(self, sponsor_text: str) -> Optional[ResolutionOutput]:
         """Try fuzzy matching using Jaro-Winkler similarity."""
         sponsor_norm = norm_name(sponsor_text)
         
@@ -174,7 +174,7 @@ class SimpleResolver:
             
             row = result.fetchone()
             if row and row.sim_score >= 0.8:  # High similarity threshold
-                return ResolutionResult(
+                return ResolutionOutput(
                     company_id=row.company_id,
                     match_method="fuzzy",
                     confidence=row.sim_score,
@@ -190,7 +190,7 @@ class SimpleResolver:
         
         return None
     
-    def _llm_match(self, nct_id: str, sponsor_text: str) -> Optional[ResolutionResult]:
+    def _llm_match(self, nct_id: str, sponsor_text: str) -> Optional[ResolutionOutput]:
         """Try LLM matching with web search for aliases/subsidiaries."""
         try:
             # Use centralized LLM system
@@ -292,7 +292,7 @@ Respond with a JSON object containing your analysis."""
                     # Extract discovered aliases
                     aliases_discovered = data.get("alternative_names", [])
                     
-                    return ResolutionResult(
+                    return ResolutionOutput(
                         company_id=company.company_id,
                         match_method="llm",
                         confidence=data.get("confidence_score", 0.5),
@@ -390,7 +390,7 @@ Respond with a JSON object containing your analysis."""
             self.logger.error(f"Error saving resolution: {e}")
             self.session.rollback()
     
-    def _save_llm_discovery(self, nct_id: str, sponsor_text: str, result: ResolutionResult):
+    def _save_llm_discovery(self, nct_id: str, sponsor_text: str, result: ResolutionOutput):
         """Save LLM discovery for learning."""
         try:
             discovery = LLMDiscovery(
@@ -429,7 +429,7 @@ Respond with a JSON object containing your analysis."""
             self.session.rollback()
 
 
-def resolve_sponsor_simple(session: Session, nct_id: str, sponsor_text: str) -> ResolutionResult:
+def resolve_sponsor_simple(session: Session, nct_id: str, sponsor_text: str) -> ResolutionOutput:
     """
     Simple wrapper function for backward compatibility.
     
@@ -439,7 +439,7 @@ def resolve_sponsor_simple(session: Session, nct_id: str, sponsor_text: str) -> 
         sponsor_text: Raw sponsor text from trial
         
     Returns:
-        ResolutionResult with company match or manual review flag
+        ResolutionOutput with company match or manual review flag
     """
     resolver = SimpleResolver(session)
     return resolver.resolve_sponsor(nct_id, sponsor_text)

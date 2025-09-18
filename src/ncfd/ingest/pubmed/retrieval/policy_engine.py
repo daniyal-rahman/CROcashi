@@ -27,7 +27,7 @@ class PolicyConfig:
 
 
 @dataclass
-class PolicyResult:
+class PolicyOutput:
     """Result from policy engine validation."""
     passes_validation: bool
     total_score: float
@@ -117,7 +117,7 @@ class RetrievalPolicy:
         self, 
         doc: Dict[str, Any], 
         entity_pack: EntityPack
-    ) -> PolicyResult:
+    ) -> PolicyOutput:
         """
         Validate document against must/should/cannot rules.
         
@@ -177,7 +177,7 @@ class RetrievalPolicy:
                 validation_errors.append("Insufficient field coverage")
                 passes_validation = False
             
-            return PolicyResult(
+            return PolicyOutput(
                 passes_validation=passes_validation,
                 total_score=total_score,
                 must_link_score=must_link_score,
@@ -191,7 +191,7 @@ class RetrievalPolicy:
             
         except Exception as e:
             logger.error(f"Error validating document: {e}")
-            return PolicyResult(
+            return PolicyOutput(
                 passes_validation=False,
                 total_score=0.0,
                 must_link_score=0.0,

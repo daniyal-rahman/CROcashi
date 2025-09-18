@@ -1,0 +1,974 @@
+schema_version: bc59812a5ceb
+extraction:
+  scanned_models: 
+    - "src/ncfd/db/models.py:1-1166"
+  scanned_migrations:
+    - "alembic/versions/bc59812a5ceb_merge_heads.py:1-29"
+    - "alembic/versions/clean_pattern_families_001.py:1-222"
+    - "alembic/versions/fe02bb9a421d_add_cik_to_securities.py:1-37"
+    - "alembic/versions/b2343cc60db5_migrate_to_exchange_id_only.py:1-78"
+    - "alembic/versions/b27978a07448_exchanges_and_more.py:1-59"
+    - "alembic/versions/958cc8211a48_fold_rs_scores_into_documents.py:1-153"
+    - "alembic/versions/117fe225c48e_simplify_resolver_schema.py:1-136"
+  timestamp_utc: "2025-09-18T01:15:00Z"
+
+tables:
+  - name: companies
+    pluralized: true
+    defined_in: ["src/ncfd/db/models.py:80-110"]
+    columns:
+      - name: company_id
+        type: Integer
+        nullable: false
+        default: null
+        pk: true
+        fk: null
+        unique: true
+        index: false
+        naming_style: snake_case
+      - name: name
+        type: Text
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: name_norm
+        type: Text
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: lei
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: state_incorp
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: country_incorp
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: sic
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: website_domain
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: ticker
+        type: String(10)
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: created_at
+        type: DateTime(timezone=True)
+        nullable: false
+        default: "func.now()"
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: updated_at
+        type: DateTime(timezone=True)
+        nullable: false
+        default: "func.now()"
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+    constraints:
+      uniques: []
+      checks: []
+      indexes: [["name_norm"], ["website_domain"]]
+    notes: "Core company entities with CIK, LEI, incorporation details"
+
+  - name: company_aliases
+    pluralized: true
+    defined_in: ["src/ncfd/db/models.py:112-132"]
+    columns:
+      - name: alias_id
+        type: BigInteger
+        nullable: false
+        default: null
+        pk: true
+        fk: null
+        unique: true
+        index: false
+        naming_style: snake_case
+      - name: company_id
+        type: Integer
+        nullable: false
+        default: null
+        pk: false
+        fk: {table: companies, column: company_id, ondelete: null}
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: alias
+        type: Text
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: alias_norm
+        type: Text
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: alias_type
+        type: Text
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: source
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: created_at
+        type: DateTime(timezone=True)
+        nullable: false
+        default: "func.now()"
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+    constraints:
+      uniques: []
+      checks: []
+      indexes: [["company_id"], ["alias_norm"], ["alias_type"]]
+    notes: "Fuzzy matching aliases for company resolution"
+
+  - name: securities
+    pluralized: true
+    defined_in: ["src/ncfd/db/models.py:134-155"]
+    columns:
+      - name: security_id
+        type: Integer
+        nullable: false
+        default: null
+        pk: true
+        fk: null
+        unique: true
+        index: false
+        naming_style: snake_case
+      - name: company_id
+        type: Integer
+        nullable: false
+        default: null
+        pk: false
+        fk: {table: companies, column: company_id, ondelete: CASCADE}
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: ticker
+        type: Text
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: true
+        index: false
+        naming_style: snake_case
+      - name: exchange_id
+        type: Integer
+        nullable: false
+        default: null
+        pk: false
+        fk: {table: exchanges, column: exchange_id, ondelete: null}
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: cik
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: is_adr
+        type: Boolean
+        nullable: false
+        default: "false"
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: active
+        type: Boolean
+        nullable: false
+        default: "true"
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: created_at
+        type: DateTime(timezone=True)
+        nullable: false
+        default: "func.now()"
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: updated_at
+        type: DateTime(timezone=True)
+        nullable: false
+        default: "func.now()"
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+    constraints:
+      uniques: []
+      checks: []
+      indexes: [["exchange_id"], ["company_id"], ["active"], ["cik"]]
+    notes: "Stock tickers and exchange information with CIK"
+
+  - name: exchanges
+    pluralized: true
+    defined_in: ["alembic/versions/b27978a07448_exchanges_and_more.py:24-32"]
+    columns:
+      - name: exchange_id
+        type: Integer
+        nullable: false
+        default: null
+        pk: true
+        fk: null
+        unique: true
+        index: false
+        naming_style: snake_case
+      - name: code
+        type: String(20)
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: true
+        index: false
+        naming_style: snake_case
+      - name: name
+        type: String(100)
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: is_allowed
+        type: Boolean
+        nullable: false
+        default: "true"
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+    constraints:
+      uniques: [["code"]]
+      checks: []
+      indexes: []
+    notes: "Exchange lookup table replacing ExchangeEnum"
+
+  - name: assets
+    pluralized: true
+    defined_in: ["src/ncfd/db/models.py:161-185"]
+    columns:
+      - name: asset_id
+        type: Integer
+        nullable: false
+        default: null
+        pk: true
+        fk: null
+        unique: true
+        index: false
+        naming_style: snake_case
+      - name: names_jsonb
+        type: JSONB
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: modality
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: target
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: moa
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: owner_company_id
+        type: Integer
+        nullable: true
+        default: null
+        pk: false
+        fk: {table: companies, column: company_id, ondelete: null}
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: ownership_history
+        type: JSONB
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+    constraints:
+      uniques: []
+      checks: []
+      indexes: [["names_jsonb"], ["target"], ["moa"], ["owner_company_id"]]
+    notes: "Drug/asset entities with ownership and mechanism information"
+
+  - name: trials
+    pluralized: true
+    defined_in: ["src/ncfd/db/models.py:193-250"]
+    columns:
+      - name: trial_id
+        type: Integer
+        nullable: false
+        default: null
+        pk: true
+        fk: null
+        unique: true
+        index: false
+        naming_style: snake_case
+      - name: nct_id
+        type: Text
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: true
+        index: false
+        naming_style: snake_case
+      - name: brief_title
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: official_title
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: sponsor_text
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: sponsor_company_id
+        type: Integer
+        nullable: true
+        default: null
+        pk: false
+        fk: {table: companies, column: company_id, ondelete: null}
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: phase
+        type: String(8)
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: indication
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: is_pivotal
+        type: Boolean
+        nullable: false
+        default: "false"
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: primary_endpoint_text
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: est_primary_completion_date
+        type: Date
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: status
+        type: String(40)
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: first_posted_date
+        type: Date
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: last_update_posted_date
+        type: Date
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: results_first_posted_date
+        type: Date
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: has_results
+        type: Boolean
+        nullable: false
+        default: "false"
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: lead_sponsor_class
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: responsible_party
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: allocation
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: masking
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: num_arms
+        type: Integer
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: intervention_types
+        type: ARRAY(Text)
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: last_seen_at
+        type: DateTime(timezone=True)
+        nullable: false
+        default: "func.now()"
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: current_sha256
+        type: CHAR(64)
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: created_at
+        type: DateTime(timezone=True)
+        nullable: false
+        default: "func.now()"
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: updated_at
+        type: DateTime(timezone=True)
+        nullable: false
+        default: "func.now()"
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+    constraints:
+      uniques: []
+      checks: []
+      indexes: [["sponsor_company_id"], ["est_primary_completion_date"], ["phase"], ["status"], ["last_update_posted_date"], ["intervention_types"], ["current_sha256"]]
+    notes: "Clinical trial registry with NCT ID, phase, status, endpoints"
+
+  - name: pattern_families
+    pluralized: true
+    defined_in: ["alembic/versions/clean_pattern_families_001.py:73-79"]
+    columns:
+      - name: family_id
+        type: String(2)
+        nullable: false
+        default: null
+        pk: true
+        fk: null
+        unique: true
+        index: false
+        naming_style: snake_case
+      - name: name
+        type: Text
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: description
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: created_at
+        type: TIMESTAMP(timezone=True)
+        nullable: false
+        default: "now()"
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+    constraints:
+      uniques: []
+      checks: []
+      indexes: []
+    notes: "Pattern family definitions (F1-F9) for new Pattern Families system"
+
+  - name: pattern_detections
+    pluralized: true
+    defined_in: ["alembic/versions/clean_pattern_families_001.py:82-109"]
+    columns:
+      - name: detection_id
+        type: BigInteger
+        nullable: false
+        default: null
+        pk: true
+        fk: null
+        unique: true
+        index: false
+        naming_style: snake_case
+      - name: trial_id
+        type: Integer
+        nullable: false
+        default: null
+        pk: false
+        fk: {table: trials, column: trial_id, ondelete: CASCADE}
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: run_id
+        type: String(50)
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: family_id
+        type: String(2)
+        nullable: false
+        default: null
+        pk: false
+        fk: {table: pattern_families, column: family_id, ondelete: CASCADE}
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: pattern_id
+        type: String(4)
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: severity
+        type: Integer
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: confidence
+        type: Numeric(3,2)
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: rationale
+        type: Text
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: evidence_spans
+        type: JSONB
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: detected_at
+        type: TIMESTAMP(timezone=True)
+        nullable: false
+        default: "now()"
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: created_at
+        type: TIMESTAMP(timezone=True)
+        nullable: false
+        default: "now()"
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+    constraints:
+      uniques: []
+      checks: ["ck_severity_range", "ck_confidence_range"]
+      indexes: [["trial_id"], ["run_id"], ["family_id"], ["severity"]]
+    notes: "LLM-detected patterns with severity and confidence scores"
+
+  - name: pattern_scores
+    pluralized: true
+    defined_in: ["alembic/versions/clean_pattern_families_001.py:117-154"]
+    columns:
+      - name: score_id
+        type: BigInteger
+        nullable: false
+        default: null
+        pk: true
+        fk: null
+        unique: true
+        index: false
+        naming_style: snake_case
+      - name: trial_id
+        type: Integer
+        nullable: false
+        default: null
+        pk: false
+        fk: {table: trials, column: trial_id, ondelete: CASCADE}
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: run_id
+        type: String(50)
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: p_fail_llm
+        type: Numeric(5,4)
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: score_0_100
+        type: Integer
+        nullable: false
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+      - name: uncertainty
+        type: Numeric(3,2)
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: family_contributions
+        type: JSONB
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: over_index
+        type: Numeric(6,3)
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: top_patterns
+        type: JSONB
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: model_version
+        type: String(50)
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: prompt_hash
+        type: String(64)
+        nullable: true
+        default: null
+        pk: false
+        fk: null
+        unique: false
+        index: false
+        naming_style: snake_case
+      - name: created_at
+        type: TIMESTAMP(timezone=True)
+        nullable: false
+        default: "now()"
+        pk: false
+        fk: null
+        unique: false
+        index: true
+        naming_style: snake_case
+    constraints:
+      uniques: []
+      checks: ["ck_p_fail_llm_range", "ck_score_0_100_range", "ck_uncertainty_range"]
+      indexes: [["trial_id"], ["run_id"], ["score_0_100"], ["created_at"]]
+    notes: "Pattern-based scoring results with LLM probabilities and uncertainty"
+
+enums:
+  - name: PhaseEnum
+    values: ["P2", "P2B", "P2_3", "P3"]
+    defined_in: "src/ncfd/db/models.py:44"
+    naming_style: PascalCase
+  - name: DocTypeEnum
+    values: ["PR", "8K", "Abstract", "Poster", "Paper", "Registry", "FDA"]
+    defined_in: "src/ncfd/db/models.py:45-47"
+    naming_style: PascalCase
+  - name: OAStatusEnum
+    values: ["oa_gold", "oa_green", "accepted_ms", "embargoed", "unknown"]
+    defined_in: "src/ncfd/db/models.py:48-50"
+    naming_style: PascalCase
+  - name: CoverageLevelEnum
+    values: ["high", "med", "low"]
+    defined_in: "src/ncfd/db/models.py:51"
+    naming_style: PascalCase
+  - name: TrialStatusEnum
+    values: ["Recruiting", "Active, not recruiting", "Completed", "Terminated", "Suspended", "Withdrawn", "Not yet recruiting", "Enrolling by invitation", "Unknown status"]
+    defined_in: "src/ncfd/db/models.py:52-64"
+    naming_style: PascalCase
+  - name: SeverityEnum
+    values: ["H", "M", "L"]
+    defined_in: "src/ncfd/db/models.py:65"
+    naming_style: PascalCase
+  - name: CertaintyEnum
+    values: ["low", "med", "high"]
+    defined_in: "src/ncfd/db/models.py:68"
+    naming_style: PascalCase
+  - name: RunStatusEnum
+    values: ["success", "failed", "partial"]
+    defined_in: "src/ncfd/db/models.py:71"
+    naming_style: PascalCase
+  - name: AssignmentType
+    values: ["sale", "license", "security"]
+    defined_in: "src/ncfd/db/models.py:72"
+    naming_style: PascalCase
+  - name: ArtifactType
+    values: ["model", "data", "report", "config"]
+    defined_in: "src/ncfd/db/models.py:73"
+    naming_style: PascalCase
+
+conventions_snapshot:
+  table_name_style: snake_case_plural
+  column_name_style: snake_case
+  id_column_style: "<table>_id"
+  fk_column_style: "<ref>_id"
+  timestamp_style: "created_at/updated_at"
+  total_tables: 35
+  total_enums: 10

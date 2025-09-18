@@ -313,10 +313,10 @@ class PatentLinkCandidate:
 
 
 # Type aliases for common use cases
-USPatentNumber = str  # e.g., "US10123456B2"
-AssignmentID = str    # USPTO assignment record ID
-AssetCode = str       # Internal asset code like "ABC-123"
-CompanyName = str     # Company name for resolution
+US_PATENT_NUMBER = str  # e.g., "US10123456B2"
+ASSIGNMENT_ID = str    # USPTO assignment record ID
+ASSET_CODE = str       # Internal asset code like "ABC-123"
+COMPANY_NAME = str     # Company name for resolution
 
 
 # Constants

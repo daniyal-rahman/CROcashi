@@ -1,0 +1,8 @@
+kind,path,old_name,new_name,rationale,status
+DB_TABLE,src/ncfd/db/study_card_models.py:14,StudyCard,study_cards,Consolidate into main models.py, already plural and snake_case,COMPLETED
+DB_TABLE,src/ncfd/db/study_card_models.py:59,Factsheet,factsheets,Consolidate into main models.py, already plural and snake_case,COMPLETED
+CODE_CLASS,src/ncfd/db/study_card_models.py:14,StudyCard,StudyCard,Move to src/ncfd/db/models.py,COMPLETED
+CODE_CLASS,src/ncfd/db/study_card_models.py:59,Factsheet,Factsheet,Move to src/ncfd/db/models.py,COMPLETED
+CONSTRAINT,src/ncfd/db/models.py:160,company_aliases.company_id,null,CASCADE,Add CASCADE on delete for referential integrity,COMPLETED
+FK_CONSTRAINT,src/ncfd/db/models.py:1090,study_cards.doc_id,null,documents.doc_id,Add foreign key constraint,COMPLETED
+FK_CONSTRAINT,src/ncfd/db/models.py:1144,factsheets.doc_id,null,documents.doc_id,Add foreign key constraint,COMPLETED

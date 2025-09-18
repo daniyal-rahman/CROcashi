@@ -1,0 +1,273 @@
+extraction:
+  scanned_paths: 
+    - "src/ncfd/"
+    - "src/ncfd/api/"
+    - "src/ncfd/backtest/"
+    - "src/ncfd/config.py"
+    - "src/ncfd/db/"
+    - "src/ncfd/entities/"
+    - "src/ncfd/extract/"
+    - "src/ncfd/ingest/"
+    - "src/ncfd/llm/"
+    - "src/ncfd/logging/"
+    - "src/ncfd/mapping/"
+    - "src/ncfd/monitoring/"
+    - "src/ncfd/pipeline/"
+    - "src/ncfd/quality/"
+    - "src/ncfd/score/"
+    - "src/ncfd/synthesis/"
+    - "src/ncfd/utils/"
+  timestamp_utc: "2025-09-18T00:54:16Z"
+
+naming:
+  classes:
+    - { name: "EnhancedRetriever", path: "src/ncfd/extract/retrieval/retriever_enhanced.py:18" }
+    - { name: "PubMedTextClient", path: "src/ncfd/extract/runtime_text/api_clients.py:82" }
+    - { name: "PMCTextClient", path: "src/ncfd/extract/runtime_text/api_clients.py:152" }
+    - { name: "UnpaywallTextClient", path: "src/ncfd/extract/runtime_text/api_clients.py:226" }
+    - { name: "PatternFamilyDetector", path: "src/ncfd/extract/generators/pattern_detector.py:21" }
+    - { name: "SeverityLevel", path: "src/ncfd/extract/risk_assessment/models.py:19" }
+    - { name: "PatternFamily", path: "src/ncfd/extract/risk_assessment/models.py:48" }
+    - { name: "PatternDetection", path: "src/ncfd/extract/risk_assessment/models.py:60" }
+    - { name: "PatternScore", path: "src/ncfd/extract/risk_assessment/models.py:90" }
+    - { name: "Trial", path: "src/ncfd/extract/risk_assessment/models.py:131" }
+    - { name: "DateTimeEncoder", path: "src/ncfd/logging/structured_logger.py:23" }
+    - { name: "JSONFormatter", path: "src/ncfd/logging/structured_logger.py:259" }
+    - { name: "Ref", path: "src/ncfd/synthesis/evidence_constrained_synthesis.py:16" }
+    - { name: "Sentence", path: "src/ncfd/synthesis/evidence_constrained_synthesis.py:23" }
+    - { name: "SynthesisDoc", path: "src/ncfd/synthesis/evidence_constrained_synthesis.py:29" }
+    - { name: "SynthesisError", path: "src/ncfd/synthesis/evidence_constrained_synthesis.py:56" }
+    - { name: "LLMStudyCardGenerator", path: "src/ncfd/extract/generators/method_card_generator.py:21" }
+    - { name: "StudyCard", path: "src/ncfd/extract/models/study_card.py:14" }
+    - { name: "LLMStudyCardGenerator", path: "src/ncfd/extract/generators/study_card_generator.py:21" }
+    - { name: "StudyCard", path: "src/ncfd/db/study_card_models.py:14" }
+    - { name: "Factsheet", path: "src/ncfd/db/study_card_models.py:59" }
+    - { name: "BaseLLMGenerator", path: "src/ncfd/llm/base_worker.py:139" }
+    - { name: "LLMError", path: "src/ncfd/llm/models.py:207" }
+    - { name: "LLMProviderError", path: "src/ncfd/llm/models.py:227" }
+    - { name: "LLMConfigurationError", path: "src/ncfd/llm/models.py:232" }
+    - { name: "LLMValidationError", path: "src/ncfd/llm/models.py:237" }
+    - { name: "CompanyInfo", path: "src/ncfd/entities/schema.py:13" }
+    - { name: "AssetInfo", path: "src/ncfd/entities/schema.py:20" }
+    - { name: "MechanismInfo", path: "src/ncfd/entities/schema.py:27" }
+    - { name: "IndicationInfo", path: "src/ncfd/entities/schema.py:33" }
+    - { name: "RegistryInfo", path: "src/ncfd/entities/schema.py:40" }
+    - { name: "PublisherInfo", path: "src/ncfd/entities/schema.py:46" }
+    - { name: "DateRangeInfo", path: "src/ncfd/entities/schema.py:52" }
+    - { name: "EntityPack", path: "src/ncfd/entities/schema.py:58" }
+
+  functions:
+    - { name: "get_logger", path: "src/ncfd/logging/structured_logger.py:292" }
+    - { name: "setup_logging", path: "src/ncfd/logging/structured_logger.py:307" }
+    - { name: "build_retriever", path: "src/ncfd/extract/retrieval/retriever_factory.py:15" }
+    - { name: "get_retriever_info", path: "src/ncfd/extract/retrieval/retriever_factory.py:57" }
+    - { name: "generate_span_id", path: "src/ncfd/utils/study_card_utils.py:9" }
+    - { name: "validate_span_coordinates", path: "src/ncfd/utils/study_card_utils.py:16" }
+    - { name: "track_trial_changes", path: "src/ncfd/pipeline/tracking.py:633" }
+    - { name: "detect_material_changes", path: "src/ncfd/pipeline/tracking.py:641" }
+    - { name: "generate_change_summary", path: "src/ncfd/pipeline/tracking.py:648" }
+    - { name: "extract_study_card_from_document", path: "src/ncfd/pipeline/ingestion.py:19" }
+    - { name: "ingest_document", path: "src/ncfd/pipeline/ingestion.py:475" }
+    - { name: "batch_ingest_documents", path: "src/ncfd/pipeline/ingestion.py:483" }
+    - { name: "validate_ingested_data", path: "src/ncfd/pipeline/ingestion.py:491" }
+    - { name: "resolve_sponsor_simple", path: "src/ncfd/mapping/simple_resolver.py:432" }
+    - { name: "resolve_one", path: "src/ncfd/mapping/simple_cli.py:28" }
+    - { name: "resolve_nct", path: "src/ncfd/mapping/simple_cli.py:94" }
+    - { name: "stats", path: "src/ncfd/mapping/simple_cli.py:137" }
+    - { name: "test_academic_detection", path: "src/ncfd/mapping/simple_cli.py:184" }
+    - { name: "save_resolution", path: "src/ncfd/mapping/simple_persist.py:21" }
+    - { name: "add_to_review_queue", path: "src/ncfd/mapping/simple_persist.py:61" }
+    - { name: "save_llm_discovery", path: "src/ncfd/mapping/simple_persist.py:100" }
+    - { name: "learn_aliases_from_discoveries", path: "src/ncfd/mapping/simple_persist.py:139" }
+    - { name: "get_pending_reviews", path: "src/ncfd/mapping/simple_persist.py:192" }
+    - { name: "complete_review", path: "src/ncfd/mapping/simple_persist.py:208" }
+    - { name: "skip_review", path: "src/ncfd/mapping/simple_persist.py:256" }
+    - { name: "get_resolution_stats", path: "src/ncfd/mapping/simple_persist.py:284" }
+    - { name: "ascii_fold", path: "src/ncfd/mapping/normalize.py:42" }
+    - { name: "norm_spaces", path: "src/ncfd/mapping/normalize.py:49" }
+    - { name: "norm_name", path: "src/ncfd/mapping/normalize.py:61" }
+    - { name: "norm_name_loose", path: "src/ncfd/mapping/normalize.py:70" }
+    - { name: "strip_legal", path: "src/ncfd/mapping/normalize.py:81" }
+    - { name: "tokens_of", path: "src/ncfd/mapping/normalize.py:105" }
+    - { name: "acronym_of", path: "src/ncfd/mapping/normalize.py:114" }
+
+  enums:
+    - { name: "SeverityLevel", members: ["H", "M", "L"], path: "src/ncfd/extract/risk_assessment/models.py:19" }
+    - { name: "TrialPhase", members: ["Phase_1", "Phase_2", "Phase_3", "Phase_4"], path: "src/ncfd/ingest/ctgov_types.py:17" }
+    - { name: "TrialStatus", members: ["Recruiting", "Active_not_recruiting", "Completed", "Terminated", "Suspended", "Withdrawn", "Not_yet_recruiting", "Enrolling_by_invitation", "Unknown_status"], path: "src/ncfd/ingest/ctgov_types.py:29" }
+    - { name: "InterventionType", members: ["Drug", "Device", "Biological", "Behavioral", "Procedure", "Other"], path: "src/ncfd/ingest/ctgov_types.py:42" }
+    - { name: "StudyType", members: ["Interventional", "Observational", "Expanded_Access"], path: "src/ncfd/ingest/ctgov_types.py:57" }
+    - { name: "LogLevel", members: ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], path: "src/ncfd/logging/schema.py:18" }
+    - { name: "Outcome", members: ["SUCCESS", "FAILURE", "PARTIAL"], path: "src/ncfd/logging/schema.py:26" }
+    - { name: "ValidationSeverity", members: ["LOW", "MEDIUM", "HIGH", "CRITICAL"], path: "src/ncfd/quality/data_quality.py:23" }
+    - { name: "ValidationStatus", members: ["PASS", "FAIL", "WARNING"], path: "src/ncfd/quality/data_quality.py:32" }
+    - { name: "AlertSeverity", members: ["LOW", "MEDIUM", "HIGH", "CRITICAL"], path: "src/ncfd/monitoring/pipeline_monitor.py:29" }
+    - { name: "AlertStatus", members: ["ACTIVE", "RESOLVED", "SUPPRESSED"], path: "src/ncfd/monitoring/pipeline_monitor.py:38" }
+    - { name: "AlertType", members: ["PERFORMANCE", "ERROR", "DATA_QUALITY", "SYSTEM"], path: "src/ncfd/monitoring/pipeline_monitor.py:46" }
+    - { name: "FormType", members: ["10K", "10Q", "8K", "DEF_14A", "S1", "S3", "S4", "S8"], path: "src/ncfd/ingest/sec_types.py:16" }
+    - { name: "SectionConfidence", members: ["HIGH", "MEDIUM", "LOW"], path: "src/ncfd/ingest/sec_types.py:30" }
+    - { name: "MetricType", members: ["CONTINUOUS", "BINARY", "ORDINAL", "COUNT"], path: "src/ncfd/extract/normalization/metric_registry.py:15" }
+    - { name: "UnitType", members: ["PERCENTAGE", "RATIO", "COUNT", "TIME", "DISTANCE", "WEIGHT", "VOLUME"], path: "src/ncfd/extract/normalization/metric_registry.py:25" }
+    - { name: "MetricType", members: ["CONTINUOUS", "BINARY", "ORDINAL", "COUNT"], path: "src/ncfd/extract/models/results_factsheet.py:30" }
+    - { name: "UnitType", members: ["PERCENTAGE", "RATIO", "COUNT", "TIME", "DISTANCE", "WEIGHT", "VOLUME"], path: "src/ncfd/extract/models/results_factsheet.py:43" }
+    - { name: "AnalysisSetType", members: ["ITT", "PP", "SAFETY", "EFFICACY"], path: "src/ncfd/extract/models/results_factsheet.py:53" }
+
+  pydantic_models:
+    - { name: "Ref", fields: {"study_id": "str", "field_path": "str", "span": "Optional[str]"}, path: "src/ncfd/synthesis/evidence_constrained_synthesis.py:16" }
+    - { name: "Sentence", fields: {"text": "str", "refs": "List[Ref]"}, path: "src/ncfd/synthesis/evidence_constrained_synthesis.py:23" }
+    - { name: "SynthesisDoc", fields: {"trial_id": "str", "nct_id": "str", "text": "str", "sections": "Dict[str, List[Sentence]]", "citations": "List[Dict[str, Any]]", "quality": "Dict[str, Any]", "audit": "Dict[str, Any]", "gpt5_hook_triggered": "bool"}, path: "src/ncfd/synthesis/evidence_constrained_synthesis.py:29" }
+    - { name: "StudyCard", fields: {"doc_id": "str", "estimand": "Optional[Dict[str, Any]]", "population_description": "Optional[str]", "primary_endpoint": "Optional[str]", "secondary_endpoints": "List[str]", "intercurrent_events_policy": "Optional[str]", "summary_measure": "Optional[str]", "alpha_structure": "Optional[Dict[str, Any]]", "alpha_level": "Optional[float]", "is_one_sided": "Optional[bool]", "multiplicity_adjustment": "Optional[str]", "gatekeeping_hierarchy": "List[str]", "interim_looks": "List[Dict[str, Any]]", "interim_timing": "Optional[str]", "spending_function": "Optional[str]", "sample_size_reassessment": "Optional[bool]", "stop_rules": "List[str]", "gehan_two_stage": "Optional[bool]", "design_archetype": "Optional[str]", "analysis_set": "Optional[Dict[str, Any]]", "stratification_factors": "List[str]", "covariate_adjustment": "List[str]", "missingness_assumption": "Optional[str]", "missingness_pattern": "Optional[str]", "imputation_method": "Optional[str]", "tipping_point_analysis": "Optional[bool]", "endpoint_ascertainment": "Optional[str]", "assessment_interval": "Optional[str]", "is_blinded": "Optional[bool]", "adjudication_committee": "Optional[str]", "protocol_features": "List[str]", "run_in_period": "Optional[str]", "enrichment_strategy": "Optional[str]", "crossover_design": "Optional[str]", "rescue_medication": "Optional[str]", "assay_thresholds": "List[Dict[str, Any]]", "dose_exposure_rationale": "Optional[str]", "target_engagement": "Optional[str]", "pkpd_relationship": "Optional[str]", "site_geography": "Dict[str, Any]", "number_of_sites": "Optional[int]", "regions": "List[str]", "dispersion_flag": "Optional[bool]", "design_risks": "List[str]", "study_phase": "Optional[str]", "randomization_ratio": "Optional[str]", "blinding_level": "Optional[str]", "treatment_duration": "Optional[str]", "follow_up_duration": "Optional[str]", "span_ids": "List[str]", "provenance_anchors": "List[str]", "field_span_map": "Dict[str, List[str]]", "warnings": "List[str]"}, path: "src/ncfd/extract/models/study_card.py:14" }
+
+  typed_dicts: []
+
+  constants:
+    - { name: "RUNTIME_TEXT_CONFIG", path: "src/ncfd/extract/runtime_text/config.py:5" }
+    - { name: "NAMING_CONVENTION", path: "src/ncfd/db/models.py:24" }
+    - { name: "USPTO_API_BASE", path: "src/ncfd/ingest/uspto/patent_types.py:323" }
+    - { name: "USPTO_BULK_DATA_BASE", path: "src/ncfd/ingest/uspto/patent_types.py:324" }
+    - { name: "USPTO_ASSIGNMENT_BASE", path: "src/ncfd/ingest/uspto/patent_types.py:325" }
+    - { name: "PHARMACEUTICAL_CPC_CLASSES", path: "src/ncfd/ingest/uspto/patent_types.py:328" }
+    - { name: "ASSIGNMENT_TYPES", path: "src/ncfd/ingest/uspto/patent_types.py:340" }
+    - { name: "EVIDENCE_SOURCE_TYPES", path: "src/ncfd/ingest/uspto/patent_types.py:351" }
+    - { name: "DEFAULT_BASE_URL", path: "src/ncfd/ingest/ctgov.py:29" }
+    - { name: "SESSION", path: "src/ncfd/ingest/ctgov.py:30" }
+    - { name: "DOMAIN_RE", path: "src/ncfd/mapping/deterministic.py:18" }
+
+wiring:
+  modules:
+    - { name: "ncfd.api.main", path: "src/ncfd/api/" }
+    - { name: "ncfd.backtest.outcomes", path: "src/ncfd/backtest/" }
+    - { name: "ncfd.config", path: "src/ncfd/" }
+    - { name: "ncfd.db.models", path: "src/ncfd/db/" }
+    - { name: "ncfd.db.study_card_models", path: "src/ncfd/db/" }
+    - { name: "ncfd.db.session", path: "src/ncfd/db/" }
+    - { name: "ncfd.entities.schema", path: "src/ncfd/entities/" }
+    - { name: "ncfd.extract.abstract_features", path: "src/ncfd/extract/" }
+    - { name: "ncfd.extract.base_extract_worker", path: "src/ncfd/extract/" }
+    - { name: "ncfd.extract.generators.method_card_generator", path: "src/ncfd/extract/generators/" }
+    - { name: "ncfd.extract.generators.pattern_detector", path: "src/ncfd/extract/generators/" }
+    - { name: "ncfd.extract.generators.results_factsheet_generator", path: "src/ncfd/extract/generators/" }
+    - { name: "ncfd.extract.generators.study_card_generator", path: "src/ncfd/extract/generators/" }
+    - { name: "ncfd.extract.models.base", path: "src/ncfd/extract/models/" }
+    - { name: "ncfd.extract.models.decision_record", path: "src/ncfd/extract/models/" }
+    - { name: "ncfd.extract.models.document_card", path: "src/ncfd/extract/models/" }
+    - { name: "ncfd.extract.models.evidence_field", path: "src/ncfd/extract/models/" }
+    - { name: "ncfd.extract.models.evidence_span", path: "src/ncfd/extract/models/" }
+    - { name: "ncfd.extract.models.results_factsheet", path: "src/ncfd/extract/models/" }
+    - { name: "ncfd.extract.models.study_card", path: "src/ncfd/extract/models/" }
+    - { name: "ncfd.extract.normalization.metric_registry", path: "src/ncfd/extract/normalization/" }
+    - { name: "ncfd.extract.retrieval.retriever_enhanced", path: "src/ncfd/extract/retrieval/" }
+    - { name: "ncfd.extract.retrieval.retriever_factory", path: "src/ncfd/extract/retrieval/" }
+    - { name: "ncfd.extract.risk_assessment.models", path: "src/ncfd/extract/risk_assessment/" }
+    - { name: "ncfd.extract.risk_assessment.pattern_scorer", path: "src/ncfd/extract/risk_assessment/" }
+    - { name: "ncfd.extract.runtime_text.api_clients", path: "src/ncfd/extract/runtime_text/" }
+    - { name: "ncfd.extract.runtime_text.config", path: "src/ncfd/extract/runtime_text/" }
+    - { name: "ncfd.extract.runtime_text.text_cache", path: "src/ncfd/extract/runtime_text/" }
+    - { name: "ncfd.extract.runtime_text.text_generator", path: "src/ncfd/extract/runtime_text/" }
+    - { name: "ncfd.ingest.ctgov_change_detector", path: "src/ncfd/ingest/" }
+    - { name: "ncfd.ingest.ctgov_types", path: "src/ncfd/ingest/" }
+    - { name: "ncfd.ingest.ctgov", path: "src/ncfd/ingest/" }
+    - { name: "ncfd.ingest.deps", path: "src/ncfd/ingest/" }
+    - { name: "ncfd.ingest.exchanges", path: "src/ncfd/ingest/" }
+    - { name: "ncfd.ingest.patents", path: "src/ncfd/ingest/" }
+    - { name: "ncfd.ingest.pubmed.abstract_processor", path: "src/ncfd/ingest/pubmed/" }
+    - { name: "ncfd.ingest.pubmed.client", path: "src/ncfd/ingest/pubmed/" }
+    - { name: "ncfd.ingest.pubmed.db_service", path: "src/ncfd/ingest/pubmed/" }
+    - { name: "ncfd.ingest.pubmed.mapper", path: "src/ncfd/ingest/pubmed/" }
+    - { name: "ncfd.ingest.pubmed.normalization", path: "src/ncfd/ingest/pubmed/" }
+    - { name: "ncfd.ingest.pubmed.oa_worker", path: "src/ncfd/ingest/pubmed/" }
+    - { name: "ncfd.ingest.pubmed.queue_service", path: "src/ncfd/ingest/pubmed/" }
+    - { name: "ncfd.ingest.pubmed.retrieval.ctgov_discovery", path: "src/ncfd/ingest/pubmed/retrieval/" }
+    - { name: "ncfd.ingest.pubmed.retrieval.document_scorer", path: "src/ncfd/ingest/pubmed/retrieval/" }
+    - { name: "ncfd.ingest.pubmed.retrieval.entity_pack_builder", path: "src/ncfd/ingest/pubmed/retrieval/" }
+    - { name: "ncfd.ingest.pubmed.retrieval.guardrails", path: "src/ncfd/ingest/pubmed/retrieval/" }
+    - { name: "ncfd.ingest.pubmed.retrieval.policy_engine", path: "src/ncfd/ingest/pubmed/retrieval/" }
+    - { name: "ncfd.ingest.pubmed.retrieval.query_builder", path: "src/ncfd/ingest/pubmed/retrieval/" }
+    - { name: "ncfd.ingest.pubmed.retrieval.retrieval_processor", path: "src/ncfd/ingest/pubmed/retrieval/" }
+    - { name: "ncfd.ingest.sec_filings", path: "src/ncfd/ingest/" }
+    - { name: "ncfd.ingest.sec_langextract", path: "src/ncfd/ingest/" }
+    - { name: "ncfd.ingest.sec_submissions", path: "src/ncfd/ingest/" }
+    - { name: "ncfd.ingest.sec_types", path: "src/ncfd/ingest/" }
+    - { name: "ncfd.ingest.sec", path: "src/ncfd/ingest/" }
+    - { name: "ncfd.ingest.securities", path: "src/ncfd/ingest/" }
+    - { name: "ncfd.ingest.subs_link", path: "src/ncfd/ingest/" }
+    - { name: "ncfd.ingest.subsidiaries", path: "src/ncfd/ingest/" }
+    - { name: "ncfd.ingest.text.span_indexer", path: "src/ncfd/ingest/text/" }
+    - { name: "ncfd.ingest.uspto.assignment_client", path: "src/ncfd/ingest/uspto/" }
+    - { name: "ncfd.ingest.uspto.patent_client", path: "src/ncfd/ingest/uspto/" }
+    - { name: "ncfd.ingest.uspto.patent_processor", path: "src/ncfd/ingest/uspto/" }
+    - { name: "ncfd.ingest.uspto.patent_types", path: "src/ncfd/ingest/uspto/" }
+    - { name: "ncfd.ingest.utils", path: "src/ncfd/ingest/" }
+    - { name: "ncfd.llm.base_provider", path: "src/ncfd/llm/" }
+    - { name: "ncfd.llm.base_worker", path: "src/ncfd/llm/" }
+    - { name: "ncfd.llm.concurrency_manager", path: "src/ncfd/llm/" }
+    - { name: "ncfd.llm.config", path: "src/ncfd/llm/" }
+    - { name: "ncfd.llm.factory", path: "src/ncfd/llm/" }
+    - { name: "ncfd.llm.models", path: "src/ncfd/llm/" }
+    - { name: "ncfd.llm.providers.openai_provider", path: "src/ncfd/llm/providers/" }
+    - { name: "ncfd.logging.context", path: "src/ncfd/logging/" }
+    - { name: "ncfd.logging.event_taxonomy", path: "src/ncfd/logging/" }
+    - { name: "ncfd.logging.examples", path: "src/ncfd/logging/" }
+    - { name: "ncfd.logging.io_trace", path: "src/ncfd/logging/" }
+    - { name: "ncfd.logging.schema", path: "src/ncfd/logging/" }
+    - { name: "ncfd.logging.structured_logger", path: "src/ncfd/logging/" }
+    - { name: "ncfd.mapping.alias_promotion", path: "src/ncfd/mapping/" }
+    - { name: "ncfd.mapping.asset_patent_linker", path: "src/ncfd/mapping/" }
+    - { name: "ncfd.mapping.cli_orgs", path: "src/ncfd/mapping/" }
+    - { name: "ncfd.mapping.deterministic", path: "src/ncfd/mapping/" }
+    - { name: "ncfd.mapping.llm_decider", path: "src/ncfd/mapping/" }
+    - { name: "ncfd.mapping.llm_resolver", path: "src/ncfd/mapping/" }
+    - { name: "ncfd.mapping.normalize", path: "src/ncfd/mapping/" }
+    - { name: "ncfd.mapping.ownership_timeline", path: "src/ncfd/mapping/" }
+    - { name: "ncfd.mapping.patent_assignee_resolver", path: "src/ncfd/mapping/" }
+    - { name: "ncfd.mapping.simple_cli", path: "src/ncfd/mapping/" }
+    - { name: "ncfd.mapping.simple_persist", path: "src/ncfd/mapping/" }
+    - { name: "ncfd.mapping.simple_resolver", path: "src/ncfd/mapping/" }
+    - { name: "ncfd.monitoring.pipeline_monitor", path: "src/ncfd/monitoring/" }
+    - { name: "ncfd.pipeline.asset_resolver", path: "src/ncfd/pipeline/" }
+    - { name: "ncfd.pipeline.ctgov_pipeline", path: "src/ncfd/pipeline/" }
+    - { name: "ncfd.pipeline.early_stopping", path: "src/ncfd/pipeline/" }
+    - { name: "ncfd.pipeline.ingestion", path: "src/ncfd/pipeline/" }
+    - { name: "ncfd.pipeline.lit_queue", path: "src/ncfd/pipeline/" }
+    - { name: "ncfd.pipeline.orchestrator", path: "src/ncfd/pipeline/" }
+    - { name: "ncfd.pipeline.pubmed_pipeline", path: "src/ncfd/pipeline/" }
+    - { name: "ncfd.pipeline.sec_event_processor", path: "src/ncfd/pipeline/" }
+    - { name: "ncfd.pipeline.sec_pipeline", path: "src/ncfd/pipeline/" }
+    - { name: "ncfd.pipeline.study_card_pipeline", path: "src/ncfd/pipeline/" }
+    - { name: "ncfd.pipeline.tracking", path: "src/ncfd/pipeline/" }
+    - { name: "ncfd.quality.data_quality", path: "src/ncfd/quality/" }
+    - { name: "ncfd.synthesis.evidence_constrained_synthesis", path: "src/ncfd/synthesis/" }
+    - { name: "ncfd.synthesis.independent_llm_analysis", path: "src/ncfd/synthesis/" }
+    - { name: "ncfd.utils.study_card_utils", path: "src/ncfd/utils/" }
+
+  imports:
+    - { from: "ncfd.extract.retrieval.retriever_enhanced", to: "typing", symbol: "Any, Dict, List, Optional, Tuple", path: "src/ncfd/extract/retrieval/retriever_enhanced.py:9" }
+    - { from: "ncfd.extract.runtime_text.api_clients", to: "typing", symbol: "Optional, Dict, Any", path: "src/ncfd/extract/runtime_text/api_clients.py:8" }
+    - { from: "ncfd.extract.runtime_text.text_cache", to: "typing", symbol: "Optional, Dict, Any", path: "src/ncfd/extract/runtime_text/text_cache.py:10" }
+    - { from: "ncfd.extract.runtime_text.text_generator", to: "typing", symbol: "Optional, Dict, Any, List", path: "src/ncfd/extract/runtime_text/text_generator.py:9" }
+    - { from: "ncfd.pipeline.study_card_pipeline", to: "typing", symbol: "Dict, List, Optional, Any, Tuple", path: "src/ncfd/pipeline/study_card_pipeline.py:14" }
+    - { from: "ncfd.extract.generators.pattern_detector", to: "typing", symbol: "Dict, List, Any, Optional", path: "src/ncfd/extract/generators/pattern_detector.py:11" }
+    - { from: "ncfd.extract.risk_assessment.models", to: "typing", symbol: "List, Dict, Optional, Any", path: "src/ncfd/extract/risk_assessment/models.py:9" }
+    - { from: "ncfd.ingest.text.span_indexer", to: "typing", symbol: "List, Optional, Dict, Any", path: "src/ncfd/ingest/text/span_indexer.py:11" }
+    - { from: "ncfd.logging.structured_logger", to: "typing", symbol: "Dict, Any, Optional, Union", path: "src/ncfd/logging/structured_logger.py:15" }
+    - { from: "ncfd.synthesis.evidence_constrained_synthesis", to: "typing", symbol: "Dict, List, Optional, Any, Tuple", path: "src/ncfd/synthesis/evidence_constrained_synthesis.py:6" }
+    - { from: "ncfd.synthesis.evidence_constrained_synthesis", to: "pydantic", symbol: "BaseModel", path: "src/ncfd/synthesis/evidence_constrained_synthesis.py:10" }
+    - { from: "ncfd.pipeline.orchestrator", to: "ncfd.pipeline.ctgov_pipeline", symbol: "CtgovPipeline, CtgovPipelineResult", path: "src/ncfd/pipeline/orchestrator.py:25" }
+    - { from: "ncfd.pipeline.orchestrator", to: "ncfd.pipeline.sec_pipeline", symbol: "SecPipeline, SecPipelineResult", path: "src/ncfd/pipeline/orchestrator.py:26" }
+    - { from: "ncfd.pipeline.orchestrator", to: "ncfd.pipeline.study_card_pipeline", symbol: "StudyCardPipeline, StudyCardPipelineResult", path: "src/ncfd/pipeline/orchestrator.py:27" }
+    - { from: "ncfd.pipeline.orchestrator", to: "ncfd.pipeline.pubmed_pipeline", symbol: "PubMedPipeline, PubMedPipelineResult", path: "src/ncfd/pipeline/orchestrator.py:28" }
+    - { from: "ncfd.pipeline.orchestrator", to: "ncfd.pipeline.asset_resolver", symbol: "AssetResolver", path: "src/ncfd/pipeline/orchestrator.py:29" }
+    - { from: "ncfd.pipeline.orchestrator", to: "ncfd.pipeline.tracking", symbol: "TrialVersionTracker", path: "src/ncfd/pipeline/orchestrator.py:30" }
+    - { from: "ncfd.pipeline.orchestrator", to: "ncfd.pipeline.early_stopping", symbol: "should_stop_early, initialize_top_k_guard, update_top_k_guard", path: "src/ncfd/pipeline/orchestrator.py:31" }
+    - { from: "ncfd.pipeline.orchestrator", to: "ncfd.pipeline.lit_queue", symbol: "LiteratureQueue", path: "src/ncfd/pipeline/orchestrator.py:32" }
+    - { from: "ncfd.llm.factory", to: "ncfd.llm.base_provider", symbol: "BaseLLMProvider", path: "src/ncfd/llm/factory.py:10" }
+    - { from: "ncfd.llm.factory", to: "ncfd.llm.config", symbol: "LLMConfig, load_llm_config", path: "src/ncfd/llm/factory.py:11" }
+    - { from: "ncfd.llm.factory", to: "ncfd.llm.models", symbol: "LLMConfigurationError", path: "src/ncfd/llm/factory.py:12" }
+    - { from: "ncfd.llm.factory", to: "ncfd.llm.providers.openai_provider", symbol: "OpenAIProvider", path: "src/ncfd/llm/factory.py:13" }
+    - { from: "ncfd.logging.structured_logger", to: "ncfd.logging.schema", symbol: "LogRecord, LogLevel, LLMLogRecord, DecisionLogRecord, IOTraceRecord", path: "src/ncfd/logging/structured_logger.py:18" }
+    - { from: "ncfd.logging.structured_logger", to: "ncfd.logging.context", symbol: "get_current_context, get_git_info, get_system_info", path: "src/ncfd/logging/structured_logger.py:19" }
+    - { from: "ncfd.logging.structured_logger", to: "ncfd.logging.event_taxonomy", symbol: "EventTaxonomy", path: "src/ncfd/logging/structured_logger.py:20" }
+
+  calls: []
+
+  http_endpoints: []
