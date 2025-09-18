@@ -17,6 +17,9 @@ import aiohttp
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
+from ..llm.json_parser import parse_llm_json_response, validate_confidence_score
+from ..llm.schema_validator import validate_literature_review, validate_independent_analysis
+
 # Load environment variables
 load_dotenv()
 
@@ -65,6 +68,11 @@ class LiteratureReviewAgent:
     
     async def _make_api_call(self, messages: List[Dict[str, str]]) -> str:
         """Make API call to OpenAI."""
+        # Validate messages to prevent null content errors
+        for msg in messages:
+            if not msg.get("content") or msg.get("content").strip() == "":
+                raise ValueError(f"Empty or null content in message: {msg}")
+        
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -81,7 +89,7 @@ class LiteratureReviewAgent:
             async with session.post(self.base_url, headers=headers, json=data) as response:
                 if response.status == 200:
                     result = await response.json()
-                    return result["choices"][0]["message"]["text"]
+                    return result["choices"][0]["message"]["content"]
                 else:
                     error_text = await response.text()
                     raise Exception(f"API call failed: {response.status} - {error_text}")
@@ -113,7 +121,12 @@ class LiteratureReviewAgent:
         # Build search queries
         search_queries = self._build_search_queries(indication, phase, primary_endpoint, mechanism)
         
-        # Literature review prompt
+        # Ensure required parameters are not empty
+        indication = indication or "Unknown indication"
+        phase = phase or "Unknown phase"
+        nct_id = nct_id or "Unknown NCT ID"
+        
+        # Literature review prompt with fallback
         prompt = f"""
 You are a clinical research expert conducting a comprehensive literature review for trial {nct_id} in {indication}.
 
@@ -144,7 +157,7 @@ REQUIRED OUTPUT FORMAT (JSON):
             "primary_endpoint": "Endpoint",
             "results": "Success/Failure/Unknown",
             "key_findings": "Brief summary",
-            "relevance_score": 0.0-1.0,
+            "relevance_score": 0.85,
             "url": "Link to trial"
         }}
     ],
@@ -156,13 +169,16 @@ REQUIRED OUTPUT FORMAT (JSON):
             "year": "Year",
             "doi": "DOI",
             "key_findings": "Brief summary",
-            "relevance_score": 0.0-1.0,
+            "relevance_score": 0.75,
             "url": "Link to paper"
         }}
     ],
-    "confidence_score": 0.0-1.0,
+    "confidence_score": 0.8,
     "search_notes": "Brief notes on search strategy"
 }}
+
+CRITICAL: All numeric values MUST be strict JSON numbers (e.g., 0.85, not "eighty-five" or "85%"). 
+Use decimal format for scores (0.0-1.0 range).
 
 IMPORTANT:
 - Only include trials/papers with relevance_score >= 0.7
@@ -174,21 +190,21 @@ IMPORTANT:
 
         try:
             response = await self._make_api_call([
-                {"role": "system", "text": "You are a clinical research expert specializing in literature review and trial analysis."},
-                {"role": "user", "text": prompt}
+                {"role": "system", "content": "You are a clinical research expert specializing in literature review and trial analysis."},
+                {"role": "user", "content": prompt}
             ])
             
-            # Parse JSON response
+            # Parse JSON response with robust error handling
+            data = parse_llm_json_response(response, expected_fields=["relevant_trials", "relevant_papers", "confidence_score"])
+            if not data:
+                raise Exception("Could not parse JSON response")
+            
+            # Validate against schema
             try:
-                data = json.loads(response)
-            except json.JSONDecodeError:
-                # Try to extract JSON from response
-                start_idx = response.find('{')
-                end_idx = response.rfind('}') + 1
-                if start_idx != -1 and end_idx != 0:
-                    data = json.loads(response[start_idx:end_idx])
-                else:
-                    raise Exception("Could not parse JSON response")
+                data = validate_literature_review(data)
+            except Exception as e:
+                logger.warning(f"Schema validation failed, using raw data: {e}")
+                # Continue with raw data if validation fails
             
             return LiteratureResult(
                 trial_id=trial_id,
@@ -196,7 +212,7 @@ IMPORTANT:
                 relevant_trials=data.get("relevant_trials", []),
                 relevant_papers=data.get("relevant_papers", []),
                 search_queries=search_queries,
-                confidence_score=data.get("confidence_score", 0.5),
+                confidence_score=validate_confidence_score(data.get("confidence_score", 0.5), "confidence_score"),
                 timestamp=datetime.now(timezone.utc)
             )
             
@@ -271,7 +287,7 @@ class IndependentAnalysisAgent:
             async with session.post(self.base_url, headers=headers, json=data) as response:
                 if response.status == 200:
                     result = await response.json()
-                    return result["choices"][0]["message"]["text"]
+                    return result["choices"][0]["message"]["content"]
                 else:
                     error_text = await response.text()
                     raise Exception(f"API call failed: {response.status} - {error_text}")
@@ -331,18 +347,21 @@ IMPORTANT CONSTRAINTS:
 
 REQUIRED OUTPUT FORMAT (JSON):
 {{
-    "gpt5_p_fail": 0.0-1.0,
+    "gpt5_p_fail": 0.75,
     "mechanistic_analysis": "Detailed biological plausibility analysis",
     "class_prior_analysis": "Historical context and class priors",
-    "independent_risk_factors": ["risk1", "risk2", ...],
-    "agreement_with_deterministic": 0.0-1.0,
-    "additional_insights": ["insight1", "insight2", ...],
-    "research_sources": ["source1", "source2", ...],
-    "confidence_level": "High/Medium/Low",
+    "independent_risk_factors": ["risk1", "risk2"],
+    "agreement_with_deterministic": 0.8,
+    "additional_insights": ["insight1", "insight2"],
+    "research_sources": ["source1", "source2"],
+    "confidence_level": "High",
     "strong_red_flags": ["Only very strong red flags"],
     "recommendation": "Final recommendation with justification",
     "reasoning": "Detailed reasoning for P_fail prediction"
 }}
+
+CRITICAL: All numeric values MUST be strict JSON numbers (e.g., 0.75, not "seventy-five" or "75%"). 
+Use decimal format for scores (0.0-1.0 range).
 
 CONFIDENCE LEVELS:
 - High: Clear mechanistic issues + strong class priors + multiple red flags
@@ -363,26 +382,26 @@ STRONG RED FLAGS (only include if VERY strong):
                 {"role": "user", "text": prompt}
             ])
             
-            # Parse JSON response
+            # Parse JSON response with robust error handling
+            data = parse_llm_json_response(response, expected_fields=["gpt5_p_fail", "confidence_level", "agreement_with_deterministic"])
+            if not data:
+                raise Exception("Could not parse JSON response")
+            
+            # Validate against schema
             try:
-                data = json.loads(response)
-            except json.JSONDecodeError:
-                # Try to extract JSON from response
-                start_idx = response.find('{')
-                end_idx = response.rfind('}') + 1
-                if start_idx != -1 and end_idx != 0:
-                    data = json.loads(response[start_idx:end_idx])
-                else:
-                    raise Exception("Could not parse JSON response")
+                data = validate_independent_analysis(data)
+            except Exception as e:
+                logger.warning(f"Schema validation failed, using raw data: {e}")
+                # Continue with raw data if validation fails
             
             return IndependentAnalysis(
                 trial_id=trial_id,
                 nct_id=nct_id,
-                gpt5_p_fail=data.get("gpt5_p_fail", 0.5),
+                gpt5_p_fail=validate_confidence_score(data.get("gpt5_p_fail", 0.5), "gpt5_p_fail"),
                 mechanistic_analysis=data.get("mechanistic_analysis", ""),
                 class_prior_analysis=data.get("class_prior_analysis", ""),
                 independent_risk_factors=data.get("independent_risk_factors", []),
-                agreement_with_deterministic=data.get("agreement_with_deterministic", 0.5),
+                agreement_with_deterministic=validate_confidence_score(data.get("agreement_with_deterministic", 0.5), "agreement_with_deterministic"),
                 additional_insights=data.get("additional_insights", []),
                 research_sources=data.get("research_sources", []),
                 confidence_level=data.get("confidence_level", "Low"),
@@ -481,6 +500,11 @@ class IndependentLLMAnalysis:
                 mechanism=mechanism
             )
             
+            # Check if we have any literature to analyze
+            if not literature_result.relevant_trials and not literature_result.relevant_papers:
+                logger.warning(f"No literature found for NCT {nct_id}; skipping LLM analysis")
+                return self._create_empty_analysis_result(trial_id, nct_id, "No relevant literature found")
+            
             # Step 2: Independent Analysis
             logger.info(f"Step 2: Independent analysis for {nct_id}")
             analysis_result = await self.analysis_agent.analyze_independently(
@@ -537,6 +561,22 @@ class IndependentLLMAnalysis:
                 "confidence_level": "Low",
                 "recommendation": "Analysis failed"
             }
+    
+    def _create_empty_analysis_result(self, trial_id: str, nct_id: str, reason: str) -> Dict[str, Any]:
+        """Create empty analysis result when no literature is available."""
+        return {
+            "trial_id": trial_id,
+            "nct_id": nct_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "error": reason,
+            "gpt5_p_fail": None,
+            "confidence_level": "Low",
+            "recommendation": "Insufficient data for analysis",
+            "literature_confidence": 0.0,
+            "relevant_trials_count": 0,
+            "relevant_papers_count": 0,
+            "analysis_quality": "Low"
+        }
     
     def _calculate_analysis_quality(
         self, 

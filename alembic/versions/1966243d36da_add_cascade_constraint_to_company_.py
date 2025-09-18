@@ -20,8 +20,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Add CASCADE constraint to company_aliases.company_id."""
-    # Drop the existing foreign key constraint
-    op.drop_constraint('fk_company_aliases_company_id_companies', 'company_aliases', type_='foreignkey')
+    # Drop the existing foreign key constraint (indempotent)
+    op.execute("""
+        DO $$ 
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM pg_constraint 
+                WHERE conname = 'fk_company_aliases_company_id_companies'
+            ) THEN
+                ALTER TABLE company_aliases DROP CONSTRAINT fk_company_aliases_company_id_companies;
+            END IF;
+        END $$;
+    """)
     
     # Add the new foreign key constraint with CASCADE
     op.create_foreign_key(
@@ -36,8 +46,18 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Remove CASCADE constraint from company_aliases.company_id."""
-    # Drop the CASCADE foreign key constraint
-    op.drop_constraint('fk_company_aliases_company_id_companies', 'company_aliases', type_='foreignkey')
+    # Drop the CASCADE foreign key constraint (indempotent)
+    op.execute("""
+        DO $$ 
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM pg_constraint 
+                WHERE conname = 'fk_company_aliases_company_id_companies'
+            ) THEN
+                ALTER TABLE company_aliases DROP CONSTRAINT fk_company_aliases_company_id_companies;
+            END IF;
+        END $$;
+    """)
     
     # Add back the original foreign key constraint without CASCADE
     op.create_foreign_key(

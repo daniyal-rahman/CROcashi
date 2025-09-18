@@ -9,7 +9,7 @@ failure detection workflows.
 from .orchestrator import (
     PipelineOrchestrator,
     UnifiedPipelineOrchestrator,  # Alias for backward compatibility
-    OrchestrationResult,
+    OrchestrationOutput,
 )
 
 from .ingestion import (
@@ -38,16 +38,17 @@ from .early_stopping import (
     update_trial_state,
 )
 
-from .ctgov_pipeline import CtgovPipeline
-from .sec_pipeline import SecPipeline
-from .study_card_pipeline import StudyCardPipeline
+from .ctgov_pipeline import CtgovPipeline, CtgovPipelineOutput
+from .sec_pipeline import SecPipeline, SecPipelineOutput
+from .study_card_pipeline import StudyCardPipeline, StudyCardPipelineOutput
+from .pubmed_pipeline import PubMedPipeline, PubMedPipelineOutput
 from .asset_resolver import AssetResolver
 
 __all__ = [
     # Main orchestrator
     "PipelineOrchestrator",
     "UnifiedPipelineOrchestrator",
-    "OrchestrationResult",
+    "OrchestrationOutput",
     
     # Document ingestion
     "DocumentIngestionPipeline",
@@ -73,7 +74,12 @@ __all__ = [
     
     # Individual pipelines
     "CtgovPipeline",
+    "CtgovPipelineOutput",
     "SecPipeline", 
+    "SecPipelineOutput",
     "StudyCardPipeline",
+    "StudyCardPipelineOutput",
+    "PubMedPipeline",
+    "PubMedPipelineOutput",
     "AssetResolver",
 ]

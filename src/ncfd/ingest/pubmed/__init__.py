@@ -13,7 +13,7 @@ from .normalization import AssetIndicationNormalizer
 # Legacy stage_u1 removed - use new retrieval/processing modules
 
 # New retrieval system components
-from .retrieval import RetrievalProcessor, RetrievalResult
+from .retrieval import RetrievalProcessor, RetrievalOutput
 from .abstract_processor import AbstractProcessor, ProcessingResult
 # Dual persistence pipeline removed - using simplified approach
 
@@ -33,7 +33,7 @@ __all__ = [
     
     # New retrieval system components
     "RetrievalProcessor",
-    "RetrievalResult",
+    "RetrievalOutput",
     "AbstractProcessor",
     "ProcessingResult",
     # Dual persistence pipeline removed

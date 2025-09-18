@@ -41,16 +41,12 @@ def upgrade() -> None:
             WHEN phase = 'P2_3' THEN 'PHASE2_PHASE3'
             WHEN phase = 'P3' THEN 'PHASE3'
             WHEN phase = 'P4' THEN 'PHASE4'
-            ELSE 'UNKNOWN'
+            ELSE 'PHASE2'  -- Default to PHASE2 instead of UNKNOWN
         END
     """)
     
     # Update column to use new enum type
-    op.alter_column('trials', 'phase', 
-                   type_=sa.Enum('PHASE1', 'PHASE2', 'PHASE3', 'PHASE4', 
-                                'PHASE2_PHASE3', 'PHASE1_PHASE2', 'PHASE3_PHASE4', 
-                                'EARLY_PHASE1', name='phase_enum'),
-                   existing_type=sa.String(8))
+    op.execute("ALTER TABLE trials ALTER COLUMN phase TYPE phase_enum USING phase::phase_enum")
 
 
 def downgrade() -> None:

@@ -16,7 +16,7 @@ from .policy_engine import RetrievalPolicy
 from .document_scorer import AdvancedDocumentScorer
 from .guardrails import GuardrailsSystem
 from .ctgov_discovery import CTgovIntegration
-from .retrieval_processor import RetrievalProcessor, RetrievalResult
+from .retrieval_processor import RetrievalProcessor, RetrievalOutput
 
 __all__ = [
     "EntityPackBuilder",
@@ -28,5 +28,5 @@ __all__ = [
     "GuardrailsSystem",
     "CTgovIntegration",
     "RetrievalProcessor",
-    "RetrievalResult"
+    "RetrievalOutput"
 ]

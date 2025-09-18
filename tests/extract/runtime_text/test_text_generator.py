@@ -6,7 +6,7 @@ import pytest
 import asyncio
 from unittest.mock import Mock, patch, AsyncMock
 from src.ncfd.extract.runtime_text.text_generator import RuntimeTextGenerator
-from src.ncfd.extract.runtime_text.api_clients import TextRetrievalResult
+from src.ncfd.extract.runtime_text.api_clients import TextRetrievalOutput
 
 
 class TestRuntimeTextGenerator:
@@ -43,7 +43,7 @@ class TestRuntimeTextGenerator:
         }
         
         # Mock successful PMC retrieval
-        mock_result = TextRetrievalResult(
+        mock_result = TextRetrievalOutput(
             success=True,
             text="This is a test document with sufficient content for full text processing.",
             source="pmc",
@@ -70,7 +70,7 @@ class TestRuntimeTextGenerator:
         }
         
         # Mock PMC failure, PubMed success
-        pmc_failure = TextRetrievalResult(
+        pmc_failure = TextRetrievalOutput(
             success=False,
             text="",
             source="pmc",
@@ -78,7 +78,7 @@ class TestRuntimeTextGenerator:
             error_message="No PMCID available"
         )
         
-        pubmed_success = TextRetrievalResult(
+        pubmed_success = TextRetrievalOutput(
             success=True,
             text="This is an abstract with sufficient content for processing.",
             source="pubmed",
@@ -112,7 +112,7 @@ class TestRuntimeTextGenerator:
             "source_type": "Paper"
         }
         
-        failure_result = TextRetrievalResult(
+        failure_result = TextRetrievalOutput(
             success=False,
             text="",
             source="unknown",

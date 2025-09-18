@@ -7,7 +7,7 @@ No longer generates or triages spans - spans are created by LLM quote backtracin
 
 import logging
 from typing import Any, Dict, List, Optional, Tuple
-from ..base_extract_worker import BaseWorker, WorkerResult
+from ..base_extract_worker import BaseWorker, WorkerOutput
 from ..models import DocumentCard
 from ...db.models import Document, DocumentText
 from ...db.session import get_session
@@ -29,7 +29,7 @@ class EnhancedRetriever(BaseWorker):
         """Validate required inputs."""
         return 'trial_context' in inputs
     
-    def process(self, inputs: Dict[str, Any]) -> WorkerResult:
+    def process(self, inputs: Dict[str, Any]) -> WorkerOutput:
         """Process inputs to retrieve documents and raw text for LLM processing."""
         try:
             trial_context = inputs["trial_context"]
@@ -52,7 +52,7 @@ class EnhancedRetriever(BaseWorker):
             for i, doc_card in enumerate(document_cards):
                 document_cards[i] = self._add_provenance(doc_card, inputs)
             
-            return WorkerResult(
+            return WorkerOutput(
                 success=True,
                 output={
                     "document_cards": document_cards,
@@ -67,7 +67,7 @@ class EnhancedRetriever(BaseWorker):
             )
             
         except Exception as e:
-            return WorkerResult(
+            return WorkerOutput(
                 success=False,
                 output=None,
                 error_message=f"Enhanced Retriever failed: {str(e)}"

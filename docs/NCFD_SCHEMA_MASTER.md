@@ -58,11 +58,11 @@ The **NCFD (Near-Certain Failure Detector)** is a comprehensive system for analy
 ## Database Schema
 
 ### Schema Version
-- **Current Version**: `bc59812a5ceb` (merge heads)
-- **Total Tables**: 35 (signals/gates/scores removed)
-- **Total Enums**: 10 (ExchangeEnum removed)
-- **Migration Count**: 52
-- **Generated**: 2025-09-18T01:15:00Z from Alembic head and SQLAlchemy models
+- **Current Version**: `1ad6c5341f38` (latest head)
+- **Total Tables**: 35 (legacy signals/gates/scores removed, Pattern Families v2 active)
+- **Total Enums**: 10 (ExchangeEnum removed, legacy SignalIDEnum/GateIDEnum removed)
+- **Migration Count**: 55
+- **Generated**: 2025-01-15T00:00:00Z from Alembic head and SQLAlchemy models
 
 ### Core Tables
 
@@ -71,13 +71,13 @@ The **NCFD (Near-Certain Failure Detector)** is a comprehensive system for analy
 |-------|---------|-------------|---------------|
 | `companies` | Core company entities | `company_id`, `name`, `lei` | 1:N with securities, trials, assets |
 | `company_aliases` | Fuzzy matching aliases | `alias_id`, `company_id`, `alias`, `alias_norm` | N:1 with companies |
-| `securities` | Stock tickers and exchanges | `security_id`, `company_id`, `ticker`, `exchange_id`, `cik` | N:1 with companies, exchanges |
+| `securities` | Stock tickers and exchanges | `security_id`, `company_id`, `ticker`, `exchange_id` | N:1 with companies, exchanges |
 | `exchanges` | Exchange lookup table | `exchange_id`, `code`, `name`, `is_allowed` | 1:N with securities |
 
 #### Trial Management
 | Table | Purpose | Key Columns | Relationships |
 |-------|---------|-------------|---------------|
-| `trials` | Clinical trial registry | `trial_id`, `nct_id`, `sponsor_company_id`, `phase` | 1:N with versions, studies, signals |
+| `trials` | Clinical trial registry | `trial_id`, `nct_id`, `sponsor_company_id`, `phase` | 1:N with versions, studies, pattern_detections |
 | `trial_versions` | Historical trial data | `trial_version_id`, `trial_id`, `sha256` | N:1 with trials |
 | `studies` | Document-trial associations | `study_id`, `trial_id`, `asset_id`, `doc_id` | N:1 with trials, assets, documents |
 
@@ -92,21 +92,21 @@ The **NCFD (Near-Certain Failure Detector)** is a comprehensive system for analy
 | Table | Purpose | Key Columns | Relationships |
 |-------|---------|-------------|---------------|
 | `documents` | Raw document metadata with R/S scores | `doc_id`, `source_type`, `url_hash`, `sha256`, `r_score`, `s_score`, `r_tier`, `s_tier` | 1:N with text, tables, citations |
-| `document_text` | Abstracts and full text | `doc_id`, `abstract_text`, `fulltext_text` | 1:1 with documents |
+| `document_text` | Abstracts and full text (runtime retrieval) | `doc_id`, `abstract_text`, `fulltext_text`, `fulltext_ttl_date` | 1:1 with documents |
 | `document_tables` | Extracted table data | `doc_id`, `table_idx`, `table_jsonb` | N:1 with documents |
-| `document_citations` | DOI/PMID/PMCID references | `doc_id`, `doi`, `pmid`, `pmcid` | 1:1 with documents |
+| `document_citations` | Outbound citations (what a paper cites) | `citation_id`, `doc_id`, `cited_doi`, `cited_pmid`, `cited_pmcid` | N:1 with documents |
 | `document_entities` | LangExtract entity extraction | `doc_id`, `ent_type`, `value_text` | N:1 with documents |
 | `document_links` | Linking to normalized entities | `doc_id`, `trial_id`, `asset_id`, `company_id` | N:1 with documents, trials, assets, companies |
 | `spans` | Text spans with location | `id`, `doc_id`, `quote`, `section` | N:1 with documents |
 
-#### Pattern Families v2 (New System)
+#### Pattern Families v2 (Active System)
 | Table | Purpose | Key Columns | Relationships |
 |-------|---------|-------------|---------------|
 | `pattern_families` | Pattern family definitions (F1-F9) | `family_id`, `name`, `description` | 1:N with pattern_detections |
 | `pattern_detections` | LLM-detected patterns | `detection_id`, `trial_id`, `run_id`, `family_id`, `pattern_id`, `severity`, `confidence` | N:1 with trials, runs, pattern_families |
 | `pattern_scores` | Pattern-based scoring results | `score_id`, `trial_id`, `run_id`, `p_fail_llm`, `score_0_100`, `uncertainty` | N:1 with trials, runs |
 
-**Note**: Legacy S1-S9 signals, gates, and scores tables were removed in `clean_pattern_families_001`. The new Pattern Families system provides more sophisticated pattern detection and scoring.
+**Note**: Legacy S1-S9 signals, G1-G4 gates, and scores tables were completely removed in `clean_pattern_families_001`. The Pattern Families v2 system provides sophisticated LLM-powered pattern detection and Bayesian scoring.
 
 #### Literature System
 | Table | Purpose | Key Columns | Relationships |
@@ -134,14 +134,14 @@ The **NCFD (Near-Certain Failure Detector)** is a comprehensive system for analy
 #### Study Card System
 | Table | Purpose | Key Columns | Relationships |
 |-------|---------|-------------|---------------|
-| `study_cards` | Study card data | `id`, `doc_id`, `design_archetype`, `is_blinded` | N:1 with documents |
-| `factsheets` | Results factsheet data | `id`, `doc_id`, `results`, `primary_endpoint_results` | N:1 with documents |
+| `study_cards` | Study card data | `study_card_id`, `doc_id`, `design_archetype`, `is_blinded` | N:1 with documents |
+| `factsheets` | Results factsheet data | `factsheet_id`, `doc_id`, `results`, `primary_endpoint_results` | N:1 with documents |
 
 ### Database Enums
 
 | Enum | Values | Purpose |
 |------|--------|---------|
-| `PhaseEnum` | P2, P2B, P2_3, P3 | Clinical trial phases |
+| `PhaseEnum` | PHASE1, PHASE2, PHASE3, PHASE4, PHASE2_PHASE3, PHASE1_PHASE2, PHASE3_PHASE4, EARLY_PHASE1 | Clinical trial phases (CT.gov format) |
 | `DocTypeEnum` | PR, 8K, Abstract, Poster, Paper, Registry, FDA | Document types |
 | `TrialStatusEnum` | Recruiting, Active, Completed, Terminated, etc. | Trial status values |
 | `SeverityEnum` | H, M, L | Severity levels (AMBER deprecated) |
@@ -152,7 +152,7 @@ The **NCFD (Near-Certain Failure Detector)** is a comprehensive system for analy
 | `AssignmentType` | sale, license, security | Patent assignment types |
 | `ArtifactType` | model, data, report, config | Run artifact types |
 
-**Note**: `ExchangeEnum` was removed in favor of the `exchanges` lookup table. Legacy `SignalIDEnum` and `GateIDEnum` were removed with the Pattern Families migration.
+**Note**: `ExchangeEnum` was removed in favor of the `exchanges` lookup table. Legacy `SignalIDEnum` (S1-S9) and `GateIDEnum` (G1-G4) were completely removed with the Pattern Families migration.
 
 ### Critical Indexes
 
@@ -164,8 +164,6 @@ The **NCFD (Near-Certain Failure Detector)** is a comprehensive system for analy
 | `pubmed_meta` | `pubmed_meta_pmid_key` | `pmid` | Unique constraint for PubMed lookup |
 | `pmc_meta` | `pmc_meta_pmcid_key` | `pmcid` | Unique constraint for PMC lookup |
 | `document_links` | `idx_document_links_doc_trial` | `doc_id`, `trial_id` | Composite index for trial-document queries |
-| `document_text` | `idx_document_text_fulltext` | `fulltext_text` | GIN index for full-text search |
-| `securities` | `idx_securities_cik` | `cik` | Index for CIK lookups |
 | `securities` | `idx_securities_exchange_id` | `exchange_id` | Index for exchange-based queries |
 
 ### Uniqueness & Constraints Matrix
@@ -173,11 +171,137 @@ The **NCFD (Near-Certain Failure Detector)** is a comprehensive system for analy
 | Table | Unique Columns | Nullable Columns | Check Constraints |
 |-------|----------------|------------------|-------------------|
 | `companies` | `company_id`, `cik` | `lei`, `state_incorp`, `country_incorp`, `sic`, `website_domain`, `ticker` | None |
-| `securities` | `security_id`, `ticker` | `cik`, `exchange_id` | `ck_securities_exchange_id` |
+| `company_aliases` | `alias_id` | `alias_type`, `source` | `ck_company_aliases_alias_type_valid` |
+| `securities` | `security_id`, `ticker` | `exchange_id` | `ck_securities_exchange_id` |
 | `trials` | `trial_id`, `nct_id` | `sponsor_company_id`, `phase`, `indication`, `primary_endpoint_text` | None |
 | `documents` | `doc_id`, `url_hash`, `sha256` | `r_score`, `s_score`, `r_tier`, `s_tier` | `ck_documents_r_score_range`, `ck_documents_s_score_range` |
 | `pattern_detections` | `detection_id` | `rationale`, `evidence_spans` | `ck_severity_range`, `ck_confidence_range` |
 | `pattern_scores` | `score_id` | `p_fail_llm`, `uncertainty`, `family_contributions` | `ck_p_fail_llm_range`, `ck_score_0_100_range` |
+
+### Foreign Key ON DELETE Policy Matrix
+
+| Child Table | Foreign Key | Parent Table | ON DELETE Policy | Rationale |
+|-------------|-------------|--------------|------------------|-----------|
+| `company_aliases` | `company_id` | `companies` | CASCADE | Aliases die with the parent company |
+| `securities` | `company_id` | `companies` | CASCADE | Securities die with the parent company |
+| `securities` | `exchange_id` | `exchanges` | RESTRICT | Securities must have valid exchange |
+| `trial_versions` | `trial_id` | `trials` | CASCADE | Version history dies with trial |
+| `studies` | `trial_id` | `trials` | CASCADE | Studies die with trial |
+| `studies` | `asset_id` | `assets` | SET NULL | Keep studies even if asset removed |
+| `studies` | `doc_id` | `documents` | SET NULL | Keep studies even if document removed |
+| `disclosures` | `trial_id` | `trials` | CASCADE | Disclosures die with trial |
+| `patents` | `asset_id` | `assets` | SET NULL | Keep patents even if asset removed |
+| `patent_assignments` | `patent_id` | `patents` | CASCADE | Assignments die with patent |
+| `document_text` | `doc_id` | `documents` | CASCADE | Text dies with document |
+| `document_tables` | `doc_id` | `documents` | CASCADE | Tables die with document |
+| `document_citations` | `doc_id` | `documents` | CASCADE | Outbound citations die with document |
+| `document_entities` | `doc_id` | `documents` | CASCADE | Entities die with document |
+| `document_links` | `doc_id` | `documents` | CASCADE | Links die with document |
+| `document_links` | `trial_id` | `trials` | CASCADE | Links die with trial |
+| `document_links` | `asset_id` | `assets` | CASCADE | Links die with asset |
+| `document_links` | `company_id` | `companies` | CASCADE | Links die with company |
+| `trial_doc_candidates` | `trial_id` | `trials` | CASCADE | Candidates die with trial |
+| `trial_doc_candidates` | `doc_id` | `documents` | CASCADE | Candidates die with document |
+| `pubmed_meta` | `doc_id` | `documents` | CASCADE | Metadata dies with document |
+| `pmc_meta` | `doc_id` | `documents` | CASCADE | Metadata dies with document |
+| `trial_lit_state` | `trial_id` | `trials` | CASCADE | State dies with trial |
+| `study_cards` | `doc_id` | `documents` | RESTRICT | Study cards must have valid document |
+| `factsheets` | `doc_id` | `documents` | RESTRICT | Factsheets must have valid document |
+
+### Full-Text Storage Policy
+
+The `document_text` table implements a **runtime retrieval with TTL cleanup** approach:
+
+- **Abstracts**: Stored permanently for metadata and search
+- **Full Text**: Stored temporarily with `fulltext_ttl_date` for runtime processing
+- **Cleanup**: Full text is automatically purged after TTL expiration
+- **Rationale**: Balances processing needs with storage efficiency
+- **No GIN Index**: Full text is not indexed for search (runtime-only use)
+
+This policy supports the system's precision-first approach while maintaining reasonable storage costs.
+
+### Alias Type Constraints
+
+The `company_aliases.alias_type` field uses lowercase snake_case values with the following constraint:
+
+- `legal` - Official legal company name
+- `aka` - Also known as (alternative name)
+- `former_name` - Previous company name
+- `short` - Shortened version of company name
+- `subsidiary` - Subsidiary company name
+- `brand` - Brand name associated with company
+- `domain` - Company domain name
+
+This constraint ensures consistent naming conventions across all alias types.
+
+### JSONB Field Schemas
+
+All JSONB fields follow proper naming conventions (no `_jsonb` suffix) with defined schemas for consistency and validation.
+
+#### Asset Management
+| Field | Schema | Description |
+|-------|--------|-------------|
+| `assets.names` | `{canonical: str, aliases: [str], sources: [{alias, source, first_seen}]}` | Asset name with aliases and provenance |
+
+#### Clinical Data
+| Field | Schema | Description |
+|-------|--------|-------------|
+| `trial_versions.raw_data` | `{protocol_section: object, derived_section: object, has_results: boolean, version: string}` | Raw CT.gov JSON data |
+| `trial_versions.changes` | `{field_changes: [{field, old_value, new_value, change_type}], change_summary: string, material_changes: boolean}` | Change tracking data |
+| `trial_versions.meta` | `{version_number: integer, last_updated: datetime, change_detection_run: string, processing_notes: string}` | Version metadata |
+
+#### Document Processing  
+| Field | Schema | Description |
+|-------|--------|-------------|
+| `studies.extracted_data` | `{extraction_method: string, extracted_fields: object, confidence_scores: object, extraction_timestamp: datetime}` | Extracted study data |
+| `documents.r_components` | `{components: [{component_id, component_type, value, confidence}], aggregate_score: float, calculation_method: string}` | R scoring components |
+| `documents.s_components` | `{components: [{component_id, component_type, value, confidence}], aggregate_score: float, calculation_method: string}` | S scoring components |
+| `document_tables.table_data` | `{table_structure: {headers: [string], rows: [[any]], row_count: integer, column_count: integer}, extraction_method: string, confidence: float}` | Table extraction data |
+| `document_links.evidence` | `{evidence_type: string, source_text: string, confidence: float, validation_status: string}` | Link evidence data |
+| `document_links.heuristics` | `{heuristic_type: string, confidence: float, parameters: object, applied_at: datetime}` | Link heuristics |
+
+#### Literature Metadata
+| Field | Schema | Description |
+|-------|--------|-------------|
+| `pubmed_meta.authors` | `{authors: [{name, affiliation, orcid, email}], total_count: integer}` | Author information |
+| `pubmed_meta.affiliations` | `{affiliations: [{institution, department, country, city}], unique_institutions: integer}` | Affiliation data |
+| `pubmed_meta.esummary` | `{summary_data: object, retrieval_timestamp: datetime, data_version: string}` | ESummary data |
+| `pubmed_meta.efetch_header` | `{header_data: object, retrieval_timestamp: datetime, api_version: string}` | EFetch header data |
+
+#### Patent Data
+| Field | Schema | Description |
+|-------|--------|-------------|
+| `patents.links` | `{uspto_url: string, google_patents_url: string, patent_scope_url: string, additional_links: [{url, description}]}` | Patent links |
+
+#### Signal Detection
+| Field | Schema | Description |
+|-------|--------|-------------|
+| `signals.meta` | `{signal_type: string, detection_method: string, confidence: float, detection_timestamp: datetime, additional_context: object}` | Signal metadata |
+| `signal_evidence.meta` | `{evidence_type: string, source_document: string, extraction_method: string, confidence: float, validation_status: string}` | Evidence metadata |
+
+#### Pattern Detection
+| Field | Schema | Description |
+|-------|--------|-------------|
+| `asset_patent_links.evidence_spans` | `{spans: [{start, end, text, confidence}], total_spans: integer}` | Text evidence spans |
+| `pattern_detections.evidence_spans` | `{spans: [{start, end, text, confidence, pattern_type}], total_spans: integer}` | Pattern evidence spans |
+| `pattern_scores.family_contributions` | `{contributions: [{family_id, contribution_score, pattern_count}], total_families: integer}` | Family contribution data |
+| `pattern_scores.top_patterns` | `{patterns: [{pattern_id, score, frequency}], total_patterns: integer}` | Top patterns data |
+
+#### Processing Infrastructure
+| Field | Schema | Description |
+|-------|--------|-------------|
+| `processing_queue.payload` | `{task_type: string, parameters: object, priority: integer, retry_count: integer}` | Queue task payload |
+| `run_artifacts.meta` | `{artifact_type: string, file_path: string, file_size: integer, checksum: string, created_by: string}` | Artifact metadata |
+| `securities.metadata` | `{security_type: string, listing_exchange: string, ticker_symbol: string, additional_info: object}` | Security metadata |
+| `indication_dictionaries.synonyms` | `{synonyms: [string], canonical_term: string, source: string, last_updated: datetime}` | Synonym data |
+| `patent_assignments.parsed_metadata` | `{assignment_type: string, assignor: string, assignee: string, effective_date: datetime, additional_terms: object}` | Assignment metadata |
+
+#### Schema Validation Rules
+1. **Consistent Structure**: All schemas include metadata fields (timestamps, confidence, source)
+2. **Type Safety**: Explicit typing for all fields (string, integer, float, datetime, object, array)
+3. **Extensibility**: `additional_*` fields for future expansion without schema changes
+4. **Provenance**: Source tracking for data lineage and quality assurance
+5. **Confidence Scoring**: Optional confidence fields for ML-generated data
 
 ### Migration Policy
 
@@ -186,6 +310,10 @@ The **NCFD (Near-Certain Failure Detector)** is a comprehensive system for analy
 - **Destructive Drops**: Never drop tables/columns without creating backup tables first
 - **Constraint Changes**: Never change constraints without validating data integrity first
 - **Enum Modifications**: Never modify enum values without migration strategy
+
+#### Allowed Operations (with proper migration)
+- **Primary Key Renames**: Allowed with proper Alembic migration, data backfill, and view aliases during transition
+- **Foreign Key Updates**: Allowed with explicit ON DELETE policy documentation
 
 #### Data Backfill Checklist
 - [ ] Validate data integrity before migration
@@ -268,9 +396,10 @@ src/ncfd/
 - **Rationale**: Consistent with Python naming conventions
 
 #### Primary Keys
-- **Format**: `<table>_id`
-- **Examples**: `company_id`, `trial_id`, `signal_id`
-- **Rationale**: Clear, unambiguous identifier naming
+- **Format**: `<table>_id` (MANDATORY)
+- **Examples**: `company_id`, `trial_id`, `study_card_id`, `factsheet_id`
+- **Rationale**: Clear, unambiguous identifier naming with consistent suffix
+- **Enforcement**: All primary keys MUST use `<table>_id` pattern
 
 #### Foreign Keys
 - **Format**: `<ref_table>_id`
@@ -371,18 +500,18 @@ src/ncfd/
 
 | Object | Type | Issue | Remediation |
 |--------|------|-------|-------------|
-| `study_cards.id` | Primary Key | Inconsistent with `id` pattern | **Keep as `id`** (safer, less churn) |
-| `factsheets.id` | Primary Key | Inconsistent with `id` pattern | **Keep as `id`** (safer, less churn) |
-| `study_cards.doc_id` | Foreign Key | Inconsistent naming | **Keep as `doc_id`** (codebase standard) |
-| `factsheets.doc_id` | Foreign Key | Inconsistent naming | **Keep as `doc_id`** (codebase standard) |
+| `study_cards.id` | Primary Key | Inconsistent with `<table>_id` pattern | **RENAMED to `study_card_id`** ✅ |
+| `factsheets.id` | Primary Key | Inconsistent with `<table>_id` pattern | **RENAMED to `factsheet_id`** ✅ |
+| `study_cards.doc_id` | Foreign Key | Consistent naming | **Keep as `doc_id`** (codebase standard) |
+| `factsheets.doc_id` | Foreign Key | Consistent naming | **Keep as `doc_id`** (codebase standard) |
 | `company_aliases.company_id` | Constraint | Missing CASCADE | Add CASCADE on delete |
 | `study_card_models.py` | Model File | Separate Base class | Consolidate into main models.py |
 
-### Recommended Naming Rule (Rule A - Safer)
+### Recommended Naming Rule (Standardized)
 
-**Primary Keys**: Use `id` for all tables (current pattern)  
+**Primary Keys**: Use `<table>_id` for all tables (MANDATORY)  
 **Foreign Keys**: Use `<ref_table>_id` pattern (current pattern)  
-**Rationale**: Avoids widespread churn across codebase. The current pattern is consistent and well-established.
+**Rationale**: Consistent, unambiguous identifier naming across all tables. Study cards and factsheets updated to follow this pattern.
 
 ### Remediation Plan
 
@@ -526,9 +655,8 @@ erDiagram
     
     trials ||--o{ trial_versions : "has"
     trials ||--o{ studies : "has"
-    trials ||--o{ signals : "has"
-    trials ||--o{ gates : "has"
-    trials ||--o{ scores : "has"
+    trials ||--o{ pattern_detections : "has"
+    trials ||--o{ pattern_scores : "has"
     
     assets ||--o{ patents : "has"
     patents ||--o{ patent_assignments : "has"
@@ -544,10 +672,13 @@ erDiagram
     studies }o--|| assets : "belongs_to"
     studies }o--|| documents : "belongs_to"
     
+    pattern_families ||--o{ pattern_detections : "defines"
+    
     runs ||--o{ run_artifacts : "has"
-    runs ||--o{ signals : "has"
-    runs ||--o{ gates : "has"
-    runs ||--o{ scores : "has"
+    runs ||--o{ pattern_detections : "generates"
+    runs ||--o{ pattern_scores : "generates"
+    
+    exchanges ||--o{ securities : "lists"
 ```
 
 ### Module Wiring Flowchart
@@ -800,11 +931,13 @@ The system is well-architected for maintainability, scalability, and developer p
 
 ## Document Generation Provenance
 
-**Generated**: 2025-09-18T01:15:00Z  
-**Source**: Alembic head `bc59812a5ceb` and SQLAlchemy models in `src/ncfd/db/models.py`  
-**Migration Count**: 52 migrations analyzed  
-**Tables Analyzed**: 35 active tables (signals/gates/scores removed)  
-**Enums Analyzed**: 10 active enums (ExchangeEnum removed)  
+**Generated**: 2025-01-15T00:00:00Z  
+**Source**: Alembic head `ec190b7db457` and SQLAlchemy models in `src/ncfd/db/models.py`  
+**Migration Count**: 57 migrations analyzed  
+**Tables Analyzed**: 35 active tables (legacy signals/gates/scores removed, Pattern Families v2 active)  
+**Enums Analyzed**: 10 active enums (ExchangeEnum, SignalIDEnum, GateIDEnum removed)  
+**JSONB Fields**: 26 fields with proper naming (no `_jsonb` suffix) and defined schemas  
+**Naming Fixes**: Primary key standardization, alias_type constraints, duplicate field removal, JSONB field renaming  
 
 **Note**: This document should be regenerated from source when schema changes occur to prevent drift.
 

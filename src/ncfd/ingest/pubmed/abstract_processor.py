@@ -356,8 +356,8 @@ class AbstractProcessor:
                 doc['r_tier'] = r_tier
                 doc['s_score'] = s_score
                 doc['s_tier'] = s_tier
-                doc['r_components_jsonb'] = {'placeholder': 'R components would go here'}
-                doc['s_components_jsonb'] = {'placeholder': 'S components would go here'}
+                doc['r_components'] = {'placeholder': 'R components would go here'}
+                doc['s_components'] = {'placeholder': 'S components would go here'}
                 doc['rs_decided_at'] = datetime.now(timezone.utc)
                 
                 documents_scored.append(doc)

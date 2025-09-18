@@ -10,7 +10,7 @@ import re
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 from ....entities.schema import EntityPack
-from .policy_engine import PolicyResult
+from .policy_engine import PolicyOutput
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +133,7 @@ class AdvancedDocumentScorer:
         self, 
         doc: Dict[str, Any], 
         entity_pack: EntityPack,
-        policy_result: Optional[PolicyResult] = None
+        policy_result: Optional[PolicyOutput] = None
     ) -> ScoringOutput:
         """
         Calculate sophisticated score for document.

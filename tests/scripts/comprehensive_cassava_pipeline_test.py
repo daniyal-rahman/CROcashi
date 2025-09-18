@@ -946,8 +946,8 @@ class ComprehensiveCassavaTest:
         logger.info(f"Starting orchestrator with seeded data: {execution_id}")
         
         # Create a custom orchestration result
-        from ncfd.pipeline.orchestrator import OrchestrationResult
-        result = OrchestrationResult(
+        from ncfd.pipeline.orchestrator import OrchestrationOutput
+        result = OrchestrationOutput(
             execution_id=execution_id,
             start_time=start_time,
             end_time=start_time  # Will be updated

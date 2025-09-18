@@ -130,6 +130,7 @@ class CompanyAlias(Base):
         Index("idx_company_aliases_company_id", "company_id"),
         Index("idx_company_aliases_alias_norm", "alias_norm"),
         Index("idx_company_aliases_alias_type", "alias_type"),
+        CheckConstraint("alias_type IN ('legal','aka','former_name','short','subsidiary','brand','domain')", name='ck_company_aliases_alias_type_valid'),
     )
 
 
@@ -140,7 +141,6 @@ class Security(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.company_id", ondelete="CASCADE"), nullable=False)
     ticker: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     exchange_id: Mapped[int] = mapped_column(Integer, ForeignKey("exchanges.exchange_id"), nullable=False)
-    cik: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_adr: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -153,7 +153,6 @@ class Security(Base):
 
     __table_args__ = (
         Index("idx_securities_exchange_id", "exchange_id"),
-        Index("idx_securities_cik", "cik"),
         Index("idx_securities_company_id", "company_id"),
         Index("idx_securities_active", "active"),
     )
@@ -188,7 +187,7 @@ class Asset(Base):
     __tablename__ = "assets"
 
     asset_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    names_jsonb: Mapped[Dict[str, object]] = mapped_column(JSONB, nullable=False)  # {inn, internal_codes[], ...}
+    names: Mapped[Dict[str, object]] = mapped_column(JSONB, nullable=False)  # {canonical: str, aliases: [str], sources: [{alias, source, first_seen}]}
     modality: Mapped[Optional[str]] = mapped_column(Text)
     target: Mapped[Optional[str]] = mapped_column(Text)
     moa: Mapped[Optional[str]] = mapped_column(Text)
@@ -203,7 +202,7 @@ class Asset(Base):
     patents: Mapped[List["Patent"]] = relationship(back_populates="asset")
 
     __table_args__ = (
-        Index("idx_assets_names_jsonb", "names_jsonb", postgresql_using="gin"),
+        Index("idx_assets_names", "names", postgresql_using="gin"),
         Index("idx_assets_target", "target"),
         Index("idx_assets_moa", "moa"),
         Index("ix_assets_owner_company_id", "owner_company_id"),
@@ -282,17 +281,17 @@ class TrialVersion(Base):
     trial_id: Mapped[int] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"), nullable=False)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     sha256: Mapped[str] = mapped_column(CHAR(64), nullable=False)
-    raw_jsonb: Mapped[Dict[str, object]] = mapped_column(JSONB, nullable=False)
+    raw_data: Mapped[Dict[str, object]] = mapped_column(JSONB, nullable=False)
     last_update_posted_date: Mapped[Optional[date]] = mapped_column(Date)
     primary_endpoint_text: Mapped[Optional[str]] = mapped_column(Text)
     sample_size: Mapped[Optional[int]] = mapped_column(Integer)
     analysis_plan_text: Mapped[Optional[str]] = mapped_column(Text)
-    changes_jsonb: Mapped[Optional[Dict[str, object]]] = mapped_column(JSONB)
+    changes: Mapped[Optional[Dict[str, object]]] = mapped_column(JSONB)
     changed_primary_endpoint: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     changed_sample_size: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     sample_size_delta: Mapped[Optional[int]] = mapped_column(Integer)
     changed_analysis_plan: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
-    metadata_jsonb: Mapped[Optional[Dict[str, object]]] = mapped_column(JSONB)
+    meta: Mapped[Optional[Dict[str, object]]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     trial: Mapped["Trial"] = relationship(back_populates="versions")
@@ -321,7 +320,7 @@ class Study(Base):
     text_hash: Mapped[Optional[str]] = mapped_column(CHAR(64))
     oa_status: Mapped[Optional[str]] = mapped_column(OAStatusEnum)
     object_store_key: Mapped[str] = mapped_column(Text, nullable=False)
-    extracted_jsonb: Mapped[Dict[str, object]] = mapped_column(JSONB, nullable=False)
+    extracted_data: Mapped[Dict[str, object]] = mapped_column(JSONB, nullable=False)
     coverage_level: Mapped[str] = mapped_column(CoverageLevelEnum, nullable=False)
     notes_md: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -343,7 +342,7 @@ class Study(Base):
         Index("idx_studies_doc_id", "doc_id"),
         Index("idx_studies_doc_type", "doc_type"),
         Index("idx_studies_text_hash_unique", "text_hash", unique=True, postgresql_where=text("text_hash IS NOT NULL")),
-        Index("idx_studies_extracted_jsonb", "extracted_jsonb", postgresql_using="gin"),
+        Index("idx_studies_extracted_data", "extracted_data", postgresql_using="gin"),
         UniqueConstraint("object_store_key", name="uq_studies_object_store_key"),
     )
 
@@ -385,7 +384,7 @@ class Patent(Base):
     status: Mapped[Optional[str]] = mapped_column(Text)
     assignees: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text))
     inventors: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text))
-    links_jsonb: Mapped[Optional[Dict[str, object]]] = mapped_column(JSONB)
+    links: Mapped[Optional[Dict[str, object]]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     asset: Mapped[Optional["Asset"]] = relationship(back_populates="patents")
@@ -433,7 +432,7 @@ class Signal(Base):
     value: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6))
     severity: Mapped[Optional[str]] = mapped_column(SeverityEnum)
     fired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    metadata_jsonb: Mapped[Optional[Dict[str, object]]] = mapped_column(JSONB)
+    meta: Mapped[Optional[Dict[str, object]]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     trial: Mapped["Trial"] = relationship(back_populates="signals")
@@ -453,7 +452,7 @@ class SignalEvidence(Base):
     signal_id: Mapped[int] = mapped_column(ForeignKey("signals.signal_id", ondelete="CASCADE"), nullable=False)
     source_study_id: Mapped[Optional[int]] = mapped_column(ForeignKey("studies.study_id", ondelete="SET NULL"))
     evidence_span: Mapped[Optional[str]] = mapped_column(Text)
-    metadata_jsonb: Mapped[Optional[Dict]] = mapped_column(JSONB)
+    meta: Mapped[Optional[Dict]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships
@@ -670,8 +669,8 @@ class Document(Base):
     r_tier: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     s_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(5,4), nullable=True)
     s_tier: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    r_components_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
-    s_components_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    r_components: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    s_components: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     rs_decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
@@ -739,7 +738,7 @@ class DocumentTable(Base):
     page_no: Mapped[int] = mapped_column(Integer, nullable=False)
     table_idx: Mapped[int] = mapped_column(Integer, nullable=False)
     caption: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    table_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    table_data: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     detector: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships
@@ -752,28 +751,34 @@ class DocumentTable(Base):
 
 
 class DocumentCitation(Base):
-    """Document citations table - DOI/PMID/PMCID/NCT references."""
+    """Document citations table - outbound citations (what a paper cites)."""
     __tablename__ = "document_citations"
 
-    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    doi: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    pmid: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    pmcid: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    nct_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    journal: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    volume: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    issue: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    pages: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    article_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    pub_year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    mesh_jsonb: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    substances_jsonb: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    citation_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    doc_id: Mapped[int] = mapped_column(Integer, nullable=False)  # Document that cites
+    cited_doi: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cited_pmid: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cited_pmcid: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cited_nct_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cited_title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cited_journal: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cited_volume: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cited_issue: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cited_pages: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cited_article_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cited_pub_year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    citation_context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # How it's cited
+    citation_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # reference, background, etc.
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships
     document: Mapped["Document"] = relationship(back_populates="citations")
 
     __table_args__ = (
-        PrimaryKeyConstraint('doc_id'),
+        Index("idx_document_citations_doc_id", "doc_id"),
+        Index("idx_document_citations_cited_doi", "cited_doi"),
+        Index("idx_document_citations_cited_pmid", "cited_pmid"),
+        Index("idx_document_citations_cited_pmcid", "cited_pmcid"),
         ForeignKeyConstraint(['doc_id'], ['documents.doc_id'], ondelete='CASCADE'),
     )
 
@@ -814,7 +819,7 @@ class DocumentLink(Base):
     link_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     confidence: Mapped[Optional[Decimal]] = mapped_column(Numeric, nullable=True)
     heuristics: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
-    evidence_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    evidence: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
 
     # Relationships
     document: Mapped["Document"] = relationship(back_populates="links")
@@ -903,10 +908,10 @@ class PubMedMeta(Base):
     pmid: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     medline_xml_sha: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     language: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    authors_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
-    affiliations_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
-    esummary_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
-    efetch_header_jsonb: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    authors: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    affiliations: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    esummary: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    efetch_header: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
 
     # Relationships
     document: Mapped["Document"] = relationship(back_populates="pubmed_meta")
@@ -1115,8 +1120,8 @@ class StudyCard(Base):
     """SQLAlchemy model for study_cards table."""
     __tablename__ = 'study_cards'
     
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    doc_id: Mapped[str] = mapped_column(String, ForeignKey("documents.doc_id"), nullable=False)
+    study_card_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    doc_id: Mapped[int] = mapped_column(Integer, ForeignKey("documents.doc_id"), nullable=False)
     design_archetype: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     is_blinded: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     analysis_set: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -1171,7 +1176,7 @@ class Factsheet(Base):
     """SQLAlchemy model for factsheets table."""
     __tablename__ = 'factsheets'
     
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    factsheet_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     doc_id: Mapped[str] = mapped_column(String, ForeignKey("documents.doc_id"), nullable=False)
     results: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     primary_endpoint_results: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)

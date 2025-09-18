@@ -1,10 +1,10 @@
 {
   "test_info": {
-    "start_time": "2025-09-17T05:33:47.784579+00:00",
+    "start_time": "2025-09-18T18:19:42.727182+00:00",
     "test_name": "Comprehensive Cassava Pipeline Test",
     "version": "1.0",
-    "end_time": "2025-09-17T05:47:46.111474+00:00",
-    "duration_seconds": 838.326895
+    "end_time": "2025-09-18T18:25:48.160911+00:00",
+    "duration_seconds": 365.433729
   },
   "database_setup": {
     "status": "success",
@@ -47,19 +47,12 @@
     "main_trial": "NCT05515666",
     "trials_processed": 1,
     "documents_created": 20,
-    "document_links": 20,
-    "pubmed_documents": 20,
+    "document_links": 0,
+    "pubmed_documents": 0,
     "retrieval_documents": 20,
     "processed_documents": 16,
     "retrieval_metrics": {},
     "document_details": [
-      {
-        "pmid": "39239266",
-        "title": "Expression of concern: Simufilam suppresses overactive mTOR and restores its sensitivity to insulin ...",
-        "retrieval_tier": "Unknown",
-        "policy_engine_passed": false,
-        "guardrails_passed": false
-      },
       {
         "pmid": "39009358",
         "title": "Scientist who worked on Cassava's Alzheimer drug simufilam charged with fraud.",
@@ -68,8 +61,29 @@
         "guardrails_passed": false
       },
       {
+        "pmid": "39239266",
+        "title": "Expression of concern: Simufilam suppresses overactive mTOR and restores its sensitivity to insulin ...",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
         "pmid": "36934371",
         "title": "Assessing preparedness for Alzheimer disease-modifying therapies in Australasian health care systems...",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "37457922",
+        "title": "Simufilam suppresses overactive mTOR and restores its sensitivity to insulin in Alzheimer's disease ...",
+        "retrieval_tier": "Unknown",
+        "policy_engine_passed": false,
+        "guardrails_passed": false
+      },
+      {
+        "pmid": "34295950",
+        "title": "Altered filamin A enables amyloid beta-induced tau hyperphosphorylation and neuroinflammation in Alz...",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
@@ -84,20 +98,6 @@
       {
         "pmid": "37762230",
         "title": "Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's Disease.",
-        "retrieval_tier": "Unknown",
-        "policy_engine_passed": false,
-        "guardrails_passed": false
-      },
-      {
-        "pmid": "34295950",
-        "title": "Altered filamin A enables amyloid beta-induced tau hyperphosphorylation and neuroinflammation in Alz...",
-        "retrieval_tier": "Unknown",
-        "policy_engine_passed": false,
-        "guardrails_passed": false
-      },
-      {
-        "pmid": "37457922",
-        "title": "Simufilam suppresses overactive mTOR and restores its sensitivity to insulin in Alzheimer's disease ...",
         "retrieval_tier": "Unknown",
         "policy_engine_passed": false,
         "guardrails_passed": false
@@ -136,121 +136,40 @@
     "status": "success",
     "main_trial": "NCT05515666",
     "trials_processed": 1,
-    "total_patterns_generated": 7,
+    "total_patterns_generated": 0,
     "total_conclusions_generated": 0,
-    "pattern_details": [
-      {
-        "family_id": "F8",
-        "pattern_id": "F8P2",
-        "severity": "SeverityLevel.YELLOW",
-        "confidence": 0.85
-      },
-      {
-        "family_id": "F1",
-        "pattern_id": "F1P1",
-        "severity": "SeverityLevel.YELLOW",
-        "confidence": 0.8
-      },
-      {
-        "family_id": "F7",
-        "pattern_id": "F7P2",
-        "severity": "SeverityLevel.YELLOW",
-        "confidence": 0.85
-      },
-      {
-        "family_id": "F1",
-        "pattern_id": "F1P1",
-        "severity": "SeverityLevel.YELLOW",
-        "confidence": 0.85
-      },
-      {
-        "family_id": "F8",
-        "pattern_id": "F8P2",
-        "severity": "SeverityLevel.YELLOW",
-        "confidence": 0.9
-      },
-      {
-        "family_id": "F4",
-        "pattern_id": "F4P4",
-        "severity": "SeverityLevel.YELLOW",
-        "confidence": 0.8
-      },
-      {
-        "family_id": "F4",
-        "pattern_id": "F4P4",
-        "severity": "SeverityLevel.YELLOW",
-        "confidence": 0.9
-      }
-    ],
+    "pattern_details": [],
     "conclusion_details": [],
     "results": [
       {
         "trial_id": 2,
         "nct_id": "NCT05515666",
         "success": false,
-        "document_cards": 5,
-        "evidence_spans": 47,
+        "document_cards": 3,
+        "evidence_spans": 0,
         "claims": 0,
         "study_cards": 0,
         "results_factsheets": 0,
-        "pattern_detections": 7,
+        "pattern_detections": 0,
         "decision_record": false,
-        "patterns": [
-          {
-            "family_id": "F8",
-            "pattern_id": "F8P2",
-            "severity": "SeverityLevel.YELLOW",
-            "confidence": 0.85
-          },
-          {
-            "family_id": "F1",
-            "pattern_id": "F1P1",
-            "severity": "SeverityLevel.YELLOW",
-            "confidence": 0.8
-          },
-          {
-            "family_id": "F7",
-            "pattern_id": "F7P2",
-            "severity": "SeverityLevel.YELLOW",
-            "confidence": 0.85
-          },
-          {
-            "family_id": "F1",
-            "pattern_id": "F1P1",
-            "severity": "SeverityLevel.YELLOW",
-            "confidence": 0.85
-          },
-          {
-            "family_id": "F8",
-            "pattern_id": "F8P2",
-            "severity": "SeverityLevel.YELLOW",
-            "confidence": 0.9
-          },
-          {
-            "family_id": "F4",
-            "pattern_id": "F4P4",
-            "severity": "SeverityLevel.YELLOW",
-            "confidence": 0.8
-          },
-          {
-            "family_id": "F4",
-            "pattern_id": "F4P4",
-            "severity": "SeverityLevel.YELLOW",
-            "confidence": 0.9
-          }
-        ],
+        "patterns": [],
         "conclusions": [],
         "errors": [
-          "Quality gate: Database persistence check failed: (psycopg2.errors.UndefinedFunction) operator does not exist: character varying = integer\nLINE 1: SELECT COUNT(*) FROM study_cards WHERE doc_id = 19\n                                                      ^\nHINT:  No operator matches the given name and argument types. You might need to add explicit type casts.\n\n[SQL: SELECT COUNT(*) FROM study_cards WHERE doc_id = %(doc_id)s]\n[parameters: {'doc_id': 19}]\n(Background on this error at: https://sqlalche.me/e/20/f405)"
+          "Quality gate: Study section missing - no study card generated",
+          "Quality gate: Results section missing - no results factsheet generated"
         ],
-        "warnings": []
+        "warnings": [
+          "LLM processing failed for document 4: 'float' object is not subscriptable",
+          "LLM processing failed for document 18: 'float' object is not subscriptable",
+          "LLM processing failed for document 10: 'float' object is not subscriptable"
+        ]
       }
     ]
   },
   "orchestrator_testing": {
     "status": "success",
-    "execution_id": "cassava_test_1758087228",
-    "total_processing_time": 349.641246,
+    "execution_id": "cassava_test_1758219582",
+    "total_processing_time": 186.196127,
     "ctgov_result": {
       "success": false,
       "trials_processed": 0
@@ -281,11 +200,11 @@
     },
     "relationships": {
       "trials_with_company": 4,
-      "trials_with_documents": 1
+      "trials_with_documents": 0
     },
     "data_integrity": {
       "all_trials_have_company": true,
-      "some_trials_have_documents": true
+      "some_trials_have_documents": false
     }
   },
   "errors": [],
@@ -297,15 +216,18 @@
     "\u26a0\ufe0f  PMCID DETECTION ISSUE: PMID 33188449 should have PMCID PMC7664001 but has PMC8116355",
     "\u26a0\ufe0f  PMCID DETECTION ISSUE: PMID 32075941 should have PMCID PMC7342663 but has PMC12290962",
     "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 39239266 has PMCID PMC11375796 but no full text content retrieved",
-    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 37762230 has PMCID PMC10531384 but no full text content retrieved",
-    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 34295950 has PMCID PMC8294116 but no full text content retrieved",
     "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 37457922 has PMCID PMC10339288 but no full text content retrieved",
+    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 34295950 has PMCID PMC8294116 but no full text content retrieved",
+    "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 37762230 has PMCID PMC10531384 but no full text content retrieved",
     "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 22815492 has PMCID PMC6621293 but no full text content retrieved",
     "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 33935797 has PMCID PMC8080444 but no full text content retrieved",
     "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 33188449 has PMCID PMC8116355 but no full text content retrieved",
     "\u26a0\ufe0f  FULL TEXT ISSUE: PMID 32075941 has PMCID PMC12290962 but no full text content retrieved",
-    "\u26a0\ufe0f  WARNING: 11 patterns detected (0 fired gates, 11 pattern detections) - this may indicate risk patterns in the trial",
     "Gate pass check failed: name 'passed_assessments_result' is not defined",
-    "\u26a0\ufe0f  WARNING: Limited source type diversity - only ['Paper'] found"
+    "\u26a0\ufe0f  WARNING: Low document coverage - only 0 documents found for main trial NCT05515666",
+    "   Context: Expected comprehensive literature coverage for Phase 3 Alzheimer's trial - consider expanding search terms or date ranges",
+    "\u26a0\ufe0f  WARNING: Limited source type diversity - only [] found",
+    "\u26a0\ufe0f  WARNING: Low PubMed paper coverage - only 0 papers found (expected more for comprehensive literature review)",
+    "   Context: Simufilam/PTI-125 has extensive literature including mechanism, preclinical, and clinical studies - low paper count may indicate retrieval issues"
   ]
 }

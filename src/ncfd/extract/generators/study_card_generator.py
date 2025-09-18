@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from ..models.study_card import StudyCard
 from ..models.evidence_field import EvidenceField
 from ...llm import BaseLLMGenerator
+from ...llm.json_parser import parse_llm_json_response, validate_confidence_score
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,23 @@ class LLMStudyCardGenerator(BaseLLMGenerator):
             study_card_data, field_quotes = await self._execute_with_retry(
                 raw_doc_text, doc_id, trial_context
             )
+            
+            # Check success criteria - must have meaningful content
+            has_meaningful_content = (
+                study_card_data.get('design_archetype') or
+                study_card_data.get('primary_endpoint') or
+                study_card_data.get('population_description') or
+                len(field_quotes) > 0
+            )
+            
+            if not has_meaningful_content:
+                self.logger.warning(f"Study card generation produced no meaningful content for doc_id: {doc_id}")
+                return {
+                    "study_card": None,
+                    "field_quotes": [],
+                    "success": False,
+                    "error_message": "No meaningful content generated"
+                }
             
             # Create StudyCard object
             study_card = StudyCard(
@@ -343,9 +361,18 @@ Respond in JSON format:
 Only include fields where you found clear evidence in the document. If a field is not mentioned, omit it from both the study_card_data and field_quotes.
 """
             
-            # Make LLM call
+            # Validate inputs before API call
+            if not doc_text or not doc_text.strip():
+                raise ValueError("Empty doc_text provided to LLM")
+            if not prompt or not prompt.strip():
+                raise ValueError("Empty prompt provided to LLM")
+            
+            # Log redacted payload preview
+            self.logger.debug(f"LLM payload preview: doc_text_length={len(doc_text)}, prompt_length={len(prompt)}")
+            
+            # Make LLM call with proper message format
             response = await self.call_llm(
-                messages=[prompt],
+                messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=2000,
                 json_output=True
@@ -357,12 +384,13 @@ Only include fields where you found clear evidence in the document. If a field i
             logger.info(f"DEBUG: LLM raw response content: {str(result)[:500]}...")
             
             if isinstance(result, str):
-                try:
-                    import json
-                    result = json.loads(result)
+                # Use robust JSON parsing
+                parsed_result = parse_llm_json_response(result, expected_fields=["study_card_data", "field_quotes"])
+                if parsed_result:
+                    result = parsed_result
                     logger.info(f"DEBUG: Parsed JSON successfully, field_quotes count: {len(result.get('field_quotes', []))}")
-                except json.JSONDecodeError as e:
-                    logger.error(f"DEBUG: JSON parsing failed: {e}")
+                else:
+                    logger.error(f"DEBUG: JSON parsing failed")
                     logger.error(f"DEBUG: Raw response: {result}")
                     return {}
             

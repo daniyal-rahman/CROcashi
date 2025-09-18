@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from .entity_pack_builder import EntityPackBuilder, EntityPack
 from .query_builder import MultiTierQueryBuilder, QueryTier
 from .policy_engine import RetrievalPolicy
-from .document_scorer import AdvancedDocumentScorer, ScoringResult
+from .document_scorer import AdvancedDocumentScorer, ScoringOutput
 from .guardrails import GuardrailsSystem, GuardrailConfig
 from .ctgov_discovery import CTgovIntegration
 from ..client import PubMedClient
@@ -57,8 +57,15 @@ class RetrievalProcessor:
         self.query_builder = MultiTierQueryBuilder(config)
         self.policy_engine = RetrievalPolicy(config.get('policy_config', {}))
         self.document_scorer = AdvancedDocumentScorer(config.get('scoring_config', {}))
+        # Use stage-appropriate guardrails configuration
         guardrails_config_dict = config.get('guardrails_config', {})
-        self.guardrails = GuardrailsSystem(GuardrailConfig(**guardrails_config_dict))
+        if guardrails_config_dict:
+            # If config provided, use it but ensure stage is set
+            guardrails_config_dict['stage'] = 'retrieval'
+            self.guardrails = GuardrailsSystem(GuardrailConfig(**guardrails_config_dict))
+        else:
+            # Use retrieval-stage defaults (lenient)
+            self.guardrails = GuardrailsSystem(GuardrailConfig.for_retrieval_stage())
         self.ctgov_integration = CTgovIntegration(config.get('ctgov_config', {}))
         # Initialize PubMed client with individual parameters
         client_config = config.get('client_config', {})
@@ -255,6 +262,9 @@ class RetrievalProcessor:
                 # Store documents using simplified approach
                 stored_count, failed_count = self.db_service.store_documents_metadata(scored_documents)
                 logger.info(f"store_documents_metadata: stored={stored_count}, failed={failed_count}, session={retrieval_session_id}")
+                
+                # Initialize linked_count for logging
+                linked_count = 0
                 
                 # Link documents to trial
                 if stored_count > 0:
@@ -458,7 +468,7 @@ class RetrievalProcessor:
         except Exception as e:
             logger.error(f"Error applying document scoring: {e}")
             # Return tuples with zero scores for error case
-            return [(doc, ScoringResult(total_score=0.0)) for doc in documents]
+            return [(doc, ScoringOutput(total_score=0.0, base_score=0.0, policy_score=0.0, publication_type_bonus=0.0, mesh_bonus=0.0, nct_bonus=0.0, recency_bonus=0.0)) for doc in documents]
     
     async def _apply_guardrails(self, documents: List[Dict[str, Any]], entity_pack: EntityPack) -> List[Dict[str, Any]]:
         """Apply guardrails for content filtering."""
@@ -474,7 +484,14 @@ class RetrievalProcessor:
                 if not self.guardrails.should_reject_document(guardrail_results):
                     filtered_docs.append(document)
             
+            # Log detailed guardrail results
+            rejection_summary = self.guardrails.get_rejection_summary()
             logger.info(f"Guardrails applied to {len(documents)} documents: {len(filtered_docs)} passed")
+            if any(rejection_summary.values()):
+                logger.info(f"Rejection reasons: {rejection_summary}")
+            else:
+                logger.info("No documents rejected by guardrails")
+            
             return filtered_docs
             
         except Exception as e:

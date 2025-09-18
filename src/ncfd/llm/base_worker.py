@@ -96,7 +96,7 @@ class BaseLLMWorker:
         
         for msg in messages:
             if isinstance(msg, dict):
-                message_list.append(LLMMessage(role=msg.get("role", "user"), content=msg.get("text", "")))
+                message_list.append(LLMMessage(role=msg.get("role", "user"), content=msg.get("content", "")))
             else:
                 message_list.append(LLMMessage(role="user", content=str(msg)))
         

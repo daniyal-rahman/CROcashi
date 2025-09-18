@@ -27,7 +27,7 @@ This master document consolidates all naming conventions, conflicts, and remedia
 
 ## Database Naming Inventory
 
-### Core Tables (36 tables)
+### Core Tables (35 tables)
 
 #### Company & Security Management
 - `companies` - Core company entities with CIK, LEI, incorporation details
@@ -53,11 +53,10 @@ This master document consolidates all naming conventions, conflicts, and remedia
 - `document_links` - Linking between documents and normalized entities
 - `spans` - Text spans with location information
 
-#### Signal Detection & Scoring
-- `signals` - Primitive failure signals (S1-S9) with severity
-- `signal_evidence` - Evidence supporting signal detection
-- `gates` - Composite failure pattern gates (G1-G4)
-- `scores` - Bayesian posterior probabilities per run
+#### Pattern Families v2 System
+- `pattern_families` - Pattern family definitions (F1-F9) with descriptions
+- `pattern_detections` - LLM-detected patterns with severity and confidence
+- `pattern_scores` - Pattern-based scoring results with Bayesian probabilities
 
 #### Literature System
 - `trial_doc_candidates` - Trial-document relationships by processing stage
@@ -77,23 +76,24 @@ This master document consolidates all naming conventions, conflicts, and remedia
 - `academic_blacklist` - Academic institution patterns
 - `llm_discoveries` - LLM learning and discoveries
 
-### Enums (13 enums)
-- `ExchangeEnum` - NASDAQ, NYSE, NYSE_AM, OTCQX, OTCQB
-- `PhaseEnum` - P2, P2B, P2_3, P3
+### Enums (10 enums)
+- `PhaseEnum` - PHASE1, PHASE2, PHASE3, PHASE4, PHASE2_PHASE3, PHASE1_PHASE2, PHASE3_PHASE4, EARLY_PHASE1
 - `DocTypeEnum` - PR, 8K, Abstract, Poster, Paper, Registry, FDA
 - `TrialStatusEnum` - Recruiting, Active, Completed, Terminated, etc.
-- `SignalIDEnum` - S1-S9 primitive signals
-- `GateIDEnum` - G1-G4 composite gates
 - `SeverityEnum` - H, M, L
 - `CertaintyEnum` - low, med, high
 - `RunStatusEnum` - success, failed, partial
 - `AssignmentType` - sale, license, security
 - `ArtifactType` - model, data, report, config
+- `OAStatusEnum` - oa_gold, oa_green, accepted_ms, embargoed, unknown
+- `CoverageLevelEnum` - high, med, low
+
+**Note**: `ExchangeEnum`, `SignalIDEnum` (S1-S9), and `GateIDEnum` (G1-G4) were removed in favor of lookup tables and Pattern Families v2 system.
 
 ## Database Naming Conflicts
 
 ### Summary
-- **Total Tables**: 36
+- **Total Tables**: 35
 - **Conflicts Found**: 2
 
 ### Issues
@@ -249,9 +249,8 @@ erDiagram
     
     Trial ||--o{ TrialVersion : "has"
     Trial ||--o{ Study : "has"
-    Trial ||--o{ Signal : "has"
-    Trial ||--o{ Gate : "has"
-    Trial ||--o{ Score : "has"
+    Trial ||--o{ PatternDetection : "has"
+    Trial ||--o{ PatternScore : "has"
     Trial ||--o{ Catalyst : "has"
     Trial ||--o{ Label : "has"
     
@@ -265,13 +264,13 @@ erDiagram
     Document ||--o{ DocumentLink : "has"
     Document ||--o{ Span : "has"
     
-    Study ||--o{ SignalEvidence : "supports"
-    Signal ||--o{ SignalEvidence : "has"
+    PatternFamily ||--o{ PatternDetection : "defines"
     
     Run ||--o{ RunArtifact : "produces"
-    Run ||--o{ Signal : "generates"
-    Run ||--o{ Gate : "generates"
-    Run ||--o{ Score : "generates"
+    Run ||--o{ PatternDetection : "generates"
+    Run ||--o{ PatternScore : "generates"
+    
+    Exchange ||--o{ Security : "lists"
     
     Company {
         int company_id PK
@@ -430,9 +429,34 @@ graph TB
 
 The NCFD codebase demonstrates excellent naming consistency with minimal conflicts:
 
-- **Database**: 36 tables following `snake_case_plural` convention
+- **Database**: 35 tables following `snake_case_plural` convention (legacy signals/gates/scores removed)
 - **Code**: 285+ classes following `PascalCase` convention
 - **Functions**: 1000+ functions following `snake_case` convention
 - **Conflicts**: Only 2 minor database consolidation issues
+- **JSONB Fields**: 26 fields following clean naming without `_jsonb` suffix
 
-The naming conventions are well-established and consistently applied throughout the codebase, supporting the system's precision-first approach to clinical trial analysis.
+### JSONB Field Naming Conventions
+
+All JSONB fields follow clean naming conventions without the redundant `_jsonb` suffix:
+
+**✅ Correct:**
+- `assets.names` - Asset naming data
+- `trial_versions.raw_data` - Raw CT.gov data  
+- `documents.r_components` - R scoring components
+- `pubmed_meta.authors` - Author information
+
+**❌ Deprecated:**
+- `assets.names_jsonb` _(removed)_
+- `trial_versions.raw_jsonb` _(removed)_
+- `documents.r_components_jsonb` _(removed)_
+- `pubmed_meta.authors_jsonb` _(removed)_
+
+**Naming Rules:**
+1. **No `_jsonb` suffix** - Type is obvious from column definition
+2. **Descriptive names** - `raw_data` instead of `raw_jsonb`
+3. **Consistent with schema** - Follow snake_case for all columns
+4. **Semantic clarity** - Name reflects content, not just type
+
+All 26 JSONB fields have been standardized with proper schemas and validation rules for data consistency.
+
+The naming conventions are well-established and consistently applied throughout the codebase, supporting the system's precision-first approach to clinical trial analysis with the modern Pattern Families v2 system.

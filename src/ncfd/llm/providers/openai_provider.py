@@ -260,14 +260,14 @@ class OpenAIProvider(BaseLLMProvider):
         if request.system:
             messages.append({
                 "role": "system",
-                "text": request.system
+                "content": request.system
             })
         
         # Add conversation messages
         for msg in request.messages:
             messages.append({
                 "role": msg.role,
-                "text": msg.content
+                "content": msg.content
             })
         
         return messages
@@ -330,9 +330,10 @@ class OpenAIProvider(BaseLLMProvider):
     async def _call_responses_api(self, openai_request: Dict[str, Any], request: LLMRequest) -> ChatCompletion:
         """Call the newer OpenAI Responses API for GPT-5 models."""
         # Transform to responses API format
+        # The Responses API expects input to be an array of message objects with 'content' field
         responses_request = {
             "model": openai_request["model"],
-            "input": openai_request["messages"]
+            "input": openai_request["messages"]  # messages already have 'content' field from _transform_messages
         }
         
         # Add web search tools for GPT-5
@@ -353,7 +354,7 @@ class OpenAIProvider(BaseLLMProvider):
                     "index": 0,
                     "message": {
                         "role": "assistant",
-                        "text": response.output_text if hasattr(response, 'output_text') else str(response)
+                        "content": response.output_text if hasattr(response, 'output_text') else str(response)
                     },
                     "finish_reason": "stop"
                 }],

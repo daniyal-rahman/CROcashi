@@ -56,10 +56,10 @@ class OrchestrationOutput:
     total_processing_time: float = field(init=False, default=0.0)
     
     # Pipeline results - using specific result types
-    ctgov_result: Optional['CtgovPipelineResult'] = None
-    sec_result: Optional['SecPipelineResult'] = None
-    pubmed_result: Optional['PubMedPipelineResult'] = None
-    study_card_result: Optional['StudyCardPipelineResult'] = None
+    ctgov_result: Optional['CtgovPipelineOutput'] = None
+    sec_result: Optional['SecPipelineOutput'] = None
+    pubmed_result: Optional['PubMedPipelineOutput'] = None
+    study_card_result: Optional['StudyCardPipelineOutput'] = None
     
     # Overall metrics
     total_trials_processed: int = 0
@@ -530,7 +530,7 @@ class PipelineOrchestrator:
     # PUBMED PROCESSING METHODS
     # ============================================================================
     
-    async def run_pubmed_processing(self, trial_list: List[Dict[str, Any]]) -> Optional[PubMedPipelineResult]:
+    async def run_pubmed_processing(self, trial_list: List[Dict[str, Any]]) -> Optional[PubMedPipelineOutput]:
         """
         Run PubMed processing for filtered trial list.
         
@@ -538,7 +538,7 @@ class PipelineOrchestrator:
             trial_list: List of trials to process
             
         Returns:
-            PubMedPipelineResult for PubMed processing
+            PubMedPipelineOutput for PubMed processing
         """
         self.logger.info(f"Starting PubMed processing for {len(trial_list)} trials")
         
@@ -561,7 +561,7 @@ class PipelineOrchestrator:
                 if total_existing >= min_required * len(trial_list):
                     self.logger.info(f"Found sufficient existing documents ({total_existing}), skipping PubMed retrieval")
                     
-                    return PubMedPipelineResult(
+                    return PubMedPipelineOutput(
                         success=True,
                         start_time=datetime.now(timezone.utc),
                         end_time=datetime.now(timezone.utc),
@@ -591,7 +591,7 @@ class PipelineOrchestrator:
             self.logger.error(f"PubMed processing failed: {e}")
             end_time = datetime.now(timezone.utc)
             
-            result = PubMedPipelineResult(
+            result = PubMedPipelineOutput(
                 success=False,
                 start_time=datetime.now(timezone.utc),
                 end_time=end_time,
@@ -617,7 +617,7 @@ class PipelineOrchestrator:
     # STUDY CARD GENERATION METHODS
     # ============================================================================
     
-    async def run_study_card_generation(self, trial_list: List[Dict[str, Any]]) -> Optional[StudyCardPipelineResult]:
+    async def run_study_card_generation(self, trial_list: List[Dict[str, Any]]) -> Optional[StudyCardPipelineOutput]:
         """
         Run study card generation for filtered trial list.
         
@@ -625,7 +625,7 @@ class PipelineOrchestrator:
             trial_list: List of trials to generate study cards for
             
         Returns:
-            StudyCardPipelineResult for study card generation
+            StudyCardPipelineOutput for study card generation
         """
         self.logger.info(f"Starting study card generation for {len(trial_list)} trials")
         
@@ -652,7 +652,7 @@ class PipelineOrchestrator:
             
             end_time = datetime.now(timezone.utc)
             
-            result = StudyCardPipelineResult(
+            result = StudyCardPipelineOutput(
                 trial_id="multiple",  # Multiple trials processed
                 success=len(failed_results) == 0,
                 start_time=start_time,
@@ -669,7 +669,7 @@ class PipelineOrchestrator:
             self.logger.error(f"Study card generation failed: {e}")
             end_time = datetime.now(timezone.utc)
             
-            result = StudyCardPipelineResult(
+            result = StudyCardPipelineOutput(
                 trial_id="multiple",
                 success=False,
                 start_time=start_time,
@@ -890,7 +890,7 @@ class PipelineOrchestrator:
             self.logger.error(f"{pipeline_name} pipeline execution failed: {e}")
             return None
     
-    def _execute_ctgov_pipeline(self, force_full_scan: bool) -> Optional[CtgovPipelineResult]:
+    def _execute_ctgov_pipeline(self, force_full_scan: bool) -> Optional[CtgovPipelineOutput]:
         """Execute CT.gov pipeline."""
         start_time = datetime.now(timezone.utc)
         
@@ -899,7 +899,7 @@ class PipelineOrchestrator:
             
             end_time = datetime.now(timezone.utc)
             
-            return CtgovPipelineResult(
+            return CtgovPipelineOutput(
                 success=True,
                 start_time=start_time,
                 end_time=end_time,
@@ -914,14 +914,14 @@ class PipelineOrchestrator:
             self.logger.error(f"CT.gov pipeline execution failed: {e}")
             end_time = datetime.now(timezone.utc)
             
-            return CtgovPipelineResult(
+            return CtgovPipelineOutput(
                 success=False,
                 start_time=start_time,
                 end_time=end_time,
                 errors=[str(e)]
             )
     
-    def _execute_sec_pipeline(self, force_full_scan: bool) -> Optional[SecPipelineResult]:
+    def _execute_sec_pipeline(self, force_full_scan: bool) -> Optional[SecPipelineOutput]:
         """Execute SEC pipeline."""
         start_time = datetime.now(timezone.utc)
         
@@ -930,7 +930,7 @@ class PipelineOrchestrator:
             
             end_time = datetime.now(timezone.utc)
             
-            return SecPipelineResult(
+            return SecPipelineOutput(
                 success=True,
                 start_time=start_time,
                 end_time=end_time,
@@ -945,7 +945,7 @@ class PipelineOrchestrator:
             self.logger.error(f"SEC pipeline execution failed: {e}")
             end_time = datetime.now(timezone.utc)
             
-            return SecPipelineResult(
+            return SecPipelineOutput(
                 success=False,
                 start_time=start_time,
                 end_time=end_time,
@@ -1149,7 +1149,7 @@ class PipelineOrchestrator:
             self.current_execution.finalize()
             raise
     
-    async def _execute_ctgov_backfill(self, start_date: datetime, end_date: datetime) -> Optional[CtgovPipelineResult]:
+    async def _execute_ctgov_backfill(self, start_date: datetime, end_date: datetime) -> Optional[CtgovPipelineOutput]:
         """Execute CT.gov backfill."""
         start_time = datetime.now(timezone.utc)
         
@@ -1160,7 +1160,7 @@ class PipelineOrchestrator:
             # For now, return a placeholder result
             end_time = datetime.now(timezone.utc)
             
-            return CtgovPipelineResult(
+            return CtgovPipelineOutput(
                 success=False,
                 start_time=start_time,
                 end_time=end_time,
@@ -1171,14 +1171,14 @@ class PipelineOrchestrator:
             self.logger.error(f"Error executing CT.gov backfill: {e}")
             end_time = datetime.now(timezone.utc)
             
-            return CtgovPipelineResult(
+            return CtgovPipelineOutput(
                 success=False,
                 start_time=start_time,
                 end_time=end_time,
                 errors=[str(e)]
             )
     
-    async def _execute_sec_backfill(self, start_date: datetime, end_date: datetime) -> Optional[SecPipelineResult]:
+    async def _execute_sec_backfill(self, start_date: datetime, end_date: datetime) -> Optional[SecPipelineOutput]:
         """Execute SEC backfill."""
         start_time = datetime.now(timezone.utc)
         
@@ -1189,7 +1189,7 @@ class PipelineOrchestrator:
             # For now, return a placeholder result
             end_time = datetime.now(timezone.utc)
             
-            return SecPipelineResult(
+            return SecPipelineOutput(
                 success=False,
                 start_time=start_time,
                 end_time=end_time,
@@ -1200,14 +1200,14 @@ class PipelineOrchestrator:
             self.logger.error(f"Error executing SEC backfill: {e}")
             end_time = datetime.now(timezone.utc)
             
-            return SecPipelineResult(
+            return SecPipelineOutput(
                 success=False,
                 start_time=start_time,
                 end_time=end_time,
                 errors=[str(e)]
             )
     
-    async def _execute_pubmed_backfill(self, start_date: datetime, end_date: datetime) -> Optional[PubMedPipelineResult]:
+    async def _execute_pubmed_backfill(self, start_date: datetime, end_date: datetime) -> Optional[PubMedPipelineOutput]:
         """Execute PubMed backfill."""
         start_time = datetime.now(timezone.utc)
         

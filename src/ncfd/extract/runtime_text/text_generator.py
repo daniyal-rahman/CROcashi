@@ -9,7 +9,7 @@ import asyncio
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
 
-from .api_clients import PubMedTextClient, PMCTextClient, UnpaywallTextClient, TextRetrievalResult
+from .api_clients import PubMedTextClient, PMCTextClient, UnpaywallTextClient, TextRetrievalOutput
 from .config import RUNTIME_TEXT_CONFIG
 from ...db.models import Document, DocumentText
 from ...db.session import get_session
@@ -118,7 +118,7 @@ class RuntimeTextGenerator:
         except (ValueError, AttributeError):
             return None
     
-    async def _try_source(self, doc_metadata: Dict[str, Any], source: str) -> TextRetrievalResult:
+    async def _try_source(self, doc_metadata: Dict[str, Any], source: str) -> TextRetrievalOutput:
         """Try to get text from a specific source."""
         if source == "pubmed" and doc_metadata.get("pmid"):
             return await self.pubmed_client.fetch_abstract(doc_metadata["pmid"])
@@ -127,7 +127,7 @@ class RuntimeTextGenerator:
         elif source == "unpaywall" and doc_metadata.get("doi"):
             return await self.unpaywall_client.fetch_fulltext(doc_metadata["doi"])
         else:
-            return TextRetrievalResult(
+            return TextRetrievalOutput(
                 success=False,
                 text="",
                 source=source,

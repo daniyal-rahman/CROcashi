@@ -9,7 +9,7 @@ This module implements the guardrails from the retrieval specification:
 
 import logging
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Literal
 from ....entities.schema import EntityPack
 
 logger = logging.getLogger(__name__)
@@ -19,21 +19,57 @@ logger = logging.getLogger(__name__)
 class GuardrailConfig:
     """Configuration for guardrails system."""
     
+    # Stage-aware configuration
+    stage: Literal["retrieval", "post_extract", "final"] = "retrieval"
+    
     # Mechanism-only drift guard
     require_must_link_for_oncology: bool = True
     
-    # Indication gate
+    # Indication gate (stage-aware)
     require_indication_signal: bool = True
     
-    # Field-coverage guard
+    # Field-coverage guard (stage-aware)
     require_field_coverage: bool = True
     
-    # Minimum field coverage requirements
+    # Minimum field coverage requirements (stage-aware)
     min_drug_field_coverage: bool = True  # Require drug in [tiab]
     min_nct_field_coverage: bool = False  # Require NCT in [si] (optional)
     
     # Oncology detection
     oncology_penalty_threshold: float = 0.5  # Minimum oncology score to trigger penalty
+    
+    @classmethod
+    def for_retrieval_stage(cls) -> 'GuardrailConfig':
+        """Create config appropriate for retrieval stage (lenient)."""
+        return cls(
+            stage="retrieval",
+            require_indication_signal=False,  # Too strict for retrieval
+            require_field_coverage=False,     # Too strict for retrieval
+            min_drug_field_coverage=False,    # Too strict for retrieval
+            min_nct_field_coverage=False
+        )
+    
+    @classmethod
+    def for_post_extract_stage(cls) -> 'GuardrailConfig':
+        """Create config appropriate for post-extraction stage (strict)."""
+        return cls(
+            stage="post_extract",
+            require_indication_signal=True,
+            require_field_coverage=True,
+            min_drug_field_coverage=True,
+            min_nct_field_coverage=False
+        )
+    
+    @classmethod
+    def for_final_stage(cls) -> 'GuardrailConfig':
+        """Create config appropriate for final filtering (very strict)."""
+        return cls(
+            stage="final",
+            require_indication_signal=True,
+            require_field_coverage=True,
+            min_drug_field_coverage=True,
+            min_nct_field_coverage=True
+        )
 
 
 @dataclass
@@ -59,7 +95,12 @@ class GuardrailsSystem:
     
     def __init__(self, config: GuardrailConfig):
         self.config = config
-        logger.info(f"Initialized guardrails system with config: {config}")
+        self.rejection_counts = {
+            'mechanism_only_drift_guard': 0,
+            'indication_gate': 0,
+            'field_coverage_guard': 0
+        }
+        logger.info(f"Initialized guardrails system for stage '{config.stage}' with config: {config}")
     
     def validate_document(self, document: Dict[str, Any], entity_pack: EntityPack) -> List[GuardrailOutput]:
         """
@@ -132,6 +173,15 @@ class GuardrailsSystem:
         Documents must contain Alzheimer's disease related terms unless
         they have an NCT ID that ties them to the indication.
         """
+        # Skip check if not required for this stage
+        if not self.config.require_indication_signal:
+            return GuardrailOutput(
+                passes_validation=True,
+                guardrail_name="indication_gate",
+                reason=f"Indication signal check disabled for stage '{self.config.stage}'",
+                details={"stage": self.config.stage, "require_indication_signal": False}
+            )
+        
         title = document.get('title', '').lower()
         abstract = document.get('abstract', '').lower()
         text = f"{title} {abstract}"
@@ -155,6 +205,7 @@ class GuardrailsSystem:
         
         # Apply guardrail logic - accept if indication OR drug OR NCT ID is present
         if not has_indication_signal and not has_drug_signal and not has_nct_id:
+            self.rejection_counts['indication_gate'] += 1
             return GuardrailOutput(
                 passes_validation=False,
                 guardrail_name="indication_gate",
@@ -165,7 +216,8 @@ class GuardrailsSystem:
                     "has_nct_id": has_nct_id,
                     "indication_terms_found": [term for term in indication_terms if term and term.lower() in text],
                     "drug_terms_found": [term for term in drug_terms if term.lower() in text],
-                    "nct_id": nct_id
+                    "nct_id": nct_id,
+                    "stage": self.config.stage
                 },
                 penalty_score=1.0
             )
@@ -177,7 +229,8 @@ class GuardrailsSystem:
             details={
                 "has_indication_signal": has_indication_signal,
                 "has_drug_signal": has_drug_signal,
-                "has_nct_id": has_nct_id
+                "has_nct_id": has_nct_id,
+                "stage": self.config.stage
             }
         )
     
@@ -187,6 +240,15 @@ class GuardrailsSystem:
         
         This ensures documents have sufficient field coverage to be relevant.
         """
+        # Skip check if not required for this stage
+        if not self.config.require_field_coverage:
+            return GuardrailOutput(
+                passes_validation=True,
+                guardrail_name="field_coverage_guard",
+                reason=f"Field coverage check disabled for stage '{self.config.stage}'",
+                details={"stage": self.config.stage, "require_field_coverage": False}
+            )
+            
         title = document.get('title', '').lower()
         abstract = document.get('abstract', '').lower()
         text = f"{title} {abstract}"
@@ -219,6 +281,7 @@ class GuardrailsSystem:
             field_coverage_met = True  # No requirements
         
         if not field_coverage_met:
+            self.rejection_counts['field_coverage_guard'] += 1
             return GuardrailOutput(
                 passes_validation=False,
                 guardrail_name="field_coverage_guard",
@@ -232,7 +295,8 @@ class GuardrailsSystem:
                     "mechanism_terms_found": [term for term in mechanism_terms if term.lower() in text],
                     "nct_id": nct_id,
                     "min_drug_coverage_required": self.config.min_drug_field_coverage,
-                    "min_nct_coverage_required": self.config.min_nct_field_coverage
+                    "min_nct_coverage_required": self.config.min_nct_field_coverage,
+                    "stage": self.config.stage
                 },
                 penalty_score=1.5
             )
@@ -245,7 +309,8 @@ class GuardrailsSystem:
                 "has_drug_in_tiab": has_drug_in_tiab,
                 "has_mechanism_in_tiab": has_mechanism_in_tiab,
                 "has_relevant_term": has_relevant_term,
-                "has_nct_in_si": has_nct_in_si
+                "has_nct_in_si": has_nct_in_si,
+                "stage": self.config.stage
             }
         )
     
@@ -256,3 +321,12 @@ class GuardrailsSystem:
     def should_reject_document(self, guardrail_results: List[GuardrailOutput]) -> bool:
         """Determine if document should be rejected based on guardrail results."""
         return any(not result.passes_validation for result in guardrail_results)
+    
+    def get_rejection_summary(self) -> Dict[str, int]:
+        """Get summary of rejection counts by guardrail."""
+        return self.rejection_counts.copy()
+    
+    def reset_rejection_counts(self):
+        """Reset rejection counters."""
+        for key in self.rejection_counts:
+            self.rejection_counts[key] = 0

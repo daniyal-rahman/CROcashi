@@ -18,6 +18,25 @@ from ...db.session import session_scope
 logger = logging.getLogger(__name__)
 
 
+def _model_whitelist_payload(Model, payload: dict):
+    """
+    Whitelist payload to only include columns that exist on the model.
+    Shunt any unknown keys into a meta_jsonb catch-all if available.
+    """
+    cols = {c.name for c in Model.__table__.columns}
+    core = {k: v for k, v in payload.items() if k in cols}
+    extras = {k: v for k, v in payload.items() if k not in cols}
+    
+    # If we have extras and a meta_jsonb column, stuff extras there
+    if extras and 'meta_jsonb' in cols:
+        core['meta_jsonb'] = {**(core.get('meta_jsonb') or {}), **extras}
+    elif extras:
+        # Log unknown fields for debugging
+        logger.warning(f"Unknown fields for {Model.__name__}: {list(extras.keys())}")
+    
+    return core
+
+
 class PubMedDBService:
     """Database service for PubMed literature processing."""
     
@@ -67,8 +86,8 @@ class PubMedDBService:
                     document.r_tier = doc_data.get('r_tier')
                     document.s_score = Decimal(str(doc_data['s_score'])) if doc_data.get('s_score') is not None else None
                     document.s_tier = doc_data.get('s_tier')
-                    document.r_components_jsonb = doc_data.get('r_components_jsonb')
-                    document.s_components_jsonb = doc_data.get('s_components_jsonb')
+                    document.r_components = doc_data.get('r_components')
+                    document.s_components = doc_data.get('s_components')
                     document.rs_decided_at = doc_data.get('rs_decided_at', datetime.now(timezone.utc))
                     
                     self.logger.debug(f"Updated R/S scores for document {document.doc_id}")
@@ -281,8 +300,8 @@ class PubMedDBService:
                         'r_tier': doc.r_tier,
                         's_score': float(doc.s_score) if doc.s_score else None,
                         's_tier': doc.s_tier,
-                        'r_components_jsonb': doc.r_components_jsonb,
-                        's_components_jsonb': doc.s_components_jsonb,
+                        'r_components': doc.r_components,
+                        's_components': doc.s_components,
                         'rs_decided_at': doc.rs_decided_at.isoformat() if doc.rs_decided_at else None
                     }
                     for doc in documents
@@ -517,32 +536,36 @@ class PubMedDBService:
                             existing.r_tier = doc_data.get('r_tier')
                             existing.s_score = doc_data.get('s_score')
                             existing.s_tier = doc_data.get('s_tier')
-                            existing.r_components_jsonb = doc_data.get('r_components_jsonb')
-                            existing.s_components_jsonb = doc_data.get('s_components_jsonb')
+                            existing.r_components = doc_data.get('r_components')
+                            existing.s_components = doc_data.get('s_components')
                             existing.rs_decided_at = doc_data.get('rs_decided_at')
                         self.logger.debug(f"Updated document for PMID {pmid}")
                     else:
-                        # Create new document
-                        document = Document(
-                            source_type='Paper',  # Use 'Paper' to match database constraint
-                            pmid=pmid,
-                            title=doc_data.get('title'),
-                            publisher=doc_data.get('fulljournalname'),
-                            published_at=doc_data.get('published_at'),
-                            nct_id=doc_data.get('nct_id'),
-                            pmcid=doc_data.get('pmcid'),  # Store PMCID if available
-                            content_type='abstract',  # Will be updated to 'fulltext' in OA stage
-                            status='discovered',
-                            discovered_at=datetime.now(timezone.utc),
-                            # R/S scoring fields
-                            r_score=doc_data.get('r_score'),
-                            r_tier=doc_data.get('r_tier'),
-                            s_score=doc_data.get('s_score'),
-                            s_tier=doc_data.get('s_tier'),
-                            r_components_jsonb=doc_data.get('r_components_jsonb'),
-                            s_components_jsonb=doc_data.get('s_components_jsonb'),
-                            rs_decided_at=doc_data.get('rs_decided_at')
-                        )
+                        # Create new document with whitelist protection
+                        doc_payload = {
+                            'source_type': 'Paper',  # Use 'Paper' to match database constraint
+                            'pmid': pmid,
+                            'title': doc_data.get('title'),
+                            'publisher': doc_data.get('fulljournalname'),
+                            'published_at': doc_data.get('published_at'),
+                            'nct_id': doc_data.get('nct_id'),
+                            'pmcid': doc_data.get('pmcid'),  # Store PMCID if available
+                            'content_type': 'abstract',  # Will be updated to 'fulltext' in OA stage
+                            'status': 'discovered',
+                            'discovered_at': datetime.now(timezone.utc),
+                            # R/S scoring fields (safe field names)
+                            'r_score': doc_data.get('r_score'),
+                            'r_tier': doc_data.get('r_tier'),
+                            's_score': doc_data.get('s_score'),
+                            's_tier': doc_data.get('s_tier'),
+                            'r_components': doc_data.get('r_components', doc_data.get('r_components_jsonb')),  # Fallback for old field name
+                            's_components': doc_data.get('s_components', doc_data.get('s_components_jsonb')),  # Fallback for old field name
+                            'rs_decided_at': doc_data.get('rs_decided_at')
+                        }
+                        
+                        # Use whitelist to ensure only valid fields are passed
+                        clean_payload = _model_whitelist_payload(Document, doc_payload)
+                        document = Document(**clean_payload)
                         session.add(document)
                         session.flush()  # Get the doc_id
                         

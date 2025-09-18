@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+from ..llm.json_parser import parse_llm_json_response, validate_confidence_score
+
 try:
     from sqlalchemy import text
 except ImportError:
@@ -451,7 +453,8 @@ def decide_with_llm_research(
     print(f"[DEBUG] Last 500 chars: {content[-500:]}")
     
     # Try to extract JSON from the response
-    data = _extract_json_from_response(content)
+    # Use robust JSON parsing
+    data = parse_llm_json_response(content, expected_fields=["company_name", "confidence", "match_type"])
     if not data:
         # Log the JSON parsing failure
         _log_llm_attempt(
@@ -484,9 +487,9 @@ def decide_with_llm_research(
     print(f"[DEBUG] ticker: {data.get('ticker', 'NOT FOUND')}")
     print(f"[DEBUG] match_type: {data.get('match_type', 'NOT FOUND')}")
     
-    # Parse LLM response
+    # Parse LLM response with validation
     company_name = data.get("company_name", "")
-    confidence = float(data.get("confidence", 0.0))
+    confidence = validate_confidence_score(data.get("confidence", 0.0), "confidence")
     match_type = data.get("match_type", "uncertain")
     evidence = data.get("evidence", [])
     reasoning = data.get("reasoning", "")
