@@ -12,7 +12,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from ...db.models import Document, DocumentText, DocumentLink, TrialDocCandidate, TrialLitState, PubMedMeta, DocumentCitation
+from ...db.models import Document, DocumentText, TrialLitState, PubMedMeta, DocumentCitation
 from ...db.session import session_scope
 
 logger = logging.getLogger(__name__)
@@ -539,7 +539,10 @@ class PubMedDBService:
                             existing.r_components = doc_data.get('r_components')
                             existing.s_components = doc_data.get('s_components')
                             existing.rs_decided_at = doc_data.get('rs_decided_at')
-                        self.logger.debug(f"Updated document for PMID {pmid}")
+                        
+                        # Update doc_data with doc_id for linking
+                        doc_data['doc_id'] = existing.doc_id
+                        self.logger.debug(f"Updated document for PMID {pmid} with doc_id {existing.doc_id}")
                     else:
                         # Create new document with whitelist protection
                         doc_payload = {
@@ -616,6 +619,8 @@ class PubMedDBService:
                             # For now, we'll log this information
                             self.logger.info(f"Full text status for PMID {pmid}: {provenance_data}")
                         
+                        # Update doc_data with doc_id for linking
+                        doc_data['doc_id'] = document.doc_id
                         self.logger.info(f"DEBUG: Created document for PMID {pmid} with doc_id {document.doc_id}")
                         session.flush()  # Ensure the document is persisted
                     
@@ -1165,7 +1170,7 @@ class PubMedDBService:
     
     def get_document_counts_by_stage(self, trial_id: int) -> Dict[str, int]:
         """
-        Get document counts by processing stage for a trial.
+        Get document counts by processing stage for a trial using simplified system.
         
         Args:
             trial_id: Trial ID
@@ -1175,41 +1180,50 @@ class PubMedDBService:
         """
         try:
             with session_scope() as session:
-                # Count documents linked to trial via TrialDocCandidate (discovery stage)
-                # This matches how documents are actually stored in the retrieval processor
-                raw_count = session.query(Document).join(
-                    TrialDocCandidate, Document.doc_id == TrialDocCandidate.doc_id
-                ).filter(
-                    TrialDocCandidate.trial_id == trial_id,
-                    Document.processing_stage == 'raw'
+                # Count documents linked to trial via simplified system
+                total_count = session.query(Document).filter(
+                    Document.trial_id == trial_id
                 ).count()
                 
-                # Count processed documents
-                processed_count = session.query(Document).join(
-                    TrialDocCandidate, Document.doc_id == TrialDocCandidate.doc_id
-                ).filter(
-                    TrialDocCandidate.trial_id == trial_id,
-                    Document.processing_stage == 'processed'
+                # Count documents by processing status
+                discovered_count = session.query(Document).filter(
+                    Document.trial_id == trial_id,
+                    Document.processing_status == 'discovered'
                 ).count()
                 
-                # Also count documents with no processing_stage set (discovered but not yet processed)
-                discovered_count = session.query(Document).join(
-                    TrialDocCandidate, Document.doc_id == TrialDocCandidate.doc_id
-                ).filter(
-                    TrialDocCandidate.trial_id == trial_id,
-                    Document.processing_stage.is_(None)
+                scored_count = session.query(Document).filter(
+                    Document.trial_id == trial_id,
+                    Document.processing_status == 'scored'
+                ).count()
+                
+                selected_count = session.query(Document).filter(
+                    Document.trial_id == trial_id,
+                    Document.processing_status == 'selected'
+                ).count()
+                
+                processed_count = session.query(Document).filter(
+                    Document.trial_id == trial_id,
+                    Document.processing_status == 'processed'
+                ).count()
+                
+                study_card_count = session.query(Document).filter(
+                    Document.trial_id == trial_id,
+                    Document.processing_status == 'study_card_generated'
                 ).count()
                 
                 return {
-                    'raw': raw_count,
+                    'raw': discovered_count,  # Raw documents are those in 'discovered' status
                     'processed': processed_count,
                     'discovered': discovered_count,
-                    'total': raw_count + processed_count + discovered_count
+                    'total': total_count,
+                    'scored': scored_count,
+                    'selected': selected_count,
+                    'study_card_generated': study_card_count
                 }
                 
         except Exception as e:
             self.logger.error(f"Failed to get document counts for trial {trial_id}: {e}")
-            return {'raw': 0, 'processed': 0, 'discovered': 0, 'total': 0}
+            return {'raw': 0, 'processed': 0, 'discovered': 0, 'total': 0, 'scored': 0, 'selected': 0, 'study_card_generated': 0}
 
 
 # Module-level singleton instance

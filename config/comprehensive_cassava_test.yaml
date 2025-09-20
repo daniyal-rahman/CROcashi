@@ -65,10 +65,28 @@ pubmed:
   domain: "neurology"
   
   client_config:
-    rate_limit_requests_per_minute: 60
-    batch_size: 20
+    rate_limit_per_sec: 8  # 8 requests per second (480 per minute)
+    batch_size: 100  # Increased batch size for efficiency
     timeout_seconds: 30
     max_retries: 3
+    api_key: null  # Set your NCBI API key here for higher limits
+    email: "ncfd@poop.com"
+    tool: "NCFD"
+  
+  # Request queue configuration
+  queue_config:
+    max_concurrent_requests: 3
+    request_timeout: 60
+  
+  # Monitoring configuration
+  monitoring_config:
+    enabled: true
+    alert_thresholds:
+      rate_limit_hits_per_minute: 5
+      consecutive_failures: 3
+      queue_size: 100
+      avg_response_time: 10.0
+      error_rate: 0.1
   
   rerank_config:
     feat_weights:

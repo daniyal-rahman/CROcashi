@@ -25,8 +25,9 @@ from .policy_engine import RetrievalPolicy
 from .document_scorer import AdvancedDocumentScorer, ScoringOutput
 # Guardrails moved to pre-LLM stage
 from .ctgov_discovery import CTgovIntegration
-from ..client import PubMedClient
+from ..client_manager import get_client_manager
 from ..db_service import PubMedDBService
+from ..document_manager import DocumentManager
 
 logger = logging.getLogger(__name__)
 
@@ -60,22 +61,13 @@ class RetrievalProcessor:
         # Guardrails removed from retrieval stage - moved to pre-LLM stage
         self.guardrails = None
         self.ctgov_integration = CTgovIntegration(config.get('ctgov_config', {}))
-        # Initialize PubMed client with individual parameters
-        client_config = config.get('client_config', {})
-        self.client = PubMedClient(
-            api_key=client_config.get('api_key'),
-            rate_limit_per_sec=client_config.get('rate_limit_requests_per_minute', 60) // 60,  # Convert per minute to per second
-            batch_size=client_config.get('batch_size', 20),
-            max_retries=client_config.get('max_retries', 3),
-            timeout_seconds=client_config.get('timeout_seconds', 30),
-            backoff_base=client_config.get('backoff_base', 2.0),
-            circuit_breaker_threshold=client_config.get('circuit_breaker_threshold', 5),
-            email=client_config.get('email', 'ncfd@example.com'),
-            tool=client_config.get('tool', 'NCFD')
-        )
+        # Initialize PubMed client manager (singleton)
+        self.client_manager = get_client_manager()
+        self.client_config = config.get('client_config', {})
         
-        # Initialize database service
+        # Initialize database service and document manager
         self.db_service = PubMedDBService()
+        self.document_manager = DocumentManager()
         
         logger.info("Retrieval processor initialized")
     
@@ -202,14 +194,33 @@ class RetrievalProcessor:
             
             # Store RAW documents found during retrieval (before filtering)
             if all_pmids:
-                # Fetch metadata and PMCID information in one call
-                async with self.client:
-                    metadata_result = await self.client.esummary_batch(all_pmids)
-                    # Enhanced XML fetch that includes PMCID detection
-                    xml_result = await self.client.efetch_abstracts_xml(all_pmids)
+                # Optimize batch processing - fetch in larger batches
+                batch_size = self.client_config.get('batch_size', 100)
+                all_metadata = {}
+                all_xml_data = {}
                 
-                # Store documents directly using db_service
+                # Process in batches to avoid overwhelming the API
+                for i in range(0, len(all_pmids), batch_size):
+                    batch_pmids = all_pmids[i:i + batch_size]
+                    
+                    # Fetch metadata and PMCID information in one call
+                    client = await self.client_manager.get_client(self.config)
+                    async with client:
+                        metadata_result = await client.esummary_batch(batch_pmids)
+                        # Enhanced XML fetch that includes PMCID detection
+                        xml_result = await client.efetch_abstracts_xml(batch_pmids)
+                    
+                    # Merge results
+                    all_metadata.update(metadata_result)
+                    all_xml_data.update(xml_result)
+                
+                metadata_result = all_metadata
+                xml_result = all_xml_data
+                
+                # Store documents directly using db_service with optimized batching
                 raw_documents = []
+                batch_size = 50  # Smaller batch size for database operations
+                
                 for pmid in all_pmids:
                     # Determine which query tier found this document
                     query_tier = 'Unknown'
@@ -258,30 +269,59 @@ class RetrievalProcessor:
                 scored_documents = [doc for doc, _ in scored_tuples]
                 scoring_results = {doc['pmid']: score for doc, score in scored_tuples}
                 
-                # Store documents using simplified approach
-                stored_count, failed_count = self.db_service.store_documents_metadata(scored_documents)
+                # Store documents using optimized batching approach
+                stored_count = 0
+                failed_count = 0
+                
+                # Process documents in batches for better performance
+                for i in range(0, len(scored_documents), batch_size):
+                    batch_docs = scored_documents[i:i + batch_size]
+                    batch_stored, batch_failed = self.db_service.store_documents_metadata(batch_docs)
+                    stored_count += batch_stored
+                    failed_count += batch_failed
+                    
+                    # Log progress for large batches
+                    if len(scored_documents) > 100:
+                        logger.info(f"Stored batch {i//batch_size + 1}/{(len(scored_documents) + batch_size - 1)//batch_size}: {batch_stored} documents")
+                
                 logger.info(f"store_documents_metadata: stored={stored_count}, failed={failed_count}, session={retrieval_session_id}")
                 
                 # Initialize linked_count for logging
                 linked_count = 0
                 
-                # Link documents to trial
+                # Link documents to trial using simplified system
                 if stored_count > 0:
-                    # Create trial-document candidates for discovery stage
-                    doc_candidates = []
-                    for doc_data in scored_documents:
-                        doc_candidates.append({
-                            'pmid': doc_data['pmid'],
-                            'stage': 'U1_discovery',
-                            'retrieval_tier': doc_data['retrieval_tier'],
-                            'query_tier': doc_data['query_tier']
-                        })
+                    linked_count = 0
+                    link_failed = 0
                     
-                    linked_count, link_failed = self.db_service.store_trial_doc_candidates_discovery(
-                        trial_id=trial_id,
-                        candidates=doc_candidates
-                    )
-                    logger.info(f"store_trial_doc_candidates_discovery: linked={linked_count}, failed={link_failed}")
+                    for doc_data in scored_documents:
+                        try:
+                            # Get doc_id from stored document
+                            doc_id = doc_data.get('doc_id')
+                            if not doc_id:
+                                logger.warning(f"No doc_id found for document {doc_data.get('pmid', 'unknown')}")
+                                link_failed += 1
+                                continue
+                            
+                            # Associate document with trial
+                            retrieval_tier = doc_data.get('retrieval_tier', 'A')
+                            success = self.document_manager.add_document_to_trial(
+                                trial_id=trial_id,
+                                doc_id=doc_id,
+                                retrieval_tier=retrieval_tier,
+                                link_confidence=0.8
+                            )
+                            
+                            if success:
+                                linked_count += 1
+                            else:
+                                link_failed += 1
+                                
+                        except Exception as e:
+                            logger.error(f"Failed to link document {doc_data.get('pmid', 'unknown')} to trial {trial_id}: {e}")
+                            link_failed += 1
+                    
+                    logger.info(f"Document linking: linked={linked_count}, failed={link_failed}")
                 
                 # Log top-N preview for sanity check
                 logger.info("Top-N preview (first 5 ranked hits):")
@@ -315,9 +355,12 @@ class RetrievalProcessor:
             logger.info(f"DEBUG: Documents stored this session: {stored_count}, candidates linked: {linked_count}")
             
             # Log rate limiting & retries summary
-            rate_limit_info = self.client.get_rate_limit_info()
+            client = await self.client_manager.get_client(self.config)
+            rate_limit_info = client.get_rate_limit_info()
+            manager_stats = self.client_manager.get_statistics()
             logger.info(f"Rate limiting & retries summary:")
             logger.info(f"  esearch_calls={rate_limit_info['esearch_calls']}, efetch_calls={rate_limit_info['efetch_calls']}, retries={rate_limit_info['consecutive_failures']}, total_api_time={execution_time:.1f}s")
+            logger.info(f"  manager_stats: total_requests={manager_stats['total_requests']}, rate_limit_hits={manager_stats['rate_limit_hits']}")
             
             logger.info(f"Retrieval processing completed in {execution_time:.2f}s: {len(scored_documents)} documents (stored for human verification)")
             
@@ -364,15 +407,19 @@ class RetrievalProcessor:
             all_pmids = []
             tier_results = {}
             
-            async with self.client:
+            # Get the singleton client
+            client = await self.client_manager.get_client(self.config)
+            
+            async with client:
                 for tier in query_tiers:
                     try:
                         # Log full query text and parameters
                         logger.info(f"Tier {tier.tier_type} query (full text):")
                         logger.info(f"  term=\"{tier.query_string}\"")
                         logger.info(f"  params={{retmax:{max_results or 1000}, datetype:\"pdat\", usehistory:true}}")
+                        logger.info(f"DEBUG: max_results={max_results}, using {max_results or 1000}")
                         
-                        search_result = await self.client.esearch_all(
+                        search_result = await client.esearch_all(
                             tier.query_string,
                             max_results=max_results or 1000,
                             use_history=True

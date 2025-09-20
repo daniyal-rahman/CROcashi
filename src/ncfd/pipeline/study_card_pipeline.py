@@ -19,6 +19,9 @@ from ncfd.extract.generators import LLMResultsFactsheetGenerator
 from ncfd.extract.models import (
     DocumentCard, Span, StudyCard, ResultsFactsheet, DecisionRecord
 )
+from ncfd.ingest.pubmed.document_manager import DocumentManager
+from ncfd.db.session import session_scope
+from ncfd.db.models import Document
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +67,7 @@ class StudyCardPipeline:
         """
         self.config = config or {}
         self.retriever = build_retriever(self.config)
+        self.document_manager = DocumentManager()
         
         # Core LLM-first workers
         from ncfd.extract.generators import LLMStudyCardGenerator, PatternFamilyDetector
@@ -309,6 +313,18 @@ class StudyCardPipeline:
             for i, (doc_card, doc_text) in enumerate(documents_to_process):
                 logger.info(f"🔍 PROCESSING DOCUMENT {i+1}/{len(documents_to_process)}: doc_id={doc_card.doc_id}")
                 
+                # Mark document as being processed
+                try:
+                    with session_scope() as session:
+                        doc = session.query(Document).filter(Document.doc_id == doc_card.doc_id).first()
+                        if doc:
+                            doc.processing_status = 'processed'
+                            doc.processed_at = datetime.now(timezone.utc)
+                            session.commit()
+                            logger.debug(f"Marked document {doc_card.doc_id} as processed")
+                except Exception as e:
+                    logger.warning(f"Failed to mark document {doc_card.doc_id} as processed: {e}")
+                
                 # Use our working LLM components with concurrency control
                 try:
                     from ncfd.llm.concurrency_manager import concurrency_manager
@@ -384,6 +400,10 @@ class StudyCardPipeline:
                             logger.info(f"Attempting to save study card for doc_id: {study_result['study_card'].doc_id}")
                             await self._save_study_card_to_db(study_result["study_card"])
                             logger.info(f"Successfully saved study card for doc_id: {study_result['study_card'].doc_id}")
+                            
+                            # Mark document as having study card generated
+                            self.document_manager.mark_study_card_generated(doc_card.doc_id)
+                            logger.info(f"Marked document {doc_card.doc_id} as study card generated")
                         except Exception as e:
                             logger.error(f"Failed to save study card to database: {e}")
                             result.warnings.append(f"Failed to save study card to database: {e}")
@@ -673,6 +693,37 @@ class StudyCardPipeline:
         
         return str(value) if value is not None else None
     
+    def _extract_boolean_value(self, value):
+        """Extract boolean value from potentially complex LLM response."""
+        if value is None:
+            return None
+        
+        # If it's already a boolean, return it
+        if isinstance(value, bool):
+            return value
+        
+        # Convert to string for analysis
+        value_str = str(value).lower().strip()
+        
+        # Check for explicit true/false patterns
+        if value_str in ['true', 'yes', '1', 'y']:
+            return True
+        elif value_str in ['false', 'no', '0', 'n']:
+            return False
+        
+        # Check for patterns that indicate true (contains positive indicators)
+        positive_patterns = ['true', 'blinded', 'double-blind', 'single-blind', 'masked', 'yes']
+        if any(pattern in value_str for pattern in positive_patterns):
+            return True
+        
+        # Check for patterns that indicate false (contains negative indicators)
+        negative_patterns = ['false', 'unblinded', 'open-label', 'no', 'not blinded']
+        if any(pattern in value_str for pattern in negative_patterns):
+            return False
+        
+        # Default to None if unclear
+        return None
+    
     def _convert_severity_to_int(self, severity):
         """Convert severity to integer value within valid range (0-2)."""
         if severity is None:
@@ -739,7 +790,7 @@ class StudyCardPipeline:
                 """), {
                     'doc_id': study_card.doc_id,
                     'design_archetype': self._extract_single_value(getattr(study_card, 'design_archetype', None)),
-                    'is_blinded': self._extract_single_value(getattr(study_card, 'is_blinded', None)),
+                    'is_blinded': self._extract_boolean_value(getattr(study_card, 'is_blinded', None)),
                     'analysis_set': json.dumps(getattr(study_card, 'analysis_set', None)) if getattr(study_card, 'analysis_set', None) is not None else None,
                     'population_description': self._extract_single_value(getattr(study_card, 'population_description', None)),
                     'stratification_factors': json.dumps(getattr(study_card, 'stratification_factors', [])),
@@ -856,13 +907,11 @@ class StudyCardPipeline:
             Tuple of (prioritized_docs, processing_stats)
         """
         try:
-            from ncfd.db.session import session_scope
-            from ncfd.db.models import Document, DocumentText, DocumentLink
+            # Use DocumentManager to get trial documents
+            trial_documents = self.document_manager.get_trial_documents(trial_id)
             
-            # Use document_cards as the source of truth instead of database query
-            # This ensures we only prioritize documents that were actually retrieved
-            if not document_cards:
-                logger.warning(f"No document cards provided for trial {trial_id}")
+            if not trial_documents:
+                logger.warning(f"No documents found for trial {trial_id}")
                 return {'document_cards': [], 'raw_doc_texts': {}}, {
                     "total_documents": 0, 
                     "total_candidates": 0,
@@ -873,120 +922,147 @@ class StudyCardPipeline:
                     "rate_limit_applied": False
                 }
             
-            # Get document details from database for prioritization
+            # Filter to only include documents that were retrieved (have document_cards)
             doc_ids = [doc_card.doc_id for doc_card in document_cards]
+            trial_docs_by_id = {doc['doc_id']: doc for doc in trial_documents if doc['doc_id'] in doc_ids}
             
-            with session_scope() as session:
-                documents = session.query(Document, DocumentText).outerjoin(
-                    DocumentText, Document.doc_id == DocumentText.doc_id
-                ).filter(Document.doc_id.in_(doc_ids)).all()
+            # Create a lookup map for document details
+            doc_details = {}
+            for doc_id, doc_data in trial_docs_by_id.items():
+                doc_details[doc_id] = {
+                    'doc_data': doc_data,
+                    'has_full_text': False,  # Will be determined from raw_doc_texts
+                    'has_abstract': bool(doc_data.get('title'))  # Use title as proxy for abstract
+                }
                 
-                # Create a lookup map for document details
-                doc_details = {}
-                for doc, doc_text in documents:
-                    doc_details[doc.doc_id] = {
-                        'doc': doc,
-                        'doc_text': doc_text,
-                        'has_full_text': bool(doc_text and doc_text.fulltext_text and len(doc_text.fulltext_text.strip()) > 0),
-                        'has_abstract': bool(doc_text and doc_text.abstract_text and len(doc_text.abstract_text.strip()) > 0)
-                    }
+            # Convert document cards to processing candidates with prioritization
+            candidates = []
+            logger.info(f"DEBUG: Processing {len(document_cards)} document cards from retrieval")
+            
+            for i, doc_card in enumerate(document_cards):
+                doc_info = doc_details.get(doc_card.doc_id)
+                if not doc_info:
+                    logger.warning(f"No database details found for doc_id {doc_card.doc_id}")
+                    continue
                 
-                # Convert document cards to processing candidates with prioritization
-                candidates = []
-                logger.info(f"DEBUG: Processing {len(document_cards)} document cards from retrieval")
+                doc_data = doc_info['doc_data']
                 
-                for i, doc_card in enumerate(document_cards):
-                    doc_info = doc_details.get(doc_card.doc_id)
-                    if not doc_info:
-                        logger.warning(f"No database details found for doc_id {doc_card.doc_id}")
-                        continue
+                # Determine text availability from raw_doc_texts
+                has_full_text = bool(raw_doc_texts.get(doc_card.doc_id, {}).get('fulltext'))
+                has_abstract = bool(raw_doc_texts.get(doc_card.doc_id, {}).get('abstract'))
+                
+                # Get R/S scores from document data
+                r_score = doc_data.get('r_score', 0.0)
+                s_score = doc_data.get('s_score', 0.0)
+                r_tier = doc_data.get('r_tier', 'R0')
+                s_tier = doc_data.get('s_tier', 'S0')
+                
+                # Determine priority
+                priority = self._determine_document_priority(
+                    r_score=r_score,
+                    r_tier=r_tier,
+                    s_score=s_score,
+                    s_tier=s_tier,
+                    has_full_text=has_full_text,
+                    has_abstract=has_abstract,
+                    doc=None  # We don't need the full document object
+                )
+                
+                # Calculate processing score
+                processing_score = self._calculate_processing_score(
+                    r_score=r_score,
+                    s_score=s_score,
+                    has_full_text=has_full_text,
+                    has_abstract=has_abstract,
+                    full_text_length=len(raw_doc_texts.get(doc_card.doc_id, {}).get('fulltext', '')),
+                    abstract_length=len(raw_doc_texts.get(doc_card.doc_id, {}).get('abstract', ''))
+                )
+                
+                candidate = {
+                    'doc_id': doc_card.doc_id,
+                    'priority': priority,
+                    'processing_score': processing_score,
+                    'r_score': r_score,
+                    's_score': s_score,
+                    'r_tier': r_tier,
+                    's_tier': s_tier,
+                    'has_full_text': has_full_text,
+                    'has_abstract': has_abstract,
+                    'title': doc_data.get('title', 'No title'),
+                    'pmid': doc_data.get('pmid'),
+                    'retrieval_tier': doc_data.get('retrieval_tier', 'A')
+                }
+                
+                candidates.append(candidate)
+                # Safely format scores, handling None values
+                r_score_str = f"{float(r_score):.3f}" if r_score is not None else "None"
+                s_score_str = f"{float(s_score):.3f}" if s_score is not None else "None"
+                logger.debug(f"DEBUG: Candidate {i+1}: doc_id={doc_card.doc_id}, priority={priority}, R={r_score_str} ({r_tier}), S={s_score_str} ({s_tier})")
+            
+            # Sort candidates by priority and processing score (moved outside the loop)
+            sorted_candidates = self._sort_document_candidates(candidates)
+            
+            # Apply rate limiting
+            selected_candidates = self._apply_document_rate_limits(sorted_candidates)
+            
+            # Generate processing statistics
+            stats = self._generate_document_processing_stats(trial_documents, candidates, selected_candidates)
+            
+            # Convert selected candidates back to document cards and raw texts
+            prioritized_doc_cards = []
+            prioritized_raw_texts = {}
+            
+            for candidate in selected_candidates:
+                # Find matching document card from original retrieval
+                matching_doc_card = None
+                for doc_card in document_cards:
+                    if doc_card.doc_id == candidate['doc_id']:
+                        matching_doc_card = doc_card
+                        break
+                
+                if matching_doc_card:
+                    prioritized_doc_cards.append(matching_doc_card)
+                    # Ensure consistent key type for raw_doc_texts lookup
+                    doc_id_key = str(candidate['doc_id'])
                     
-                    doc = doc_info['doc']
-                    doc_text = doc_info['doc_text']
-                    has_full_text = doc_info['has_full_text']
-                    has_abstract = doc_info['has_abstract']
-                    
-                    # Determine priority based on R/S scores and text availability
-                    priority = self._determine_document_priority(
-                        doc.r_score, doc.r_tier, doc.s_score, doc.s_tier,
-                        has_full_text, has_abstract, doc
-                    )
-                    
-                    logger.info(f"DEBUG: Document {i+1}: doc_id={doc.doc_id}, priority={priority}, has_text={has_full_text or has_abstract}")
-                    
-                    # DEBUG: Log prioritization details
-                    logger.info(f"DEBUG: Doc {doc.doc_id} (PMID {doc.pmid}): R={doc.r_score} ({doc.r_tier}), S={doc.s_score} ({doc.s_tier}), has_full_text={has_full_text}, has_abstract={has_abstract}, priority={priority}")
-                    
-                    # Calculate processing score
-                    processing_score = self._calculate_processing_score(
-                        doc.r_score, doc.s_score, has_full_text, has_abstract,
-                        len(doc_text.fulltext_text) if doc_text and doc_text.fulltext_text else 0,
-                        len(doc_text.abstract_text) if doc_text and doc_text.abstract_text else 0
-                    )
-                    
-                    candidate = {
-                        'doc_id': doc.doc_id,
-                        'pmid': doc.pmid,
-                        'title': doc.title,
-                        'r_score': float(doc.r_score) if doc.r_score else 0.0,
-                        'r_tier': doc.r_tier,
-                        's_score': float(doc.s_score) if doc.s_score else 0.0,
-                        's_tier': doc.s_tier,
-                        'has_full_text': has_full_text,
-                        'has_abstract': has_abstract,
-                        'priority': priority,
-                        'processing_score': processing_score,
-                        'fulltext_text': doc_text.fulltext_text if doc_text else None,
-                        'abstract_text': doc_text.abstract_text if doc_text else None
-                    }
-                    candidates.append(candidate)
-                
-                # Sort candidates by priority and processing score
-                sorted_candidates = self._sort_document_candidates(candidates)
-                
-                # Apply rate limiting
-                selected_candidates = self._apply_document_rate_limits(sorted_candidates)
-                
-                # Generate processing statistics
-                stats = self._generate_document_processing_stats(documents, candidates, selected_candidates)
-                
-                # Convert selected candidates back to document cards and raw texts
-                prioritized_doc_cards = []
-                prioritized_raw_texts = {}
-                
-                for candidate in selected_candidates:
-                    # Find matching document card from original retrieval
-                    matching_doc_card = None
-                    for doc_card in document_cards:
-                        if doc_card.doc_id == candidate['doc_id']:
-                            matching_doc_card = doc_card
-                            break
-                    
-                    if matching_doc_card:
-                        prioritized_doc_cards.append(matching_doc_card)
-                        # Ensure consistent key type for raw_doc_texts lookup
-                        doc_id_key = str(candidate['doc_id'])
-                        
-                        # Always prioritize EnhancedRetriever's raw text first (it has the full retrieved text)
-                        if doc_id_key in raw_doc_texts and raw_doc_texts[doc_id_key]:
-                            prioritized_raw_texts[doc_id_key] = raw_doc_texts[doc_id_key]
-                            logger.info(f"DEBUG: Using EnhancedRetriever text for doc_id {candidate['doc_id']} (key={doc_id_key}, length: {len(raw_doc_texts[doc_id_key])})")
-                        elif candidate['has_full_text'] and candidate['fulltext_text']:
-                            prioritized_raw_texts[doc_id_key] = candidate['fulltext_text']
-                            logger.info(f"DEBUG: Using database fulltext for doc_id {candidate['doc_id']} (key={doc_id_key}, length: {len(candidate['fulltext_text'])})")
-                        elif candidate['has_abstract'] and candidate['abstract_text']:
-                            prioritized_raw_texts[doc_id_key] = candidate['abstract_text']
-                            logger.info(f"DEBUG: Using database abstract for doc_id {candidate['doc_id']} (key={doc_id_key}, length: {len(candidate['abstract_text'])})")
-                        else:
-                            prioritized_raw_texts[doc_id_key] = ""
-                            logger.warning(f"DEBUG: No text available for doc_id {candidate['doc_id']} (key={doc_id_key})")
-                
-                logger.info(f"Document prioritization applied: {len(prioritized_doc_cards)} documents selected from {len(candidates)} candidates")
-                
-                return {
-                    'document_cards': prioritized_doc_cards,
-                    'raw_doc_texts': prioritized_raw_texts
-                }, stats
+                    # Always prioritize EnhancedRetriever's raw text first (it has the full retrieved text)
+                    if doc_id_key in raw_doc_texts and raw_doc_texts[doc_id_key]:
+                        prioritized_raw_texts[doc_id_key] = raw_doc_texts[doc_id_key]
+                        logger.info(f"DEBUG: Using EnhancedRetriever text for doc_id {candidate['doc_id']} (key={doc_id_key}, length: {len(raw_doc_texts[doc_id_key])})")
+                    elif candidate.get('has_full_text') and candidate.get('fulltext_text'):
+                        prioritized_raw_texts[doc_id_key] = candidate['fulltext_text']
+                        logger.info(f"DEBUG: Using database fulltext for doc_id {candidate['doc_id']} (key={doc_id_key}, length: {len(candidate['fulltext_text'])})")
+                    elif candidate.get('has_abstract') and candidate.get('abstract_text'):
+                        prioritized_raw_texts[doc_id_key] = candidate['abstract_text']
+                        logger.info(f"DEBUG: Using database abstract for doc_id {candidate['doc_id']} (key={doc_id_key}, length: {len(candidate['abstract_text'])})")
+                    else:
+                        prioritized_raw_texts[doc_id_key] = ""
+                        logger.warning(f"DEBUG: No text available for doc_id {candidate['doc_id']} (key={doc_id_key})")
+            
+            logger.info(f"Document prioritization applied: {len(prioritized_doc_cards)} documents selected from {len(candidates)} candidates")
+            
+            # Mark selected documents as 'selected' for processing
+            from ncfd.db.session import session_scope
+            from ncfd.db.models import Document
+            from datetime import datetime, timezone
+            
+            for doc_card in prioritized_doc_cards:
+                try:
+                    # Update document status to 'selected' using DocumentManager
+                    with session_scope() as session:
+                        doc = session.query(Document).filter(Document.doc_id == doc_card.doc_id).first()
+                        if doc:
+                            doc.processing_status = 'selected'
+                            doc.selected_at = datetime.now(timezone.utc)
+                            session.commit()
+                            logger.debug(f"Marked document {doc_card.doc_id} as selected")
+                except Exception as e:
+                    logger.warning(f"Failed to mark document {doc_card.doc_id} as selected: {e}")
+            
+            return {
+                'document_cards': prioritized_doc_cards,
+                'raw_doc_texts': prioritized_raw_texts
+            }, stats
                 
         except Exception as e:
             logger.error(f"Error applying document prioritization for trial {trial_id}: {e}")
@@ -1173,13 +1249,13 @@ class StudyCardPipeline:
             priority_value = priority_order.get(candidate['priority'], 5)
             
             # Secondary sort: processing score (higher = better)
-            processing_score = candidate['processing_score']
+            processing_score = float(candidate['processing_score']) if candidate['processing_score'] is not None else 0.0
             
             # Tertiary sort: R score (higher = better)
-            r_score = candidate['r_score']
+            r_score = float(candidate['r_score']) if candidate['r_score'] is not None else 0.0
             
             # Final sort: S score (higher = better)
-            s_score = candidate['s_score']
+            s_score = float(candidate['s_score']) if candidate['s_score'] is not None else 0.0
             
             return (priority_value, -processing_score, -r_score, -s_score)
         
@@ -1242,12 +1318,12 @@ class StudyCardPipeline:
             'no_text': len([c for c in candidates if not c['has_abstract'] and not c['has_full_text']])
         }
         
-        # R/S score statistics
+        # R/S score statistics (handle None values safely)
         rs_stats = {
-            'high_r_scores': len([c for c in candidates if c['r_score'] >= 0.6]),
-            'high_s_scores': len([c for c in candidates if c['s_score'] >= 0.6]),
-            'medium_r_scores': len([c for c in candidates if c['r_score'] >= 0.4]),
-            'medium_s_scores': len([c for c in candidates if c['s_score'] >= 0.4])
+            'high_r_scores': len([c for c in candidates if c['r_score'] is not None and float(c['r_score']) >= 0.6]),
+            'high_s_scores': len([c for c in candidates if c['s_score'] is not None and float(c['s_score']) >= 0.6]),
+            'medium_r_scores': len([c for c in candidates if c['r_score'] is not None and float(c['r_score']) >= 0.4]),
+            'medium_s_scores': len([c for c in candidates if c['s_score'] is not None and float(c['s_score']) >= 0.4])
         }
         
         return {
@@ -1403,12 +1479,15 @@ class StudyCardPipeline:
             raw_doc_texts: Dictionary of doc_id -> text content (will be updated)
         """
         try:
-            from ncfd.ingest.pubmed.client import PubMedClient
+            from ncfd.ingest.pubmed.client_manager import get_client_manager
             from ncfd.db.session import session_scope
             from ncfd.db.models import Document, DocumentText
             
-            # Initialize PubMed client with proper async context
-            async with PubMedClient() as client:
+            # Initialize PubMed client manager (singleton)
+            client_manager = get_client_manager()
+            client = await client_manager.get_client({})
+            
+            async with client:
                 # Get documents with PMCIDs but no full text
                 documents_to_process = []
                 with session_scope() as session:

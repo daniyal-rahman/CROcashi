@@ -43,7 +43,7 @@ from sqlalchemy import text, inspect
 
 # Import our modules
 from ncfd.db.session import session_scope, get_engine, reset_engine
-from ncfd.db.models import Base, Trial, Company, Document, Study, StudyCard, DocumentLink, TrialDocCandidate
+from ncfd.db.models import Base, Trial, Company, Document, Study, StudyCard
 from ncfd.pipeline.orchestrator import PipelineOrchestrator
 from ncfd.ingest.pubmed import RetrievalProcessor, AbstractProcessor
 from ncfd.config import get_config
@@ -695,15 +695,15 @@ class ComprehensiveCassavaTest:
                 total_links = processing_result.documents_processed
                 
                 # Get simplified persistence metrics for the main trial
-                from ncfd.ingest.pubmed.db_service import PubMedDBService
-                db_service = PubMedDBService()
-                doc_counts = db_service.get_document_counts_by_stage(main_trial.trial_id)
-                retrieval_docs_count = doc_counts['total']
-                processed_docs_count = doc_counts['processed']
+                from ncfd.ingest.pubmed.document_manager import DocumentManager
+                dm = DocumentManager()
+                summary = dm.get_trial_literature_summary(main_trial.trial_id)
+                retrieval_docs_count = summary['total_documents']
+                processed_docs_count = summary['scored_documents']
                 
                 # Count documents created
                 doc_count = session.query(Document).count()
-                doc_links = session.query(DocumentLink).count()
+                # doc_links = session.query(DocumentLink).count()  # Simplified system - no DocumentLink table
                 
                 # Get detailed document metrics from actual documents
                 doc_details = []
@@ -722,11 +722,10 @@ class ComprehensiveCassavaTest:
                 total_errors = []
                 
                 # Count PubMed documents (documents with source_type='Paper' that are linked to trials)
-                pubmed_docs_count = 0
-                for link in session.query(DocumentLink).filter(DocumentLink.trial_id == main_trial.trial_id).all():
-                    doc = session.query(Document).filter(Document.doc_id == link.doc_id).first()
-                    if doc and doc.source_type == "Paper":
-                        pubmed_docs_count += 1
+                pubmed_docs_count = session.query(Document).filter(
+                    Document.trial_id == main_trial.trial_id,
+                    Document.source_type == "Paper"
+                ).count()
                 
                 # Check for processing issues
                 if processed_docs_count == 0 and retrieval_docs_count > 0:
@@ -767,7 +766,7 @@ class ComprehensiveCassavaTest:
                     }
                 }
                 
-                logger.info(f"✅ PubMed processing completed for main trial {main_trial.nct_id}: {doc_count} documents, {doc_links} links")
+                logger.info(f"✅ PubMed processing completed for main trial {main_trial.nct_id}: {doc_count} documents")
                 logger.info(f"📄 Retrieval documents (raw): {retrieval_docs_count}")
                 logger.info(f"📄 Processed documents (filtered): {processed_docs_count}")
                 logger.info(f"📊 Retrieval metrics: Available in results")
@@ -1114,7 +1113,7 @@ class ComprehensiveCassavaTest:
                 ).count()
                 
                 trials_with_documents = session.query(Trial).join(
-                    DocumentLink, Trial.trial_id == DocumentLink.trial_id
+                    Document, Trial.trial_id == Document.trial_id
                 ).distinct().count()
                 
                 # Run comprehensive checks
@@ -1593,8 +1592,6 @@ class ComprehensiveCassavaTest:
         
         # Check document coverage by source type
         try:
-            from ncfd.db.models import DocumentLink
-            
             # Get main trial with fresh session to avoid transaction issues
             try:
                 main_trial = session.query(Trial).filter(Trial.nct_id == "NCT05515666").first()
@@ -1608,8 +1605,8 @@ class ComprehensiveCassavaTest:
             
             # Count documents by source type for the main trial
             try:
-                trial_links = session.query(DocumentLink).filter(
-                    DocumentLink.trial_id == main_trial.trial_id
+                trial_docs = session.query(Document).filter(
+                    Document.trial_id == main_trial.trial_id
                 ).all()
             except Exception as e:
                 logger.warning(f"Failed to query document links: {e}")
@@ -1618,15 +1615,13 @@ class ComprehensiveCassavaTest:
             source_type_counts = {}
             total_docs = 0
             
-            for link in trial_links:
+            for doc in trial_docs:
                 try:
-                    doc = session.query(Document).filter(Document.doc_id == link.doc_id).first()
-                    if doc:
-                        source_type = doc.source_type or "Unknown"
-                        source_type_counts[source_type] = source_type_counts.get(source_type, 0) + 1
-                        total_docs += 1
+                    source_type = doc.source_type or "Unknown"
+                    source_type_counts[source_type] = source_type_counts.get(source_type, 0) + 1
+                    total_docs += 1
                 except Exception as e:
-                    logger.warning(f"Failed to query document {link.doc_id}: {e}")
+                    logger.warning(f"Failed to process document {doc.doc_id}: {e}")
                     continue
             
             # Check for low coverage in key evidence sections
@@ -1874,55 +1869,15 @@ class ComprehensiveCassavaTest:
         print("Test completed!")
     
     def _promote_candidates_to_links(self, trial_id: int, nct_id: str) -> int:
-        """Promote trial-doc candidates to document links."""
-        promoted_count = 0
-        
+        """Document linking is now handled automatically by the simplified system."""
+        # Count documents already linked to this trial
         with session_scope() as session:
-            # Get all trial-doc candidates for this trial
-            candidates = session.query(TrialDocCandidate).filter(
-                TrialDocCandidate.trial_id == trial_id
-            ).all()
-            
-            # Get trial info for company_id
-            trial = session.query(Trial).filter(Trial.trial_id == trial_id).first()
-            if not trial:
-                logger.warning(f"Trial {trial_id} not found")
-                return 0
-            
-            company_id = trial.sponsor_company_id
-            
-            for candidate in candidates:
-                # Check if document link already exists
-                existing_link = session.query(DocumentLink).filter(
-                    DocumentLink.doc_id == candidate.doc_id,
-                    DocumentLink.trial_id == trial_id
-                ).first()
-                
-                if existing_link:
-                    continue  # Already linked
-                
-                # Create document link
-                try:
-                    link = DocumentLink(
-                        doc_id=candidate.doc_id,
-                        nct_id=nct_id,
-                        trial_id=trial_id,
-                        asset_id=None,  # We don't have asset mapping in this test
-                        company_id=company_id,
-                        link_type='trial_document',
-                        confidence=0.8,  # Default confidence
-                        heuristics={'stage': candidate.stage},
-                        evidence={'promoted_from_candidate': True}
-                    )
-                    session.add(link)
-                    promoted_count += 1
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to create link for doc {candidate.doc_id}: {e}")
-            
-            session.commit()
+            linked_count = session.query(Document).filter(
+                Document.trial_id == trial_id
+            ).count()
         
-        return promoted_count
+        logger.info(f"Found {linked_count} documents already linked to trial {trial_id} via simplified system")
+        return linked_count
 
     async def _cleanup_database(self):
         """Clean up test database."""

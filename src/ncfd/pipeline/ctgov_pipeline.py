@@ -70,7 +70,7 @@ class CtgovPipelineConfig:
     # Ingestion settings - FIXED: Proper limiting at source
     batch_size: int = 100
     max_studies_per_run: int = 1000
-    default_since_days: int = 7
+    default_since_days: int = 1  # Set to 1 day to get September 19th data
     save_cursor: bool = True
     
     # Change detection
@@ -272,43 +272,41 @@ class CtgovPipeline:
                 )
                 
                 for raw_trial in trial_iterator:
-                    # Use SAVEPOINT for each trial to isolate failures
-                    with session.begin_nested():
-                        try:
-                            # Extract comprehensive fields as per spec
-                            trial_fields = self._extract_comprehensive_trial_fields(raw_trial)
+                    try:
+                        # Extract comprehensive fields as per spec
+                        trial_fields = self._extract_comprehensive_trial_fields(raw_trial)
+                        
+                        # Process trial
+                        self._process_trial_robust(session, trial_fields, result)
+                        processed_count += 1
+                        result.trials_processed += 1
+                        
+                        # Rate limiting
+                        if processed_count % 10 == 0:
+                            time.sleep(0.2)  # Brief pause every 10 trials
+                        
+                        # FIXED: Check limit after processing to ensure we don't exceed
+                        if processed_count >= max_studies:
+                            self.logger.info(f"Reached limit of {max_studies} studies, stopping ingestion")
+                            break
                             
-                            # Process trial
-                            self._process_trial_robust(session, trial_fields, result)
-                            processed_count += 1
-                            result.trials_processed += 1
-                            
-                            # Rate limiting
-                            if processed_count % 10 == 0:
-                                time.sleep(0.2)  # Brief pause every 10 trials
-                            
-                            # FIXED: Check limit after processing to ensure we don't exceed
-                            if processed_count >= max_studies:
-                                self.logger.info(f"Reached limit of {max_studies} studies, stopping ingestion")
-                                break
-                            
-                        except Exception as e:
-                            # With SAVEPOINT, the rollback is automatic and only affects this trial
-                            nct_id = raw_trial.get('protocolSection', {}).get('identificationModule', {}).get('nctId', 'unknown')
-                            error_msg = f"Error processing trial {nct_id}: {e}"
-                            self.logger.warning(error_msg)
-                            result.errors.append(error_msg)
-                            
-                            # Log more details about the error
-                            import traceback
-                            self.logger.exception(f"Per-trial failure for {nct_id}")  # includes stack trace
-                            
-                            # Don't continue on critical errors that might corrupt the session
-                            if "constraint" in str(e).lower() or "foreign key" in str(e).lower():
-                                self.logger.error(f"Critical database error for {nct_id}, stopping ingestion")
-                                raise e
-                            
-                            continue
+                    except Exception as e:
+                        # Log error but continue processing other trials
+                        nct_id = raw_trial.get('protocolSection', {}).get('identificationModule', {}).get('nctId', 'unknown')
+                        error_msg = f"Error processing trial {nct_id}: {e}"
+                        self.logger.warning(error_msg)
+                        result.errors.append(error_msg)
+                        
+                        # Log more details about the error
+                        import traceback
+                        self.logger.exception(f"Per-trial failure for {nct_id}")  # includes stack trace
+                        
+                        # Don't continue on critical errors that might corrupt the session
+                        if "constraint" in str(e).lower() or "foreign key" in str(e).lower():
+                            self.logger.error(f"Critical database error for {nct_id}, stopping ingestion")
+                            raise e
+                        
+                        continue
                 
                 session.commit()
                 self.logger.info(f"Processed {processed_count} trials")
@@ -488,7 +486,7 @@ class CtgovPipeline:
                     primary_endpoint_text=trial_fields.primary_endpoint_text,
                     sample_size=trial_fields.sample_size,
                     analysis_plan_text=trial_fields.analysis_plan_text,
-                    changes_jsonb=changes['changes']
+                    changes=changes['changes']
                 )
                 session.add(new_version)
                 
@@ -564,10 +562,10 @@ class CtgovPipeline:
                 if sponsor_name:
                     from ncfd.mapping.simple_resolver import resolve_sponsor_simple
                     
-                    result = resolve_sponsor_simple(session, trial.nct_id, sponsor_name)
-                    if result.company_id and result.confidence >= 0.8:
-                        new_trial.sponsor_company_id = result.company_id
-                        logger.info(f"Resolved sponsor '{sponsor_name}' to company {result.company_id} ({result.match_method})")
+                    sponsor_result = resolve_sponsor_simple(session, new_trial.nct_id, sponsor_name)
+                    if sponsor_result.company_id and sponsor_result.confidence >= 0.8:
+                        new_trial.sponsor_company_id = sponsor_result.company_id
+                        logger.info(f"Resolved sponsor '{sponsor_name}' to company {sponsor_result.company_id} ({sponsor_result.match_method})")
             except Exception as _e:
                 # Non-fatal; keep ingestion robust
                 self.logger.warning(f"Sponsor resolution failed for {trial_fields.nct_id}: {_e}")
@@ -582,7 +580,7 @@ class CtgovPipeline:
                 primary_endpoint_text=trial_fields.primary_endpoint_text,
                 sample_size=trial_fields.sample_size,
                 analysis_plan_text=trial_fields.analysis_plan_text,
-                changes_jsonb={}
+                changes={}
             )
             session.add(initial_version)
             

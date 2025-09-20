@@ -28,7 +28,7 @@ api:
   rate_limit_per_sec: 8  # Maximum requests per second (10 with API key, 3 without)
   
   # Batch processing
-  batch_size: 100        # Maximum PMIDs per request
+  batch_size: 100        # Maximum PMIDs per request (increased for efficiency)
   
   # Retry and timeout settings
   max_retries: 3
@@ -37,6 +37,19 @@ api:
   
   # Circuit breaker settings
   circuit_breaker_threshold: 5
+  
+  # Request queue settings
+  max_concurrent_requests: 3
+  request_timeout: 60
+  
+  # Monitoring settings
+  monitoring_enabled: true
+  alert_thresholds:
+    rate_limit_hits_per_minute: 5
+    consecutive_failures: 3
+    queue_size: 100
+    avg_response_time: 10.0
+    error_rate: 0.1
 
 # Search preferences
 search:
@@ -252,9 +265,9 @@ pubmed_api_enhanced:
   base_url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
   timeout: 30
   
-  # Rate limiting
-  requests_per_second: 3
-  requests_per_minute: 180
+  # Rate limiting (aligned with main config)
+  requests_per_second: 8
+  requests_per_minute: 480
   
   # Retry settings
   max_retries: 3

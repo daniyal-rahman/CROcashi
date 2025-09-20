@@ -202,7 +202,7 @@ class PubMedClient:
         self,
         query: str,
         recency_months: int = 18,
-        max_results: int = 500,
+        max_results: Optional[int] = None,
         sort: str = "relevance",
         use_history: bool = True,
         **kwargs
@@ -459,11 +459,7 @@ class PubMedClient:
         for key, value in kwargs.items():
             log_params[key] = _make_logging_safe(value)
         
-        logger.info(
-            EventTaxonomy.PUBMED_SEARCH_START,
-            "Executing ESearch query",
-            **log_params
-        )
+        logger.info(f"🔍 PubMed Search: '{query[:50]}{'...' if len(query) > 50 else ''}' (max: {retmax})")
         
         start_time = time.time()
         result = await self._make_request(self.ESEARCH_URL, params)
@@ -474,15 +470,7 @@ class PubMedClient:
         count = int(esearch_result.get('count', 0))
         pmids = esearch_result.get('idlist', [])
         
-        logger.info(
-            EventTaxonomy.PUBMED_SEARCH_DONE,
-            f"ESearch completed: {count} results",
-            query=query,
-            returned_n=len(pmids),
-            total_count=count,
-            duration_ms=duration_ms,
-            pmids=pmids[:10] if pmids else []  # Log first 10 PMIDs
-        )
+        logger.info(f"✅ Found {count} documents")
         
         if 'esearchresult' not in result:
             raise Exception(f"Unexpected ESearch response format: {result}")
@@ -492,7 +480,7 @@ class PubMedClient:
     async def esearch_all(
         self, 
         query: str, 
-        max_results: int = 500, 
+        max_results: Optional[int] = None, 
         sort: str = "relevance", 
         use_history: bool = True,
         **kwargs
@@ -539,15 +527,15 @@ class PubMedClient:
         for key, value in kwargs.items():
             log_params[key] = _make_logging_safe(value)
         
-        logger.info(
-            EventTaxonomy.PUBMED_SEARCH_START,
-            "Executing paginated ESearch query",
-            **log_params
-        )
+        logger.info(f"🔍 PubMed Paginated Search: '{query[:50]}{'...' if len(query) > 50 else ''}' (max: {max_results})")
         
         ids = []
         webenv = None
         query_key = None
+        
+        # Set default max_results if not provided
+        if max_results is None:
+            max_results = 1000
         
         while len(ids) < max_results:
             result = await self._make_request(self.ESEARCH_URL, params)
@@ -599,24 +587,13 @@ class PubMedClient:
                 'retmode': 'json'
             })
             
-            logger.info(
-                EventTaxonomy.PUBMED_EFETCH_START,
-                f"Fetching ESummary for {len(batch)} PMIDs",
-                pmids_n=len(batch),
-                batch_pmids=batch[:5]  # Log first 5 PMIDs
-            )
+            logger.info(f"📋 Fetching metadata for {len(batch)} documents")
             
             start_time = time.time()
             result = await self._make_request(self.ESUMMARY_URL, params)
             duration_ms = int((time.time() - start_time) * 1000)
             
-            logger.info(
-                EventTaxonomy.PUBMED_EFETCH_DONE,
-                f"ESummary fetch completed for {len(batch)} PMIDs",
-                pmids_n=len(batch),
-                duration_ms=duration_ms,
-                results_count=len(batch_results) if 'batch_results' in locals() else 0
-            )
+            logger.info(f"✅ Got metadata for {len(batch)} documents")
             
             if 'result' in result:
                 data = result['result']
@@ -659,26 +636,13 @@ class PubMedClient:
                 'retmode': 'text'  # Force text mode for content
             })
             
-            logger.info(
-                EventTaxonomy.PUBMED_EFETCH_START,
-                f"Fetching EFetch {rettype} for {len(batch)} PMIDs",
-                pmids_n=len(batch),
-                rettype=rettype,
-                batch_pmids=batch[:5]  # Log first 5 PMIDs
-            )
+            logger.info(f"📄 Fetching {rettype} for {len(batch)} documents")
             
             start_time = time.time()
             result = await self._make_request(self.EFETCH_URL, params, expect_json=False)
             duration_ms = int((time.time() - start_time) * 1000)
             
-            logger.info(
-                EventTaxonomy.PUBMED_EFETCH_DONE,
-                f"EFetch {rettype} completed for {len(batch)} PMIDs",
-                pmids_n=len(batch),
-                rettype=rettype,
-                duration_ms=duration_ms,
-                results_count=len(content_map) if 'content_map' in locals() else 0
-            )
+            logger.info(f"✅ Got {rettype} for {len(batch)} documents")
             
             # EFetch returns text content, not JSON
             if isinstance(result, str):
@@ -715,11 +679,7 @@ class PubMedClient:
                 'retmode': 'xml'
             })
             
-            logger.info(f"Fetching EFetch XML for {len(batch)} PMIDs", extra={
-                "event": "pubmed.efetch.start",
-                "message": f"Fetching EFetch XML for {len(batch)} PMIDs",
-                "pmid_count": len(batch)
-            })
+            logger.info(f"📄 Fetching abstracts for {len(batch)} documents")
             result = await self._make_request(self.EFETCH_URL, params, expect_json=False)
             
             if isinstance(result, str):
@@ -748,13 +708,8 @@ class PubMedClient:
         content_map = {pmid: {"abstract": "", "pmcid": None, "has_free_full_text": False} for pmid in pmids}
         
         try:
-            # Log XML root for debugging
+            # Parse XML response
             root = ET.fromstring(xml_text)
-            logger.debug(f"XML root tag: {root.tag}", extra={
-                "event": "pubmed.efetch.xml_parsed",
-                "message": f"XML root tag: {root.tag}",
-                "root_tag": root.tag
-            })
             
             # Accept both possible XML structures
             articles = root.findall('.//PubmedArticle')
@@ -794,13 +749,7 @@ class PubMedClient:
                 logger.warning(f"EFetch returned {len(returned_pmids)}/{len(pmids)} PMIDs; missing: {sorted(missing)[:10]}")
             
             abstract_count = len([k for k, v in content_map.items() if v["abstract"]])
-            logger.info(f"Parsed XML response: {abstract_count}/{len(pmids)} PMIDs with abstracts, {pmcid_count}/{len(pmids)} with PMCID", extra={
-                "event": "pubmed.efetch.done",
-                "message": f"Parsed XML response: {abstract_count}/{len(pmids)} PMIDs with abstracts, {pmcid_count}/{len(pmids)} with PMCID",
-                "abstract_count": abstract_count,
-                "pmcid_count": pmcid_count,
-                "total_pmids": len(pmids)
-            })
+            logger.info(f"✅ Parsed {abstract_count}/{len(pmids)} abstracts, {pmcid_count}/{len(pmids)} PMCIDs")
             
         except ET.ParseError as e:
             logger.error(f"Failed to parse XML response: {e}")
@@ -1059,9 +1008,7 @@ class PubMedClient:
         """
         content_map = {}
         
-        # Debug: Log response format
-        logger.debug(f"EFetch response length: {len(response_text)}")
-        logger.debug(f"EFetch response preview: {response_text[:500]}...")
+        # Parse response based on rettype
         
         # Parse based on rettype
         if rettype == "medline":
@@ -1075,8 +1022,7 @@ class PubMedClient:
             if len(pmids) == 1:
                 content_map[pmids[0]] = response_text.strip()
         
-        # Log parsing results
-        logger.info(f"Parsed EFetch response: {len(content_map)}/{len(pmids)} PMIDs extracted")
+        # Return parsed results
         return content_map
     
     def _parse_medline_response(self, response_text: str, pmids: List[str]) -> Dict[str, str]:

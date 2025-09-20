@@ -78,6 +78,10 @@ help: ## Show this help message
 	@echo "  lint               - Check code style with ruff and black"
 	@echo "  type               - Run type checking with mypy"
 	@echo "  test               - Run tests"
+	@echo "  test-cassava       - Run comprehensive Cassava pipeline test"
+	@echo "  test-cassava-clean - Run Cassava test with fresh database"
+	@echo "  test-cassava-v2    - Run Comprehensive Cassava Pipeline Test V2"
+	@echo "  test-cassava-v2-clean - Run Cassava V2 test with fresh database (nuke + rebuild)"
 	@echo ""
 	@echo "Database Management:"
 	@echo "  db_up              - Start database with Docker Compose"
@@ -562,3 +566,18 @@ db.env: db_env
 db.dump: db_dump_host
 db.dump.schema: db_dump_schema_host
 db.restore: db_restore_host
+
+# --- Cassava Pipeline Test V2 ---
+.PHONY: test-cassava-v2 test-cassava-v2-clean setup-db
+test-cassava-v2: setup-db ## Run Comprehensive Cassava Pipeline Test V2
+	@echo "🧪 Running Comprehensive Cassava Pipeline Test V2..."
+	$(PYTHON) tests/scripts/run_cassava_test_v2.py
+
+test-cassava-v2-clean: ## Run Cassava V2 test with fresh database (nuke + rebuild)
+	@echo "🧹 Running Cassava V2 test with fresh database..."
+	$(MAKE) db_reset
+	$(PYTHON) tests/scripts/run_cassava_test_v2.py
+
+setup-db: ## Setup test database with required PostgreSQL extensions
+	@echo "🔧 Setting up test database with required extensions..."
+	$(PYTHON) scripts/setup_test_database.py

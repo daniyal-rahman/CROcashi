@@ -1,0 +1,72 @@
+{
+  "test_info": {
+    "start_time": "2025-09-20T22:05:02.958221+00:00",
+    "test_name": "Comprehensive Cassava Pipeline Test V2",
+    "version": "2.0",
+    "end_time": "2025-09-20T22:05:25.059094+00:00",
+    "duration_seconds": 22.100873
+  },
+  "database_setup": {
+    "status": "success",
+    "tables_created": true,
+    "data_cleared": true,
+    "extensions_created": true,
+    "company_seeded": true,
+    "trial_seeded": true
+  },
+  "ctgov_ingestion": {
+    "status": "skipped",
+    "reason": "Using existing trial data in database",
+    "trials_processed": 0,
+    "trials_updated": 0,
+    "trials_created": 0,
+    "changes_detected": 0
+  },
+  "pubmed_processing": {
+    "status": "success",
+    "documents_processed": 18,
+    "trials_processed": 1,
+    "success": true,
+    "errors": [],
+    "warnings": []
+  },
+  "study_card_generation": {
+    "status": "success",
+    "success": false,
+    "pattern_detections": 0,
+    "decision_records": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "independent_analysis": {
+    "status": "success",
+    "success": false,
+    "trials_analyzed": 0,
+    "successful_analyses": 0,
+    "failed_analyses": 1,
+    "execution_time_seconds": 0
+  },
+  "validation_results": {
+    "status": "failed",
+    "entity_counts": {
+      "companies": 1,
+      "trials": 1,
+      "documents": 21,
+      "studies": 0,
+      "study_cards": 0
+    },
+    "errors": [
+      "No study cards found in database - study cards not saved"
+    ],
+    "relationships": {
+      "trials_with_company": 0,
+      "trials_with_documents": 1
+    },
+    "data_integrity": {
+      "all_trials_have_company": false,
+      "some_trials_have_documents": true
+    }
+  },
+  "errors": [],
+  "warnings": []
+}

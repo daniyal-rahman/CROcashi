@@ -11,9 +11,10 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, asdict
 
-from .client import PubMedClient
+from .client_manager import get_client_manager
 from .mapper import PubMedMapper
 from .db_service import PubMedDBService, get_db_service
+from .document_manager import DocumentManager
 from ...db.session import session_scope
 from ...db.models import Document
 # Dual persistence service removed - using simplified approach
@@ -48,29 +49,13 @@ class AbstractProcessor:
         self.session_factory = session_factory
         
         # Initialize components
-        client_config = config.get('client_config', {})
+        self.client_config = config.get('client_config', {})
         
-        # Map configuration parameters to PubMedClient constructor parameters
-        mapped_config = {}
-        if 'rate_limit_requests_per_minute' in client_config:
-            # Convert requests per minute to requests per second
-            mapped_config['rate_limit_per_sec'] = client_config['rate_limit_requests_per_minute'] / 60
-        if 'batch_size' in client_config:
-            mapped_config['batch_size'] = client_config['batch_size']
-        if 'timeout_seconds' in client_config:
-            mapped_config['timeout_seconds'] = client_config['timeout_seconds']
-        if 'max_retries' in client_config:
-            mapped_config['max_retries'] = client_config['max_retries']
-        if 'api_key' in client_config:
-            mapped_config['api_key'] = client_config['api_key']
-        if 'email' in client_config:
-            mapped_config['email'] = client_config['email']
-        if 'tool' in client_config:
-            mapped_config['tool'] = client_config['tool']
-        
-        self.client = PubMedClient(**mapped_config)
+        # Initialize PubMed client manager (singleton)
+        self.client_manager = get_client_manager()
         self.mapper = PubMedMapper(config.get('mapper_config', {}))
         self.db_service = get_db_service()
+        self.document_manager = DocumentManager()
         self.feature_extractor = AbstractFeatureExtractor()
         
         # Using simplified approach - no separate persistence service needed
@@ -174,7 +159,7 @@ class AbstractProcessor:
                     logger.error(f"Failed to store abstracts to database: {e}")
                     abstracts_failed = len(abstracts_dict) if 'abstracts_dict' in locals() else 0
             
-            # Update TrialDocCandidate records from U1_discovery to U1_abstract stage
+            # Document status updates are now handled by DocumentManager
             candidates_updated = 0
             candidates_failed = 0
             if documents_with_entities:  # Use documents that have abstracts
@@ -192,14 +177,13 @@ class AbstractProcessor:
                                 'notes': 'Selected after abstract processing and R/S scoring'
                             })
                     
-                    if candidates_data:
-                        successful, failed = self.db_service.store_trial_doc_candidates(trial_id, candidates_data)
-                        candidates_updated = successful
-                        candidates_failed = failed
-                        logger.info(f"Updated {successful} trial-doc candidates to U1_abstract stage, {failed} failed")
+                    # Document status updates are now handled by DocumentManager in the scoring process
+                    candidates_updated = len(documents_with_entities)
+                    candidates_failed = 0
+                    logger.info(f"Processed {candidates_updated} documents with abstracts")
                 except Exception as e:
-                    logger.error(f"Failed to update trial-doc candidates: {e}")
-                    candidates_failed = len(candidates_data) if 'candidates_data' in locals() else 0
+                    logger.error(f"Failed to process documents: {e}")
+                    candidates_failed = len(documents_with_entities) if documents_with_entities else 0
             
             # Store only processed documents (filtered for LLM processing)
             if selected_docs:
@@ -260,12 +244,13 @@ class AbstractProcessor:
                 return 0
             
             # Log EFetch diagnostics
+            client = await self.client_manager.get_client(self.config)
             logger.info(f"EFetch coverage diagnostics:")
-            logger.info(f"  EFetch batch size: {len(pmids)}, retry attempts: {self.client.max_retries}")
+            logger.info(f"  EFetch batch size: {len(pmids)}, retry attempts: {client.max_retries}")
             
-            async with self.client:
+            async with client:
                 # Fetch abstracts using EFetch XML for more reliable parsing
-                abstract_result = await self.client.efetch_abstracts_xml(pmids)
+                abstract_result = await client.efetch_abstracts_xml(pmids)
                 
                 # Parse abstracts and add to documents with detailed diagnostics
                 abstracts_fetched = 0
@@ -393,9 +378,53 @@ class AbstractProcessor:
                 
                 documents_scored.append(doc)
             
-            # Store R/S scores directly in documents using the updated DB service
+            # Store R/S scores using DocumentManager
             if documents_scored:
-                successful, failed = self.db_service.update_document_rs_scores(documents_scored)
+                successful = 0
+                failed = 0
+                
+                for doc in documents_scored:
+                    try:
+                        doc_id = doc.get('doc_id')
+                        if not doc_id:
+                            # Look up doc_id from database using pmid
+                            pmid = doc.get('pmid')
+                            if pmid:
+                                with session_scope() as session:
+                                    from ncfd.db.models import Document
+                                    db_doc = session.query(Document).filter(Document.pmid == pmid).first()
+                                    if db_doc:
+                                        doc_id = db_doc.doc_id
+                                        doc['doc_id'] = doc_id
+                                    else:
+                                        logger.warning(f"Document with PMID {pmid} not found in database")
+                                        failed += 1
+                                        continue
+                            else:
+                                logger.warning(f"No doc_id or pmid found for document")
+                                failed += 1
+                                continue
+                        
+                        # Use DocumentManager to score the document
+                        success = self.document_manager.score_document(
+                            doc_id=doc_id,
+                            r_score=doc.get('r_score', 0.0),
+                            s_score=doc.get('s_score', 0.0),
+                            r_components=doc.get('r_components'),
+                            s_components=doc.get('s_components')
+                        )
+                        
+                        # Document status is automatically updated to 'scored' by DocumentManager.score_document()
+                        
+                        if success:
+                            successful += 1
+                        else:
+                            failed += 1
+                            
+                    except Exception as e:
+                        logger.error(f"Failed to score document {doc.get('pmid', 'unknown')}: {e}")
+                        failed += 1
+                
                 logger.info(f"Stored R/S scores for {successful} documents, {failed} failed")
             
             return documents_scored, []  # Return empty rs_scores list since scores are now in documents

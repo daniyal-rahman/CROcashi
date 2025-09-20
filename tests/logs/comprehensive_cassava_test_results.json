@@ -1,10 +1,10 @@
 {
   "test_info": {
-    "start_time": "2025-09-20T06:08:47.775263+00:00",
+    "start_time": "2025-09-20T18:32:58.028854+00:00",
     "test_name": "Comprehensive Cassava Pipeline Test",
     "version": "1.0",
-    "end_time": "2025-09-20T07:02:02.670988+00:00",
-    "duration_seconds": 3194.895725
+    "end_time": "2025-09-20T18:39:07.148027+00:00",
+    "duration_seconds": 369.119173
   },
   "database_setup": {
     "status": "success",
@@ -46,18 +46,18 @@
   "study_card_generation": {},
   "orchestrator_testing": {
     "status": "success",
-    "execution_id": "cassava_test_1758348528",
-    "total_processing_time": 3192.464696,
+    "execution_id": "cassava_test_1758393178",
+    "total_processing_time": 368.829981,
     "ctgov_result": {
       "success": false,
       "trials_processed": 0
     },
     "pubmed_result": {
       "success": true,
-      "documents_processed": 1442
+      "documents_processed": 1439
     },
     "study_card_result": {
-      "success": true,
+      "success": false,
       "pattern_detections": 0
     },
     "independent_analysis_result": {
@@ -72,16 +72,17 @@
     "status": "failed",
     "entity_counts": {
       "companies": 1,
-      "trials": 4,
-      "documents": 1442,
+      "trials": 0,
+      "documents": 0,
       "studies": 0,
-      "study_cards": 2
+      "study_cards": 0
     },
     "errors": [
+      "No study cards found in database - study cards not saved",
       "No trials linked to documents - document linking failed"
     ],
     "relationships": {
-      "trials_with_company": 4,
+      "trials_with_company": 0,
       "trials_with_documents": 0
     },
     "data_integrity": {
@@ -91,199 +92,13 @@
   },
   "errors": [],
   "warnings": [
-    "\u26a0\ufe0f  WARNING: 1 expected Cassava papers were NOT retrieved:",
+    "\u26a0\ufe0f  WARNING: 3 expected Cassava papers were NOT retrieved:",
+    "   \u2022 2023: Simufilam Reverses Aberrant Receptor Interactions (Mechanism paper (2023): FLNA\u2013\u03b17nAChR receptor interactions (Cell Mol Neurobiol)) [PMCID: PMC10531384]",
     "   \u2022 2023: Simufilam suppresses overactive mTOR and restores its (Mechanism paper (2023): mTOR/lymphocytes (Frontiers in Aging)) [PMCID: PMC10339288]",
-    "\u26a0\ufe0f  WARNING: 5 patterns detected (0 fired gates, 5 pattern detections) - this may indicate risk patterns in the trial"
+    "   \u2022 2020: PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients (JPAD 2020 Phase 2a trial paper (PTI-125 reduces AD biomarkers))"
   ],
   "guardrails_analysis": {
-    "status": "success",
-    "total_documents": 1442,
-    "guardrails_metrics": {
-      "passed_guardrails": 1250,
-      "failed_guardrails": 192,
-      "unclear_guardrails": 0
-    },
-    "guardrails_issues": [
-      {
-        "pmid": "23193143",
-        "title": "Ginkgo biloba no better than placebo in preventing dementia.",
-        "reason": "No relevance to trial (no asset or indication match)",
-        "risk_score": 0.0,
-        "rejection_details": {
-          "irrelevant": {
-            "is_relevant": false,
-            "asset_found": [],
-            "indication_found": [],
-            "mechanism_found": [],
-            "asset_terms_checked": [
-              "PTI-125",
-              "PTI 125",
-              "simufilam"
-            ],
-            "indication_terms_checked": [
-              "alzheimer disease",
-              "alzheimer",
-              "ad"
-            ],
-            "mechanism_terms_checked": [
-              "filamin A",
-              "FLNA"
-            ]
-          }
-        },
-        "issue": "Failed guardrails - No relevance to trial (no asset or indication match)"
-      },
-      {
-        "pmid": "19884584",
-        "title": "Donepezil treatment of patients with MCI: a 48-week randomized, placebo- controlled trial.",
-        "reason": "No relevance to trial (no asset or indication match)",
-        "risk_score": 0.0,
-        "rejection_details": {
-          "irrelevant": {
-            "is_relevant": false,
-            "asset_found": [],
-            "indication_found": [],
-            "mechanism_found": [],
-            "asset_terms_checked": [
-              "PTI-125",
-              "PTI 125",
-              "simufilam"
-            ],
-            "indication_terms_checked": [
-              "alzheimer disease",
-              "alzheimer",
-              "ad"
-            ],
-            "mechanism_terms_checked": [
-              "filamin A",
-              "FLNA"
-            ]
-          }
-        },
-        "issue": "Failed guardrails - No relevance to trial (no asset or indication match)"
-      },
-      {
-        "pmid": "38768040",
-        "title": "A commentary on 'The value of cholinesterase inhibitors for improving neuropsychiatric and functiona...",
-        "reason": "Non-scientific content detected: ['commentary']",
-        "risk_score": 0.2,
-        "rejection_details": {
-          "non_scientific": [
-            "commentary"
-          ]
-        },
-        "issue": "Failed guardrails - Non-scientific content detected: ['commentary']"
-      },
-      {
-        "pmid": "32338849",
-        "title": "",
-        "reason": "No relevance to trial (no asset or indication match)",
-        "risk_score": 0.0,
-        "rejection_details": {
-          "irrelevant": {
-            "is_relevant": false,
-            "asset_found": [],
-            "indication_found": [],
-            "mechanism_found": [],
-            "asset_terms_checked": [
-              "PTI-125",
-              "PTI 125",
-              "simufilam"
-            ],
-            "indication_terms_checked": [
-              "alzheimer disease",
-              "alzheimer",
-              "ad"
-            ],
-            "mechanism_terms_checked": [
-              "filamin A",
-              "FLNA"
-            ]
-          }
-        },
-        "issue": "Failed guardrails - No relevance to trial (no asset or indication match)"
-      },
-      {
-        "pmid": "9024332",
-        "title": "The treatment of depressed demented patients.",
-        "reason": "Off-topic content detected: ['depression']",
-        "risk_score": 0.0,
-        "rejection_details": {
-          "off_topic": [
-            "depression"
-          ]
-        },
-        "issue": "Failed guardrails - Off-topic content detected: ['depression']"
-      },
-      {
-        "pmid": "29378651",
-        "title": "Safety, tolerability and immunogenicity of an active anti-A\u03b2(40) vaccine (ABvac40) in patients with ...",
-        "reason": "Off-topic content detected: ['vaccine']",
-        "risk_score": 0.0,
-        "rejection_details": {
-          "off_topic": [
-            "vaccine"
-          ]
-        },
-        "issue": "Failed guardrails - Off-topic content detected: ['vaccine']"
-      },
-      {
-        "pmid": "37117834",
-        "title": "ADAMANT: a placebo-controlled randomized phase 2 study of AADvac1, an active immunotherapy against p...",
-        "reason": "Off-topic content detected: ['vaccine']",
-        "risk_score": 0.1,
-        "rejection_details": {
-          "off_topic": [
-            "vaccine"
-          ]
-        },
-        "issue": "Failed guardrails - Off-topic content detected: ['vaccine']"
-      },
-      {
-        "pmid": "27955995",
-        "title": "Safety and immunogenicity of the tau vaccine AADvac1 in patients with Alzheimer's disease: a randomi...",
-        "reason": "Off-topic content detected: ['vaccine']",
-        "risk_score": 0.1,
-        "rejection_details": {
-          "off_topic": [
-            "vaccine"
-          ]
-        },
-        "issue": "Failed guardrails - Off-topic content detected: ['vaccine']"
-      },
-      {
-        "pmid": "38145469",
-        "title": "Effects of the active amyloid beta immunotherapy CAD106 on PET measurements of amyloid plaque deposi...",
-        "reason": "Off-topic content detected: ['vaccine']",
-        "risk_score": 0.0,
-        "rejection_details": {
-          "off_topic": [
-            "vaccine"
-          ]
-        },
-        "issue": "Failed guardrails - Off-topic content detected: ['vaccine']"
-      },
-      {
-        "pmid": "11129744",
-        "title": "A double-blind, placebo-controlled, multicenter study of Cerebrolysin for Alzheimer's disease.",
-        "reason": "Off-topic content detected: ['depression']",
-        "risk_score": 0.0,
-        "rejection_details": {
-          "off_topic": [
-            "depression"
-          ]
-        },
-        "issue": "Failed guardrails - Off-topic content detected: ['depression']"
-      }
-    ],
-    "rejection_summary": {
-      "off_topic": 158,
-      "high_risk": 11,
-      "irrelevant": 8,
-      "non_scientific": 15
-    },
-    "recommendations": [
-      "Pre-LLM guardrails are working - filtering inappropriate content"
-    ]
+    "status": "no_documents",
+    "total_documents": 0
   }
 }

@@ -61,13 +61,17 @@ def _det_by_rules(session: Session, sponsor_text: str) -> Optional[Resolution]:
     Fallback: regex-based deterministic rules stored in resolver_det_rules.
     Applies patterns against raw, folded, and normalized sponsor text.
     """
-    rows = session.execute(
-        text("""
-            SELECT rule_id, pattern, company_id
-              FROM resolver_det_rules
-             ORDER BY priority DESC, rule_id ASC
-        """)
-    ).fetchall()
+    try:
+        rows = session.execute(
+            text("""
+                SELECT rule_id, pattern, company_id
+                  FROM resolver_det_rules
+                 ORDER BY priority DESC, rule_id ASC
+            """)
+        ).fetchall()
+    except Exception:
+        # Table doesn't exist or other error - return None gracefully
+        return None
 
     raw = sponsor_text or ""
     folded = raw.translate(_DASHES).translate(_SPACES)

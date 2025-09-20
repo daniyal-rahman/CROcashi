@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 
 # Dual persistence pipeline removed - using simplified approach
 from ..ingest.pubmed.db_service import PubMedDBService
+from ..ingest.pubmed.document_manager import DocumentManager
 from ..ingest.pubmed.queue_service import TaskQueueService
 from ..ingest.pubmed.retrieval.policy_engine import RetrievalPolicy, PolicyConfig
 from ..ingest.pubmed.retrieval.query_builder import MultiTierQueryBuilder
@@ -28,7 +29,7 @@ from ..ingest.pubmed.retrieval.document_scorer import AdvancedDocumentScorer, Sc
 from ..ingest.pubmed.retrieval.guardrails import GuardrailsSystem, GuardrailConfig
 from ..ingest.pubmed.retrieval.ctgov_discovery import CTgovIntegration, CTgovConfig
 from ..db.session import get_session, session_scope
-from ..db.models import Trial, Document, DocumentLink
+from ..db.models import Trial, Document
 from ..config import get_config
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,7 @@ class PubMedPipeline:
             
             # Initialize services
             self.db_service = PubMedDBService()
+            self.document_manager = DocumentManager()
             self.queue_service = TaskQueueService()
             
             logger.info("Successfully initialized PubMed components")
@@ -281,9 +283,8 @@ class PubMedPipeline:
         try:
             # Return simplified document list from database
             with session_scope() as session:
-                from ..db.models import Document, DocumentLink
-                docs = session.query(Document).join(DocumentLink).filter(
-                    DocumentLink.trial_id == trial_id,
+                docs = session.query(Document).filter(
+                    Document.trial_id == trial_id,
                     Document.processing_stage == 'raw'
                 ).all()
                 return [{'pmid': doc.pmid, 'title': doc.title, 'abstract': doc.abstract} for doc in docs]
@@ -296,9 +297,8 @@ class PubMedPipeline:
         try:
             # Return simplified document list from database
             with session_scope() as session:
-                from ..db.models import Document, DocumentLink
-                docs = session.query(Document).join(DocumentLink).filter(
-                    DocumentLink.trial_id == trial_id,
+                docs = session.query(Document).filter(
+                    Document.trial_id == trial_id,
                     Document.processing_stage == 'processed'
                 ).all()
                 return [{'pmid': doc.pmid, 'title': doc.title, 'abstract': doc.abstract} for doc in docs]

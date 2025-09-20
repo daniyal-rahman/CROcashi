@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 
-from .client import PubMedClient
+from .client_manager import get_client_manager
 from .db_service import PubMedDBService, get_db_service
 from .queue_service import TaskQueueService
 from ...db.session import session_scope
@@ -41,7 +41,6 @@ class OAWorker:
     
     def __init__(
         self,
-        client: PubMedClient,
         queue_service: TaskQueueService,
         config: Optional[Dict] = None
     ):
@@ -49,11 +48,10 @@ class OAWorker:
         Initialize OA worker.
         
         Args:
-            client: PubMed client instance
             queue_service: Task queue service instance
             config: Configuration dictionary
         """
-        self.client = client
+        self.client_manager = get_client_manager()
         self.queue_service = queue_service
         self.config = config or {}
         

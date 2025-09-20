@@ -54,7 +54,7 @@ class EntityPackManager:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
     
-    def get_or_create_entity_pack(self, trial_id: int) -> Optional[EntityPackSchema]:
+    def get_or_create_entity_pack(self, trial_id: int, asset_names: Optional[List[str]] = None, indications: Optional[List[str]] = None) -> Optional[EntityPackSchema]:
         """Generate entity pack for a trial from existing database data."""
         try:
             with session_scope() as session:
@@ -65,13 +65,13 @@ class EntityPackManager:
                     return None
                 
                 # Generate entity pack from existing database data
-                return self._generate_entity_pack_from_trial(session, trial)
+                return self._generate_entity_pack_from_trial(session, trial, asset_names, indications)
                 
         except Exception as e:
             self.logger.error(f"Error generating entity pack for trial {trial_id}: {e}")
             return None
     
-    def _generate_entity_pack_from_trial(self, session, trial: Trial) -> Optional[EntityPackSchema]:
+    def _generate_entity_pack_from_trial(self, session, trial: Trial, asset_names: Optional[List[str]] = None, indications: Optional[List[str]] = None) -> Optional[EntityPackSchema]:
         """Generate entity pack from existing database data."""
         try:
             # Extract company information
@@ -88,16 +88,29 @@ class EntityPackManager:
                 company_canonical = trial.sponsor_text
                 company_aliases = [trial.sponsor_text]
             
-            # Extract asset information from intervention types
+            # Extract asset information - use provided asset_names if available, otherwise fall back to intervention types
             asset_canonical = "Unknown Drug"
             asset_aliases = []
-            if trial.intervention_types:
+            if asset_names:
+                # Use provided asset names from configuration
+                asset_canonical = asset_names[0] if asset_names else "Unknown Drug"
+                asset_aliases = asset_names
+                self.logger.info(f"Using provided asset names: {asset_names}")
+            elif trial.intervention_types:
+                # Fall back to trial's intervention types
                 asset_canonical = trial.intervention_types[0] if trial.intervention_types else "Unknown Drug"
                 asset_aliases = trial.intervention_types
+                self.logger.info(f"Using trial intervention types: {trial.intervention_types}")
             
-            # Extract indication information
-            indication_primary = [trial.indication] if trial.indication else ["Unknown"]
-            indication_synonyms = [trial.indication.lower()] if trial.indication else ["unknown"]
+            # Extract indication information - use provided indications if available, otherwise fall back to trial data
+            if indications:
+                indication_primary = [indications[0]] if indications else ["Unknown"]
+                indication_synonyms = indications
+                self.logger.info(f"Using provided indications: {indications}")
+            else:
+                indication_primary = [trial.indication] if trial.indication else ["Unknown"]
+                indication_synonyms = [trial.indication.lower()] if trial.indication else ["unknown"]
+                self.logger.info(f"Using trial indication: {trial.indication}")
             
             # Generate entity pack schema
             entity_pack = EntityPackSchema(
@@ -169,6 +182,7 @@ class OrchestrationOutput:
     sec_result: Optional['SecPipelineOutput'] = None
     pubmed_result: Optional['PubMedPipelineOutput'] = None
     study_card_result: Optional['StudyCardPipelineOutput'] = None
+    independent_analysis_result: Optional[Dict[str, Any]] = None
     
     # Overall metrics
     total_trials_processed: int = 0
@@ -207,7 +221,8 @@ class OrchestrationOutput:
             (self.ctgov_result.success if self.ctgov_result else True) and
             (self.sec_result.success if self.sec_result else True) and
             (self.pubmed_result.success if self.pubmed_result else True) and
-            (self.study_card_result.success if self.study_card_result else True)
+            (self.study_card_result.success if self.study_card_result else True) and
+            (self.independent_analysis_result.get('success', True) if self.independent_analysis_result else True)
         )
 
 
@@ -652,9 +667,19 @@ class PipelineOrchestrator:
         """
         self.logger.info(f"Starting PubMed processing for {len(trial_list)} trials")
         
+        # Initialize current_execution if not already initialized
+        if self.current_execution is None:
+            execution_id = f"pubmed_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+            self.current_execution = OrchestrationOutput(
+                execution_id=execution_id,
+                start_time=datetime.now(timezone.utc),
+                end_time=datetime.now(timezone.utc)
+            )
+        
         try:
             # Extract trial IDs and NCT IDs for pipeline
             trial_ids = [trial['trial_id'] for trial in trial_list]
+            self.logger.info(f"DEBUG: Processing {len(trial_ids)} trials: {trial_ids}")
             
             # Get NCT IDs and other trial data for better PubMed processing
             nct_ids = [trial.get('nct_id') for trial in trial_list if trial.get('nct_id')]
@@ -683,15 +708,26 @@ class PipelineOrchestrator:
             
             # Get entity packs for all trials
             entity_packs = []
+            asset_names = self.config.get('pubmed', {}).get('asset_names', [])
+            indications = self.config.get('pubmed', {}).get('indications', [])
+            
             for trial_id in trial_ids:
-                entity_pack = self.entity_pack_manager.get_or_create_entity_pack(trial_id)
+                entity_pack = self.entity_pack_manager.get_or_create_entity_pack(
+                    trial_id, 
+                    asset_names=asset_names, 
+                    indications=indications
+                )
                 entity_packs.append(entity_pack)
             
             # Delegate to PubMed pipeline with entity packs
+            max_results = self.config.get('pubmed', {}).get('max_results', 1000)
+            self.logger.info(f"DEBUG: Using max_results={max_results} for PubMed processing")
+            
             result = await self.pubmed_pipeline.execute(
                 trial_ids=trial_ids,
                 asset_names=self.config.get('pubmed', {}).get('asset_names', []),
                 indications=self.config.get('pubmed', {}).get('indications', []),
+                max_results=max_results,
                 trial_nct_ids=nct_ids,
                 trial_phases=trial_phases,
                 company_names=company_names,
@@ -724,9 +760,11 @@ class PipelineOrchestrator:
         
         for trial in trial_list:
             trial_id = trial['trial_id']
-            # Use simplified approach with db_service
-            counts = self.pubmed_pipeline.db_service.get_document_counts_by_stage(trial_id)
-            existing_counts[trial_id] = counts['total']
+            # Use simplified approach with DocumentManager
+            from ..ingest.pubmed.document_manager import DocumentManager
+            dm = DocumentManager()
+            summary = dm.get_trial_literature_summary(trial_id)
+            existing_counts[trial_id] = summary['total_documents']
         
         return existing_counts
     
@@ -745,6 +783,15 @@ class PipelineOrchestrator:
             StudyCardPipelineOutput for study card generation
         """
         self.logger.info(f"Starting study card generation for {len(trial_list)} trials")
+        
+        # Initialize current_execution if not already initialized
+        if self.current_execution is None:
+            execution_id = f"study_card_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+            self.current_execution = OrchestrationOutput(
+                execution_id=execution_id,
+                start_time=datetime.now(timezone.utc),
+                end_time=datetime.now(timezone.utc)
+            )
         
         start_time = datetime.now(timezone.utc)
         
@@ -1009,7 +1056,23 @@ class PipelineOrchestrator:
             return pipeline_func()
         except Exception as e:
             self.logger.error(f"{pipeline_name} pipeline execution failed: {e}")
-            return None
+            # Return a proper error result instead of None
+            if pipeline_name == "ctgov":
+                return CtgovPipelineOutput(
+                    success=False,
+                    start_time=datetime.now(timezone.utc),
+                    end_time=datetime.now(timezone.utc),
+                    errors=[str(e)]
+                )
+            elif pipeline_name == "sec":
+                return SecPipelineOutput(
+                    success=False,
+                    start_time=datetime.now(timezone.utc),
+                    end_time=datetime.now(timezone.utc),
+                    errors=[str(e)]
+                )
+            else:
+                return None
     
     def _execute_ctgov_pipeline(self, force_full_scan: bool) -> Optional[CtgovPipelineOutput]:
         """Execute CT.gov pipeline."""
@@ -1017,6 +1080,11 @@ class PipelineOrchestrator:
         
         try:
             result = self.ctgov_pipeline.run_daily_ingestion(force_full_scan)
+            
+            # Debug: Check if result is None
+            if result is None:
+                self.logger.error("CT.gov pipeline returned None result")
+                raise ValueError("CT.gov pipeline returned None result")
             
             end_time = datetime.now(timezone.utc)
             

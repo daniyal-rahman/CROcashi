@@ -260,8 +260,9 @@ class Trial(Base):
     catalysts: Mapped[List["Catalyst"]] = relationship(back_populates="trial", cascade="all, delete-orphan")
     labels: Mapped[List["Label"]] = relationship(back_populates="trial", cascade="all, delete-orphan")
     disclosures: Mapped[List["Disclosure"]] = relationship(back_populates="trial", cascade="all, delete-orphan")
-    # Documents are linked through DocumentLink table
-    # documents: Mapped[List["Document"]] = relationship(back_populates="trials")
+    
+    # Documents relationship (simplified system) - using DocumentManager instead of ORM relationship
+    # documents: Mapped[List["Document"]] = relationship(back_populates="trial")
 
     __table_args__ = (
         Index("idx_trials_sponsor_company_id", "sponsor_company_id"),
@@ -285,7 +286,7 @@ class TrialVersion(Base):
     trial_id: Mapped[int] = mapped_column(ForeignKey("trials.trial_id", ondelete="CASCADE"), nullable=False)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     sha256: Mapped[str] = mapped_column(CHAR(64), nullable=False)
-    raw_data: Mapped[Dict[str, object]] = mapped_column(JSONB, nullable=False)
+    raw_jsonb: Mapped[Dict[str, object]] = mapped_column(JSONB, nullable=False)
     last_update_posted_date: Mapped[Optional[date]] = mapped_column(Date)
     primary_endpoint_text: Mapped[Optional[str]] = mapped_column(Text)
     sample_size: Mapped[Optional[int]] = mapped_column(Integer)
@@ -676,19 +677,30 @@ class Document(Base):
     r_components: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     s_components: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     rs_decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    
+    # Trial association fields (simplified system)
+    trial_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    processing_status: Mapped[str] = mapped_column(String(20), nullable=False, server_default='discovered')
+    processing_priority: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    retrieval_tier: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    link_confidence: Mapped[Optional[Decimal]] = mapped_column(Numeric(3,2), nullable=True)
+    scored_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    selected_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    study_card_generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    processing_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships
     text: Mapped[Optional["DocumentText"]] = relationship(back_populates="document", uselist=False, cascade="all, delete-orphan")
     tables: Mapped[List["DocumentTable"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     citations: Mapped[List["DocumentCitation"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     entities: Mapped[List["DocumentEntity"]] = relationship(back_populates="document", cascade="all, delete-orphan")
-    links: Mapped[List["DocumentLink"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     spans: Mapped[List["Span"]] = relationship(back_populates="document", cascade="all, delete-orphan")
-    # Trials are linked through DocumentLink table
-    # trials: Mapped[List["Trial"]] = relationship(back_populates="documents")
-    trial_candidates: Mapped[List["TrialDocCandidate"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     pubmed_meta: Mapped[Optional["PubMedMeta"]] = relationship(back_populates="document", uselist=False, cascade="all, delete-orphan")
     pmc_meta: Mapped[Optional["PmcMeta"]] = relationship(back_populates="document", uselist=False, cascade="all, delete-orphan")
+    
+    # Trial relationship (simplified system) - using DocumentManager instead of ORM relationship
+    # trial: Mapped[Optional["Trial"]] = relationship(back_populates="documents", foreign_keys=[trial_id])
 
     __table_args__ = (
         Index("ix_documents_lower_doi", "doi"),
@@ -703,13 +715,21 @@ class Document(Base):
         Index("ix_documents_r_tier", "r_tier"),
         Index("ix_documents_s_tier", "s_tier"),
         Index("ix_documents_status", "status"),
+        Index("ix_documents_trial_id", "trial_id"),
+        Index("ix_documents_processing_status", "processing_status"),
+        Index("ix_documents_processing_priority", "processing_priority"),
+        Index("ix_documents_retrieval_tier", "retrieval_tier"),
         CheckConstraint("source_type::text = ANY (ARRAY['PR','IR','SEC','Registry','Abstract','Poster','Paper','FDA','Patent']::text[])", name='ck_documents_source_type'),
         CheckConstraint("status::text = ANY (ARRAY['discovered','fetched','parsed','linked','failed']::text[])", name='ck_documents_status'),
         CheckConstraint("processing_stage::text = ANY (ARRAY['raw'::text, 'processed'::text])", name='ck_documents_processing_stage'),
         CheckConstraint("r_score IS NULL OR (r_score >= 0 AND r_score <= 1)", name='ck_documents_r_score_range'),
         CheckConstraint("s_score IS NULL OR (s_score >= 0 AND s_score <= 1)", name='ck_documents_s_score_range'),
         CheckConstraint("r_tier IS NULL OR r_tier IN ('R0','R1','R2','R3')", name='ck_documents_r_tier'),
-        CheckConstraint("s_tier IS NULL OR s_tier IN ('S0','S1','S2','S3')", name='ck_documents_s_tier')
+        CheckConstraint("s_tier IS NULL OR s_tier IN ('S0','S1','S2','S3')", name='ck_documents_s_tier'),
+        CheckConstraint("processing_status::text = ANY (ARRAY['discovered','scored','selected','processed','study_card_generated']::text[])", name='ck_documents_processing_status'),
+        CheckConstraint("processing_priority::text = ANY (ARRAY['HIGH','MEDIUM','LOW','FALLBACK']::text[])", name='ck_documents_processing_priority'),
+        CheckConstraint("retrieval_tier::text = ANY (ARRAY['A','B','C','D','E']::text[])", name='ck_documents_retrieval_tier'),
+        CheckConstraint("link_confidence IS NULL OR (link_confidence >= 0 AND link_confidence <= 1)", name='ck_documents_link_confidence_range')
     )
 
 
@@ -826,7 +846,7 @@ class DocumentLink(Base):
     evidence: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
 
     # Relationships
-    document: Mapped["Document"] = relationship(back_populates="links")
+    document: Mapped["Document"] = relationship()  # Removed back_populates since Document no longer has links relationship
     trial: Mapped[Optional["Trial"]] = relationship()
     asset: Mapped[Optional["Asset"]] = relationship()
     company: Mapped[Optional["Company"]] = relationship()
@@ -894,7 +914,7 @@ class TrialDocCandidate(Base):
 
     # Relationships
     trial: Mapped["Trial"] = relationship(back_populates=None)
-    document: Mapped["Document"] = relationship(back_populates="trial_candidates")
+    document: Mapped["Document"] = relationship()  # Removed back_populates since Document no longer has trial_candidates relationship
 
     __table_args__ = (
         PrimaryKeyConstraint('trial_id', 'doc_id'),
@@ -1181,7 +1201,7 @@ class Factsheet(Base):
     __tablename__ = 'factsheets'
     
     factsheet_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    doc_id: Mapped[str] = mapped_column(String, ForeignKey("documents.doc_id"), nullable=False)
+    doc_id: Mapped[int] = mapped_column(Integer, ForeignKey("documents.doc_id"), nullable=False)
     results: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     primary_endpoint_results: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     secondary_endpoint_results: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)

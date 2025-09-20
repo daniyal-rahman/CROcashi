@@ -81,8 +81,6 @@ class EnhancedRetriever(BaseWorker):
         if use_real_retrieval:
             try:
                 with get_session() as session:
-                    from ...db.models import DocumentLink
-                    
                     trial_id = trial_context.get('trial_id')
                     nct_id = trial_context.get('nct_id')
                     logger.info(f"DEBUG: trial_context = {trial_context}")
@@ -99,35 +97,11 @@ class EnhancedRetriever(BaseWorker):
                             logger.warning(f"Could not convert trial_id '{trial_id}' to integer, skipping trial_id lookup")
                         
                         if trial_id_int is not None:
-                            # First try the traditional documents table
-                            linked_docs = session.query(Document).join(
-                                DocumentLink, Document.doc_id == DocumentLink.doc_id
-                            ).filter(DocumentLink.trial_id == trial_id_int).all()
+                            # Use simplified system - documents are directly linked to trials
+                            linked_docs = session.query(Document).filter(
+                                Document.trial_id == trial_id_int
+                            ).all()
                             logger.info(f"DEBUG: Found {len(linked_docs)} documents linked to trial_id {trial_id_int}")
-                            
-                            # If no documents found, try TrialDocCandidate table (PubMed pipeline)
-                            if not linked_docs:
-                                from ...db.models import TrialDocCandidate
-                                trial_doc_candidates = session.query(Document).join(
-                                    TrialDocCandidate, Document.doc_id == TrialDocCandidate.doc_id
-                                ).filter(
-                                    TrialDocCandidate.trial_id == trial_id_int,
-                                    TrialDocCandidate.stage.in_(['U1_discovery', 'U1_abstract']),
-                                    TrialDocCandidate.selected == True
-                                ).all()
-                                logger.info(f"DEBUG: Found {len(trial_doc_candidates)} documents via TrialDocCandidate for trial_id {trial_id_int}")
-                                linked_docs.extend(trial_doc_candidates)
-                            
-                            # If no documents found, try processed documents (PubMed pipeline)
-                            if not linked_docs:
-                                processed_docs = session.query(Document).join(DocumentLink).filter(
-                                    DocumentLink.trial_id == trial_id_int,
-                                    Document.processing_stage == 'processed'
-                                ).all()
-                                logger.debug(f"Found {len(processed_docs)} processed documents for trial_id {trial_id_int}")
-                                
-                                # Use the actual Document objects directly (no need for mock objects)
-                                linked_docs.extend(processed_docs)
                     
                     # Also try NCT ID lookup (fallback strategy)
                     if not linked_docs and nct_id:
@@ -136,12 +110,7 @@ class EnhancedRetriever(BaseWorker):
                         ).all()
                         logger.debug(f"Found {len(linked_docs)} documents with nct_id {nct_id}")
                     
-                    # Also try linking via DocumentLink.nct_id
-                    if not linked_docs and nct_id:
-                        linked_docs = session.query(Document).join(
-                            DocumentLink, Document.doc_id == DocumentLink.doc_id
-                        ).filter(DocumentLink.nct_id == nct_id).all()
-                        logger.debug(f"Found {len(linked_docs)} documents linked to nct_id {nct_id}")
+                    # NCT ID lookup is already handled above
                     
                     # Convert to DocumentCards using database doc_id for prioritization matching
                     # Only create DocumentCard objects for documents that have abstracts
@@ -346,19 +315,15 @@ class EnhancedRetriever(BaseWorker):
                         logger.warning(f"Could not convert trial_id '{trial_id}' to integer")
                     
                     if trial_id_int is not None:
-                        linked_docs = session.query(Document).join(
-                            DocumentLink, Document.doc_id == DocumentLink.doc_id
-                        ).filter(DocumentLink.trial_id == trial_id_int).all()
+                        linked_docs = session.query(Document).filter(
+                            Document.trial_id == trial_id_int
+                        ).all()
                 
                 # Fallback to NCT ID lookup
                 if not linked_docs and nct_id:
                     linked_docs = session.query(Document).filter(Document.nct_id == nct_id).all()
                     
-                    # Additional fallback via DocumentLink.nct_id
-                    if not linked_docs:
-                        linked_docs = session.query(Document).join(
-                            DocumentLink, Document.doc_id == DocumentLink.doc_id
-                        ).filter(DocumentLink.nct_id == nct_id).all()
+                    # NCT ID lookup is already handled above
                 
                 if not linked_docs:
                     issues.append("No documents found linked to trial")
