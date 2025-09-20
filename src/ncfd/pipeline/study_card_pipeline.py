@@ -14,9 +14,9 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 
-from ..extract.retrieval import build_retriever
-from ..extract.generators import LLMResultsFactsheetGenerator
-from ..extract.models import (
+from ncfd.extract.retrieval import build_retriever
+from ncfd.extract.generators import LLMResultsFactsheetGenerator
+from ncfd.extract.models import (
     DocumentCard, Span, StudyCard, ResultsFactsheet, DecisionRecord
 )
 
@@ -66,8 +66,8 @@ class StudyCardPipeline:
         self.retriever = build_retriever(self.config)
         
         # Core LLM-first workers
-        from ..extract.generators import LLMStudyCardGenerator, PatternFamilyDetector
-        from ..ingest.pubmed.retrieval.pre_llm_guardrails import PreLLMGuardrailsSystem, PreLLMGuardrailsConfig
+        from ncfd.extract.generators import LLMStudyCardGenerator, PatternFamilyDetector
+        from ncfd.ingest.pubmed.retrieval.pre_llm_guardrails import PreLLMGuardrailsSystem, PreLLMGuardrailsConfig
         
         self.llm_study_generator = LLMStudyCardGenerator()
         self.llm_results_generator = LLMResultsFactsheetGenerator()
@@ -263,8 +263,8 @@ class StudyCardPipeline:
                 # Apply pre-LLM guardrails
                 try:
                     # Get document from database for guardrails check
-                    from ....db.session import session_scope
-                    from ....db.models import Document
+                    from ncfd.db.session import session_scope
+                    from ncfd.db.models import Document
                     
                     with session_scope() as session:
                         document = session.query(Document).filter(Document.doc_id == doc_card.doc_id).first()
@@ -322,7 +322,11 @@ class StudyCardPipeline:
                     study_result = await concurrency_manager.execute_with_concurrency_control(
                         self.llm_study_generator.process, study_data
                     )
-                    logger.info(f"DEBUG: Study result for doc {doc_card.doc_id}: success={study_result.get('success')}, has_study_card={bool(study_result.get('study_card'))}, field_quotes_count={len(study_result.get('field_quotes', []))}")
+                    # Safe field_quotes count logging
+                    field_quotes_for_logging = study_result.get('field_quotes', [])
+                    if not isinstance(field_quotes_for_logging, list):
+                        field_quotes_for_logging = []
+                    logger.info(f"DEBUG: Study result for doc {doc_card.doc_id}: success={study_result.get('success')}, has_study_card={bool(study_result.get('study_card'))}, field_quotes_count={len(field_quotes_for_logging)}")
                     
                     # Log detailed study card output
                     if study_result.get("study_card"):
@@ -336,18 +340,33 @@ class StudyCardPipeline:
                     
                     # Log detailed field quotes
                     field_quotes = study_result.get('field_quotes', [])
+                    # Ensure field_quotes is a list
+                    if not isinstance(field_quotes, list):
+                        field_quotes = []
                     if field_quotes:
                         logger.info(f"📝 STUDY FIELD QUOTES ({len(field_quotes)} quotes):")
                         for i, quote in enumerate(field_quotes):
-                            logger.info(f"   Quote {i+1}: {quote.field_name} = {str(quote.value)[:50]}...")
-                            logger.info(f"      Evidence: {quote.evidence_quote[:100]}...")
+                            # Handle case where quote.value might be a float or other non-string type
+                            value_str = str(quote.value) if quote.value is not None else "None"
+                            # Ensure value_str is a string before slicing
+                            value_str = str(value_str)
+                            logger.info(f"   Quote {i+1}: {quote.field_name} = {value_str[:50]}...")
+                            logger.info(f"      Evidence: {str(quote.evidence_quote)[:100]}...")
                             logger.info(f"      Confidence: {quote.confidence}")
+                    
+                    logger.info(f"Study result success: {study_result.get('success')}")
+                    logger.info(f"Study result has study_card: {study_result.get('study_card') is not None}")
+                    logger.info(f"Study result keys: {list(study_result.keys())}")
                     
                     if study_result.get("success") and study_result.get("study_card"):
                         result.study_card = study_result["study_card"]
+                        logger.info(f"Study card assigned to result: {result.study_card}")
                         
                         # Collect field quotes as evidence spans
                         field_quotes = study_result.get("field_quotes", [])
+                        # Ensure field_quotes is a list before iterating
+                        if not isinstance(field_quotes, list):
+                            field_quotes = []
                         for quote in field_quotes:
                             evidence_span = Span(
                                 doc_id=str(doc_card.doc_id),
@@ -360,11 +379,30 @@ class StudyCardPipeline:
                         # Store LLM artifacts
                         result.llm_artifacts[f"study_card_{doc_card.doc_id}"] = study_result
                         
-                        # Save study card to database
-                        await self._save_study_card_to_db(study_result["study_card"])
+                        # Save study card to database (separate from quotes saving)
+                        try:
+                            logger.info(f"Attempting to save study card for doc_id: {study_result['study_card'].doc_id}")
+                            await self._save_study_card_to_db(study_result["study_card"])
+                            logger.info(f"Successfully saved study card for doc_id: {study_result['study_card'].doc_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to save study card to database: {e}")
+                            result.warnings.append(f"Failed to save study card to database: {e}")
+                            # Re-raise specific errors that indicate fundamental issues
+                            if "object of type 'float' has no len()" in str(e):
+                                logger.error(f"CRITICAL ERROR: LLM response parsing issue - re-raising error")
+                                raise
                         
-                        # Save quotes to database
-                        await self._save_quotes_to_db(field_quotes, doc_card.doc_id, trial_id)
+                        # Save quotes to database (separate from study card saving)
+                        try:
+                            await self._save_quotes_to_db(field_quotes, doc_card.doc_id, trial_id)
+                        except Exception as e:
+                            logger.warning(f"Failed to save quotes to database: {e}")
+                            result.warnings.append(f"Failed to save quotes to database: {e}")
+                            # Re-raise specific errors that indicate fundamental issues
+                            if "object of type 'float' has no len()" in str(e):
+                                logger.error(f"CRITICAL ERROR: LLM response parsing issue - re-raising error")
+                                raise
+                        
                         logger.info(f"Study card generated for document {doc_card.doc_id} with {len(field_quotes)} quotes")
                         
                         # Results factsheet generation
@@ -376,7 +414,11 @@ class StudyCardPipeline:
                         results_result = await concurrency_manager.execute_with_concurrency_control(
                             self.llm_results_generator.process, results_data
                         )
-                        logger.info(f"DEBUG: Results result for doc {doc_card.doc_id}: success={results_result.get('success')}, has_results_factsheet={bool(results_result.get('results_factsheet'))}, field_quotes_count={len(results_result.get('field_quotes', []))}")
+                        # Safe field_quotes count logging for results
+                        results_field_quotes_for_logging = results_result.get('field_quotes', [])
+                        if not isinstance(results_field_quotes_for_logging, list):
+                            results_field_quotes_for_logging = []
+                        logger.info(f"DEBUG: Results result for doc {doc_card.doc_id}: success={results_result.get('success')}, has_results_factsheet={bool(results_result.get('results_factsheet'))}, field_quotes_count={len(results_field_quotes_for_logging)}")
                         
                         # Log detailed results factsheet output
                         if results_result.get("results_factsheet"):
@@ -391,11 +433,18 @@ class StudyCardPipeline:
                         
                         # Log detailed field quotes
                         field_quotes = results_result.get('field_quotes', [])
+                        # Ensure field_quotes is a list
+                        if not isinstance(field_quotes, list):
+                            field_quotes = []
                         if field_quotes:
                             logger.info(f"📝 RESULTS FIELD QUOTES ({len(field_quotes)} quotes):")
                             for i, quote in enumerate(field_quotes):
-                                logger.info(f"   Quote {i+1}: {quote.field_name} = {str(quote.value)[:50]}...")
-                                logger.info(f"      Evidence: {quote.evidence_quote[:100]}...")
+                                # Handle case where quote.value might be a float or other non-string type
+                                value_str = str(quote.value) if quote.value is not None else "None"
+                                # Ensure value_str is a string before slicing
+                                value_str = str(value_str)
+                                logger.info(f"   Quote {i+1}: {quote.field_name} = {value_str[:50]}...")
+                                logger.info(f"      Evidence: {str(quote.evidence_quote)[:100]}...")
                                 logger.info(f"      Confidence: {quote.confidence}")
                         
                         if results_result.get("success") and results_result.get("results_factsheet"):
@@ -403,6 +452,9 @@ class StudyCardPipeline:
                             
                             # Collect field quotes as evidence spans
                             field_quotes = results_result.get("field_quotes", [])
+                            # Ensure field_quotes is a list before iterating
+                            if not isinstance(field_quotes, list):
+                                field_quotes = []
                             for quote in field_quotes:
                                 evidence_span = Span(
                                     doc_id=str(doc_card.doc_id),
@@ -416,11 +468,23 @@ class StudyCardPipeline:
                             result.llm_artifacts[f"results_factsheet_{doc_card.doc_id}"] = results_result
                             
                             # Save results factsheet to database
-                            await self._save_results_factsheet_to_db(results_result["results_factsheet"])
+                            try:
+                                await self._save_results_factsheet_to_db(results_result["results_factsheet"])
+                            except Exception as e:
+                                logger.warning(f"Failed to save results factsheet to database: {e}")
+                                result.warnings.append(f"Failed to save results factsheet to database: {e}")
                             
                             # Save quotes to database
-                            await self._save_quotes_to_db(field_quotes, doc_card.doc_id, trial_id)
-                            logger.info(f"Results factsheet generated for document {doc_card.doc_id} with {len(field_quotes)} quotes")
+                            try:
+                                await self._save_quotes_to_db(field_quotes, doc_card.doc_id, trial_id)
+                                logger.info(f"Results factsheet generated for document {doc_card.doc_id} with {len(field_quotes)} quotes")
+                            except Exception as e:
+                                logger.warning(f"Failed to save results factsheet quotes to database: {e}")
+                                result.warnings.append(f"Failed to save results factsheet quotes to database: {e}")
+                                # Re-raise specific errors that indicate fundamental issues
+                                if "object of type 'float' has no len()" in str(e):
+                                    logger.error(f"CRITICAL ERROR: LLM response parsing issue - re-raising error")
+                                    raise
                         
                         # Pattern detection generation
                         pattern_data = {
@@ -448,7 +512,9 @@ class StudyCardPipeline:
                                 logger.info(f"      Family: {getattr(detection, 'family_id', 'N/A')}")
                                 logger.info(f"      Severity: {getattr(detection, 'severity', 'N/A')}")
                                 logger.info(f"      Confidence: {getattr(detection, 'confidence', 'N/A')}")
-                                logger.info(f"      Rationale: {getattr(detection, 'rationale', 'N/A')[:100]}...")
+                                rationale = getattr(detection, 'rationale', 'N/A')
+                                rationale_str = str(rationale) if rationale is not None else 'N/A'
+                                logger.info(f"      Rationale: {rationale_str[:100]}...")
                         else:
                             logger.warning(f"⚠️  No pattern detections generated for doc {doc_card.doc_id}")
                         
@@ -468,7 +534,11 @@ class StudyCardPipeline:
                             logger.warning(f"No pattern detections to save for document {doc_card.doc_id}")
                             
                 except Exception as e:
-                    logger.warning(f"LLM processing failed for document {doc_card.doc_id}: {e}")
+                    logger.error(f"LLM processing failed for document {doc_card.doc_id}: {e}")
+                    logger.error(f"Exception type: {type(e)}")
+                    logger.error(f"Exception args: {e.args}")
+                    import traceback
+                    logger.error(f"Traceback: {traceback.format_exc()}")
                     result.warnings.append(f"LLM processing failed for document {doc_card.doc_id}: {e}")
             
             logger.info("Direct LLM processing completed")
@@ -583,12 +653,68 @@ class StudyCardPipeline:
             result.processing_time_seconds = (result.end_time - result.start_time).total_seconds()
             return result
     
+    def _extract_single_value(self, value):
+        """Extract single value from potentially array or dict field."""
+        if value is None:
+            return None
+        
+        # Handle dictionaries - convert to JSON string
+        if isinstance(value, dict):
+            import json
+            return json.dumps(value)
+        
+        # Handle lists/tuples - take the first non-numeric element
+        if isinstance(value, (list, tuple)) and len(value) > 0:
+            # Take the first non-numeric element, or first element if all are numeric
+            for item in value:
+                if not isinstance(item, (int, float)):
+                    return str(item)
+            return str(value[0]) if value else None
+        
+        return str(value) if value is not None else None
+    
+    def _convert_severity_to_int(self, severity):
+        """Convert severity to integer value within valid range (0-2)."""
+        if severity is None:
+            return 0
+        
+        # If it's already an integer, validate range
+        if isinstance(severity, int):
+            return max(0, min(2, severity))
+        
+        # If it's a float, convert to int and validate range
+        if isinstance(severity, float):
+            return max(0, min(2, int(severity)))
+        
+        # If it's a string, try to convert
+        if isinstance(severity, str):
+            try:
+                severity_int = int(float(severity))
+                return max(0, min(2, severity_int))
+            except (ValueError, TypeError):
+                return 0
+        
+        # If it's an enum with value attribute
+        if hasattr(severity, 'value'):
+            try:
+                severity_int = int(severity.value)
+                return max(0, min(2, severity_int))
+            except (ValueError, TypeError):
+                return 0
+        
+        # Default fallback
+        return 0
+    
     async def _save_study_card_to_db(self, study_card):
         """Save study card to database."""
         try:
             import json
             from ncfd.db.session import session_scope
             from sqlalchemy import text
+            
+            logger.info(f"Starting to save study card to database for doc_id: {study_card.doc_id}")
+            logger.info(f"Study card type: {type(study_card)}")
+            logger.info(f"Study card attributes: {[attr for attr in dir(study_card) if not attr.startswith('_')]}")
             
             with session_scope() as session:
                 # Insert study card into database
@@ -612,13 +738,13 @@ class StudyCardPipeline:
                     )
                 """), {
                     'doc_id': study_card.doc_id,
-                    'design_archetype': getattr(study_card, 'design_archetype', None),
-                    'is_blinded': getattr(study_card, 'is_blinded', None),
+                    'design_archetype': self._extract_single_value(getattr(study_card, 'design_archetype', None)),
+                    'is_blinded': self._extract_single_value(getattr(study_card, 'is_blinded', None)),
                     'analysis_set': json.dumps(getattr(study_card, 'analysis_set', None)) if getattr(study_card, 'analysis_set', None) is not None else None,
-                    'population_description': getattr(study_card, 'population_description', None),
+                    'population_description': self._extract_single_value(getattr(study_card, 'population_description', None)),
                     'stratification_factors': json.dumps(getattr(study_card, 'stratification_factors', [])),
                     'covariate_adjustment': json.dumps(getattr(study_card, 'covariate_adjustment', [])),
-                    'primary_endpoint': getattr(study_card, 'primary_endpoint', None),
+                    'primary_endpoint': self._extract_single_value(getattr(study_card, 'primary_endpoint', None)),
                     'secondary_endpoints': json.dumps(getattr(study_card, 'secondary_endpoints', [])),
                     'summary_measure': getattr(study_card, 'summary_measure', None),
                     'alpha_level': getattr(study_card, 'alpha_level', None),
@@ -634,14 +760,15 @@ class StudyCardPipeline:
                     'imputation_method': getattr(study_card, 'imputation_method', None),
                     'estimand': getattr(study_card, 'estimand', None),
                     'intercurrent_events_policy': getattr(study_card, 'intercurrent_events_policy', None),
-                    'endpoint_ascertainment': getattr(study_card, 'endpoint_ascertainment', None),
+                    'endpoint_ascertainment': self._extract_single_value(getattr(study_card, 'endpoint_ascertainment', None)),
                     'assessment_interval': getattr(study_card, 'assessment_interval', None),
-                    'adjudication_committee': getattr(study_card, 'adjudication_committee', None)
+                    'adjudication_committee': bool(getattr(study_card, 'adjudication_committee', None)) if getattr(study_card, 'adjudication_committee', None) is not None else None
                 })
                 session.commit()
                 logger.info(f"Study card saved to database for doc_id: {study_card.doc_id}")
         except Exception as e:
             logger.error(f"Failed to save study card to database: {e}")
+            raise
     
     async def _save_results_factsheet_to_db(self, results_factsheet):
         """Save results factsheet to database."""
@@ -688,6 +815,11 @@ class StudyCardPipeline:
         try:
             from ncfd.db.session import session_scope
             from ncfd.db.models import Span as DBSpan
+            
+            # Ensure field_quotes is a list
+            if not isinstance(field_quotes, list):
+                logger.warning(f"field_quotes is not a list, got {type(field_quotes)}: {field_quotes}")
+                return
             
             if not field_quotes:
                 logger.info(f"No field quotes to save for doc_id: {doc_id}")
@@ -1139,7 +1271,7 @@ class StudyCardPipeline:
     async def _generate_decision_record(self, result: StudyCardPipelineOutput, trial_context: Dict[str, Any]) -> Optional[DecisionRecord]:
         """Generate a comprehensive decision record from gate assessments and other artifacts."""
         try:
-            from ..extract.models.decision_record import DecisionRecord
+            from ncfd.extract.models.decision_record import DecisionRecord
             
             # Create decision record
             decision_record = DecisionRecord(
@@ -1409,9 +1541,9 @@ class StudyCardPipeline:
                     'run_id': "pattern_families_run",
                     'family_id': pattern_detection.family_id,
                     'pattern_id': pattern_detection.pattern_id,
-                    'severity': pattern_detection.severity.value,  # SeverityLevel enum value (0-3)
-                    'confidence': pattern_detection.confidence,
-                    'rationale': pattern_detection.rationale,
+                    'severity': self._convert_severity_to_int(pattern_detection.severity),
+                    'confidence': float(pattern_detection.confidence) if pattern_detection.confidence is not None else 0.0,
+                    'rationale': str(pattern_detection.rationale) if pattern_detection.rationale is not None else "",
                     'evidence_spans': json.dumps(pattern_detection.evidence_spans) if pattern_detection.evidence_spans else None
                 })
                 session.commit()

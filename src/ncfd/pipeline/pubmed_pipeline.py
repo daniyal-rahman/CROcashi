@@ -104,7 +104,8 @@ class PubMedPipeline:
                      max_results: int = 1000,
                      trial_nct_ids: Optional[List[str]] = None,
                      trial_phases: Optional[List[str]] = None,
-                     company_names: Optional[List[str]] = None) -> PubMedPipelineOutput:
+                     company_names: Optional[List[str]] = None,
+                     entity_packs: Optional[List[Any]] = None) -> PubMedPipelineOutput:
         """
         Execute PubMed pipeline for specified trials.
         
@@ -116,6 +117,7 @@ class PubMedPipeline:
             trial_nct_ids: List of NCT IDs for Query D
             trial_phases: List of trial phases
             company_names: List of company names
+            entity_packs: List of EntityPack objects from orchestrator
             
         Returns:
             PubMedPipelineOutput with execution details
@@ -144,6 +146,7 @@ class PubMedPipeline:
                     trial_nct = trial_nct_ids[i] if trial_nct_ids and i < len(trial_nct_ids) else None
                     trial_phase = trial_phases[i] if trial_phases and i < len(trial_phases) else None
                     company_name = company_names[i] if company_names and i < len(company_names) else None
+                    entity_pack = entity_packs[i] if entity_packs and i < len(entity_packs) else None
                     
                     # Execute simplified pipeline using new components
                     from ..ingest.pubmed import RetrievalProcessor, AbstractProcessor
@@ -151,15 +154,34 @@ class PubMedPipeline:
                     retrieval_processor = RetrievalProcessor(self.config)
                     abstract_processor = AbstractProcessor(self.config)
                     
+                    # Extract data from entity pack if available, otherwise use fallback parameters
+                    if entity_pack:
+                        asset_aliases = entity_pack.get_all_asset_terms()
+                        indication_terms = entity_pack.get_all_indication_terms()
+                        company_aliases = entity_pack.get_all_company_terms()
+                        nct_ids = entity_pack.get_all_nct_ids()
+                        
+                        logger.info(f"Using entity pack for trial {trial_id}: {len(asset_aliases)} assets, {len(indication_terms)} indications")
+                    else:
+                        # Fallback to provided parameters
+                        asset_aliases = asset_names or []
+                        indication_terms = indications or []
+                        company_aliases = company_names or []
+                        nct_ids = [trial_nct] if trial_nct else []
+                        
+                        logger.info(f"Using fallback parameters for trial {trial_id}: {len(asset_aliases)} assets, {len(indication_terms)} indications")
+                    
                     # Run retrieval
                     retrieval_result = await retrieval_processor.execute_retrieval(
                         trial_id=trial_id,
-                        asset_aliases=asset_names or [],
-                        indication_terms=indications or [],
+                        asset_aliases=asset_aliases,
+                        indication_terms=indication_terms,
                         max_results=max_results,
                         trial_nct=trial_nct,
                         trial_phase=trial_phase,
-                        company_name=company_name
+                        company_name=company_name,
+                        company_aliases=company_aliases,
+                        entity_pack=entity_pack  # Pass the entity pack to avoid duplication
                     )
                     
                     if not retrieval_result.success:

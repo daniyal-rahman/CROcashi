@@ -280,7 +280,7 @@ class CTgovTrialDiscoverer:
         primary_indication = entity_pack.indications.primary[0] if entity_pack.indications.primary else None
         
         # Get primary asset
-        primary_asset = entity_pack.asset.canonical
+        primary_asset = entity_pack.asset.canonical if entity_pack.asset is not None else None
         
         # Get primary company
         primary_company = entity_pack.company.canonical
@@ -294,7 +294,7 @@ class CTgovTrialDiscoverer:
         }
         
         # Add aliases to intervention search
-        if entity_pack.asset.aliases:
+        if entity_pack.asset is not None and entity_pack.asset.aliases:
             intervention_terms = [primary_asset] + entity_pack.asset.aliases
             params['intervention'] = ' OR '.join(intervention_terms)
         

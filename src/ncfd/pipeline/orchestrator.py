@@ -40,11 +40,120 @@ from ..ingest.pubmed.queue_service import TaskQueueService
 
 # Database imports
 from ..db.session import session_scope
-from ..db.models import Trial, TrialVersion, Company, Asset
+from ..db.models import Trial, TrialVersion, Company, Asset, CompanyAlias
+
+# Entity imports
+from ..entities.schema import EntityPack as EntityPackSchema, CompanyInfo, AssetInfo, MechanismInfo, IndicationInfo, RegistryInfo, PublisherInfo, DateRangeInfo
 
 logger = logging.getLogger(__name__)
 
 
+class EntityPackManager:
+    """Centralized entity pack management for the orchestrator."""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+    
+    def get_or_create_entity_pack(self, trial_id: int) -> Optional[EntityPackSchema]:
+        """Generate entity pack for a trial from existing database data."""
+        try:
+            with session_scope() as session:
+                # Get trial with related data
+                trial = session.query(Trial).filter(Trial.trial_id == trial_id).first()
+                if not trial:
+                    self.logger.error(f"Trial {trial_id} not found")
+                    return None
+                
+                # Generate entity pack from existing database data
+                return self._generate_entity_pack_from_trial(session, trial)
+                
+        except Exception as e:
+            self.logger.error(f"Error generating entity pack for trial {trial_id}: {e}")
+            return None
+    
+    def _generate_entity_pack_from_trial(self, session, trial: Trial) -> Optional[EntityPackSchema]:
+        """Generate entity pack from existing database data."""
+        try:
+            # Extract company information
+            company_canonical = "Unknown Company"
+            company_aliases = []
+            if trial.sponsor_company:
+                company_canonical = trial.sponsor_company.name
+                # Get company aliases from the CompanyAlias table
+                company_aliases_query = session.query(CompanyAlias.alias).filter(
+                    CompanyAlias.company_id == trial.sponsor_company.company_id
+                ).all()
+                company_aliases = [alias[0] for alias in company_aliases_query]
+            elif trial.sponsor_text:
+                company_canonical = trial.sponsor_text
+                company_aliases = [trial.sponsor_text]
+            
+            # Extract asset information from intervention types
+            asset_canonical = "Unknown Drug"
+            asset_aliases = []
+            if trial.intervention_types:
+                asset_canonical = trial.intervention_types[0] if trial.intervention_types else "Unknown Drug"
+                asset_aliases = trial.intervention_types
+            
+            # Extract indication information
+            indication_primary = [trial.indication] if trial.indication else ["Unknown"]
+            indication_synonyms = [trial.indication.lower()] if trial.indication else ["unknown"]
+            
+            # Generate entity pack schema
+            entity_pack = EntityPackSchema(
+                entity_id=f"trial_{trial.nct_id}",
+                company=CompanyInfo(
+                    canonical=company_canonical,
+                    aliases=company_aliases
+                ),
+                asset=AssetInfo(
+                    canonical=asset_canonical,
+                    aliases=asset_aliases
+                ),
+                mechanism=MechanismInfo(
+                    targets=self._get_mechanism_targets(asset_canonical)
+                ),
+                indications=IndicationInfo(
+                    primary=indication_primary,
+                    synonyms=indication_synonyms
+                ),
+                registries=RegistryInfo(
+                    nct_ids=[trial.nct_id]
+                ),
+                publishers=PublisherInfo(
+                    sponsor_strings=[company_canonical]
+                ),
+                date_ranges=DateRangeInfo(
+                    active_since=trial.first_posted_date.year if trial.first_posted_date else 2020
+                )
+            )
+            
+            self.logger.info(f"Generated entity pack {entity_pack.entity_id} for trial {trial.nct_id}")
+            return entity_pack
+            
+        except Exception as e:
+            self.logger.error(f"Error generating entity pack from trial {trial.nct_id}: {e}")
+            return None
+    
+    def _get_mechanism_targets(self, asset_name: str) -> List[str]:
+        """Get mechanism targets based on asset name."""
+        # This is a simplified version - in practice, this would query the Asset table
+        # or use a more sophisticated mechanism mapping
+        asset_lower = asset_name.lower()
+        
+        if "simufilam" in asset_lower or "pti-125" in asset_lower:
+            return ["filamin A", "FLNA", "filamin-A", "filamin A protein", "amyloid", "tau", "amyloid-beta", "Aβ", "beta-amyloid", "amyloid precursor protein", "APP", "presenilin"]
+        elif "aducanumab" in asset_lower:
+            return ["amyloid", "amyloid-beta", "Aβ", "beta-amyloid", "amyloid precursor protein", "APP"]
+        elif "lecanemab" in asset_lower:
+            return ["amyloid", "amyloid-beta", "Aβ", "beta-amyloid", "amyloid precursor protein", "APP"]
+        else:
+            return ["unknown mechanism"]
+    
+# EntityPack is now generated at runtime - no database persistence needed
+    
+# EntityPack updates are no longer needed since we generate at runtime
+# All data comes from existing database tables
 
 
 @dataclass
@@ -134,6 +243,7 @@ class PipelineOrchestrator:
         self.asset_resolver = AssetResolver()
         self.trial_tracker = TrialVersionTracker(config.get('tracking', {}))
         self.lit_queue = LiteratureQueue(config.get('lit_queue', {}))
+        self.entity_pack_manager = EntityPackManager()
         
         # Initialize PubMed components
         self.pubmed_pipeline = PubMedPipeline(config.get('pubmed', {}))
@@ -571,14 +681,21 @@ class PipelineOrchestrator:
                         warnings=[f"Reused {total_existing} existing documents"]
                     )
             
-            # Delegate to PubMed pipeline with additional context
+            # Get entity packs for all trials
+            entity_packs = []
+            for trial_id in trial_ids:
+                entity_pack = self.entity_pack_manager.get_or_create_entity_pack(trial_id)
+                entity_packs.append(entity_pack)
+            
+            # Delegate to PubMed pipeline with entity packs
             result = await self.pubmed_pipeline.execute(
                 trial_ids=trial_ids,
                 asset_names=self.config.get('pubmed', {}).get('asset_names', []),
                 indications=self.config.get('pubmed', {}).get('indications', []),
                 trial_nct_ids=nct_ids,
                 trial_phases=trial_phases,
-                company_names=company_names
+                company_names=company_names,
+                entity_packs=entity_packs
             )
             
             # Store result
@@ -685,10 +802,14 @@ class PipelineOrchestrator:
             trial_id = trial['trial_id']
             trial_data = trial.get('trial_data', {})
             
+            # Get or create entity pack for this trial
+            entity_pack = self.entity_pack_manager.get_or_create_entity_pack(trial_id)
+            
             # Create proper trial context for the retriever
             trial_context = {
                 'trial_id': trial_id,
                 'nct_id': trial.get('nct_id'),
+                'entity_pack': entity_pack,  # Include entity pack
                 **trial_data  # Include all trial data
             }
             

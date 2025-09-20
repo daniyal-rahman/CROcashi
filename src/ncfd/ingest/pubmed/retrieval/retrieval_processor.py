@@ -88,7 +88,8 @@ class RetrievalProcessor:
         trial_phase: Optional[str] = None,
         company_name: Optional[str] = None,
         company_aliases: Optional[List[str]] = None,
-        max_results: Optional[int] = None
+        max_results: Optional[int] = None,
+        entity_pack: Optional[Any] = None
     ) -> RetrievalOutput:
         """
         Execute complete retrieval pipeline (Steps 1-6) with dual persistence.
@@ -116,15 +117,20 @@ class RetrievalProcessor:
             # Store session metadata for tracking
             retrieval_session_id = session_id
             
-            # Step 1: Create entity pack (canonical entities & aliases)
-            entity_pack = self.entity_pack_builder.create_entity_pack(
-                asset_aliases=asset_aliases,
-                indication_terms=indication_terms,
-                trial_nct=trial_nct,
-                trial_phase=trial_phase,
-                company_name=company_name,
-                company_aliases=company_aliases
-            )
+            # Step 1: Use provided entity pack or create one
+            if entity_pack is None:
+                # Create entity pack using the existing builder (fallback)
+                entity_pack = self.entity_pack_builder.create_entity_pack(
+                    asset_aliases=asset_aliases,
+                    indication_terms=indication_terms,
+                    trial_nct=trial_nct,
+                    trial_phase=trial_phase,
+                    company_name=company_name,
+                    company_aliases=company_aliases
+                )
+                logger.info(f"Created entity pack using EntityPackBuilder for trial {trial_id}")
+            else:
+                logger.info(f"Using provided entity pack for trial {trial_id}")
             
             # Log entity pack snapshot for debugging
             logger.info(f"Entity pack snapshot (session_id={session_id}):")
@@ -133,7 +139,7 @@ class RetrievalProcessor:
             logger.info(f"  Company terms: {entity_pack.get_all_company_terms()}")
             logger.info(f"  NCT IDs: {entity_pack.registries.nct_ids}")
             logger.info(f"  Mechanism targets: {entity_pack.mechanism.targets}")
-            logger.info(f"  Asset canonical: {entity_pack.asset.canonical}")
+            logger.info(f"  Asset canonical: {entity_pack.asset.canonical if entity_pack.asset is not None else 'None'}")
             
             if not entity_pack:
                 return RetrievalOutput(

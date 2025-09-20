@@ -65,6 +65,10 @@ class LLMStudyCardGenerator(BaseLLMGenerator):
             )
             
             # Check success criteria - must have meaningful content
+            # Ensure field_quotes is a list before checking length
+            if not isinstance(field_quotes, list):
+                field_quotes = []
+            
             has_meaningful_content = (
                 study_card_data.get('design_archetype') or
                 study_card_data.get('primary_endpoint') or
@@ -172,7 +176,13 @@ class LLMStudyCardGenerator(BaseLLMGenerator):
                 study_card_data = result.get("study_card_data", {})
                 field_quotes = []
                 
-                for quote_data in result.get("field_quotes", []):
+                # Handle case where LLM returns field_quotes as a single number instead of a list
+                raw_field_quotes = result.get("field_quotes", [])
+                if not isinstance(raw_field_quotes, list):
+                    logger.warning(f"LLM returned field_quotes as {type(raw_field_quotes)} instead of list: {raw_field_quotes}")
+                    raw_field_quotes = []
+                
+                for quote_data in raw_field_quotes:
                     logger.info(f"DEBUG: Processing quote_data: {quote_data}")
                     
                     # Validate that quote_data is a dictionary
@@ -181,10 +191,15 @@ class LLMStudyCardGenerator(BaseLLMGenerator):
                         logger.error("This indicates the LLM returned malformed JSON with numbers instead of quote objects.")
                         continue
                     
+                    # Ensure evidence_quote is a string
+                    evidence_quote = quote_data.get("evidence_quote", "")
+                    if not isinstance(evidence_quote, str):
+                        evidence_quote = str(evidence_quote) if evidence_quote is not None else ""
+                    
                     field_quotes.append(EvidenceField(
                         field_name=quote_data.get("field_name", ""),
                         value=quote_data.get("value"),
-                        evidence_quote=quote_data.get("evidence_quote", ""),
+                        evidence_quote=evidence_quote,
                         confidence=quote_data.get("confidence", 0.8)
                     ))
                 
@@ -395,7 +410,11 @@ Only include fields where you found clear evidence in the document. If a field i
                 parsed_result = parse_llm_json_response(result, expected_fields=["study_card_data", "field_quotes"])
                 if parsed_result:
                     result = parsed_result
-                    logger.info(f"DEBUG: Parsed JSON successfully, field_quotes count: {len(result.get('field_quotes', []))}")
+                    # Safe field_quotes count logging
+                    field_quotes_for_logging = result.get('field_quotes', [])
+                    if not isinstance(field_quotes_for_logging, list):
+                        field_quotes_for_logging = []
+                    logger.info(f"DEBUG: Parsed JSON successfully, field_quotes count: {len(field_quotes_for_logging)}")
                 else:
                     logger.error(f"DEBUG: JSON parsing failed")
                     logger.error(f"DEBUG: Raw response: {result}")

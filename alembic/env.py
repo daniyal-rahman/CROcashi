@@ -8,7 +8,13 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-target_metadata = None  # set to your Base.metadata if using autogenerate
+# Import the Base metadata
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent / "src"))
+from ncfd.db.models import Base
+
+target_metadata = Base.metadata
 
 db_url = os.getenv("DATABASE_URL")
 if not db_url:

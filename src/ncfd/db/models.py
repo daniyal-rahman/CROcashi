@@ -274,6 +274,10 @@ class Trial(Base):
     )
 
 
+# EntityPack is now generated at runtime from existing database tables
+# No database model needed - see EntityPackManager in orchestrator.py
+
+
 class TrialVersion(Base):
     __tablename__ = "trial_versions"
 

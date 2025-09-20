@@ -25,6 +25,7 @@ from .ctgov_types import (
     Condition, Outcome, EnrollmentInfo, StatisticalAnalysis, Location,
     TrialPhase, TrialStatus, InterventionType, StudyType
 )
+from .ctgov_asset_extractor import extract_study_assets_from_ctgov
 
 DEFAULT_BASE_URL = "https://clinicaltrials.gov/api/v2"
 SESSION = requests.Session()
@@ -288,11 +289,36 @@ class CtgovClient:
         # phase = phases[0] if phases else None
         phase = next((p.upper() for p in phases if p.upper() in ["PHASE2", "PHASE3", "PHASE2_PHASE3"]), None)
 
-        intervention_types: List[str] = []
-        for item in (ps.get("armsInterventionsModule", {}) or {}).get("interventions", []) or []:
-            typ = item.get("type")
-            if typ:
-                intervention_types.append(typ)
+        # Use deterministic asset extraction to avoid placebo contamination and competitor leakage
+        raw_record = {"protocolSection": ps}  # Reconstruct for asset extractor
+        try:
+            primary_assets, aliases = extract_study_assets_from_ctgov(raw_record)
+            
+            # Extract primary asset names for backward compatibility with existing schema
+            intervention_types = [asset.canonical_name for asset in primary_assets if asset.is_primary_asset]
+            
+            # Fallback to first asset if no primary assets found
+            if not intervention_types and primary_assets:
+                intervention_types = [primary_assets[0].canonical_name]
+            
+            # Final fallback for edge cases
+            if not intervention_types:
+                intervention_types = ["Unknown Drug"]
+                
+            logger.info(f"Extracted {len(primary_assets)} primary assets and {len(aliases)} aliases for {nct_id}")
+            
+        except Exception as e:
+            logger.warning(f"Asset extraction failed for {nct_id}, falling back to simple extraction: {e}")
+            # Fallback to simple extraction if asset extractor fails
+            intervention_types = []
+            for item in (ps.get("armsInterventionsModule", {}) or {}).get("interventions", []) or []:
+                name = item.get("name", "").strip()
+                typ = item.get("type", "").upper()
+                if name and typ in ['DRUG', 'BIOLOGICAL'] and not any(term in name.lower() for term in ['placebo', 'control', 'vehicle', 'saline', 'sham']):
+                    intervention_types.append(name)
+            if not intervention_types:
+                intervention_types = ["Unknown Drug"]
+        
         intervention_types = sorted(set(intervention_types))
 
         outcomes = (ps.get("outcomesModule", {}) or {}).get("primaryOutcomes", []) or []

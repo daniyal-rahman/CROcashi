@@ -173,10 +173,16 @@ class BaseLLMGenerator(BaseLLMWorker, ABC):
                 for quote_data in result.get("field_quotes", []):
                     self.logger.info(f"DEBUG: Processing quote_data: {quote_data}")
                     from ..extract.models.evidence_field import EvidenceField
+                    
+                    # Ensure evidence_quote is a string
+                    evidence_quote = quote_data.get("evidence_quote", "")
+                    if not isinstance(evidence_quote, str):
+                        evidence_quote = str(evidence_quote) if evidence_quote is not None else ""
+                    
                     field_quotes.append(EvidenceField(
                         field_name=quote_data.get("field_name", ""),
                         value=quote_data.get("value"),
-                        evidence_quote=quote_data.get("evidence_quote", ""),
+                        evidence_quote=evidence_quote,
                         confidence=quote_data.get("confidence", 0.8)
                     ))
                 

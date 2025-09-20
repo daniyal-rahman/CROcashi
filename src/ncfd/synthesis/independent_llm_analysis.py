@@ -378,8 +378,8 @@ STRONG RED FLAGS (only include if VERY strong):
 
         try:
             response = await self._make_api_call([
-                {"role": "system", "text": "You are a senior clinical research analyst with expertise in trial prediction and risk assessment."},
-                {"role": "user", "text": prompt}
+                {"role": "system", "content": "You are a senior clinical research analyst with expertise in trial prediction and risk assessment."},
+                {"role": "user", "content": prompt}
             ])
             
             # Parse JSON response with robust error handling

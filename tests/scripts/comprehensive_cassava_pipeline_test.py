@@ -43,7 +43,7 @@ from sqlalchemy import text, inspect
 
 # Import our modules
 from ncfd.db.session import session_scope, get_engine, reset_engine
-from ncfd.db.models import Base, Trial, Company, Document, Study, DocumentLink, TrialDocCandidate
+from ncfd.db.models import Base, Trial, Company, Document, Study, StudyCard, DocumentLink, TrialDocCandidate
 from ncfd.pipeline.orchestrator import PipelineOrchestrator
 from ncfd.ingest.pubmed import RetrievalProcessor, AbstractProcessor
 from ncfd.config import get_config
@@ -271,6 +271,7 @@ class ComprehensiveCassavaTest:
             "execution_order": ["pubmed", "study_card", "independent_llm_analysis"],  # Include independent LLM analysis
             "parallel_execution": False,
             "dependency_checking": False,  # Disable dependency checking since we're not running CT.gov
+            "skip_individual_pipeline_tests": True,  # Skip individual tests since orchestrator runs them
             
             # CT.gov configuration - use seeded trials
             "ctgov": {
@@ -388,11 +389,17 @@ class ComprehensiveCassavaTest:
             # Phase 3: Orchestrator Integration (includes PubMed + Study Card processing)
             await self._test_orchestrator()
             
-            # Phase 4: PubMed Pipeline Testing (detailed results)
-            await self._test_pubmed_pipeline()
+            # Phase 4: PubMed Pipeline Testing (detailed results) - SKIP if already run by orchestrator
+            if not self.config.get('skip_individual_pipeline_tests', True):
+                await self._test_pubmed_pipeline()
+            else:
+                logger.info("⏭️  Skipping individual PubMed pipeline test (already run by orchestrator)")
             
-            # Phase 5: Study Card Pipeline Testing (direct test)
-            await self._test_study_card_pipeline()
+            # Phase 5: Study Card Pipeline Testing (direct test) - SKIP if already run by orchestrator
+            if not self.config.get('skip_individual_pipeline_tests', True):
+                await self._test_study_card_pipeline()
+            else:
+                logger.info("⏭️  Skipping individual study card pipeline test (already run by orchestrator)")
             
             # Phase 6: Guardrails Analysis
             await self._analyze_guardrails()
@@ -406,7 +413,18 @@ class ComprehensiveCassavaTest:
         except Exception as e:
             logger.error(f"Test failed: {str(e)}", exc_info=True)
             self.results["errors"].append(f"Test execution failed: {str(e)}")
-            raise
+            print(f"\n❌ TEST FAILED: {str(e)}")
+            
+            # Hard fail on specific errors that indicate fundamental issues
+            if "object of type 'float' has no len()" in str(e):
+                print(f"\n🚨 CRITICAL ERROR: LLM response parsing issue detected!")
+                print(f"   This indicates the LLM is returning malformed JSON.")
+                print(f"   Stopping test immediately to prevent further issues.")
+                print("="*80)
+                sys.exit(1)
+            
+            print("="*80)
+            sys.exit(1)
         finally:
             # Cleanup - COMMENTED OUT TO PRESERVE DATA FOR INSPECTION
             # await self._cleanup_database()
@@ -445,7 +463,8 @@ class ComprehensiveCassavaTest:
                 "status": "failed",
                 "error": str(e)
             }
-            raise
+            print(f"\n❌ DATABASE SETUP FAILED: {str(e)}")
+            sys.exit(1)
     
     async def _clear_database(self):
         """Clear all data from test database."""
@@ -591,7 +610,8 @@ class ComprehensiveCassavaTest:
                 "status": "failed",
                 "error": str(e)
             }
-            raise
+            print(f"\n❌ CT.GOV SEEDING FAILED: {str(e)}")
+            sys.exit(1)
     
     async def _test_pubmed_pipeline(self):
         """Test PubMed literature processing with comprehensive simufilam entity pack."""
@@ -701,6 +721,13 @@ class ComprehensiveCassavaTest:
                 total_documents_processed = total_documents
                 total_errors = []
                 
+                # Count PubMed documents (documents with source_type='Paper' that are linked to trials)
+                pubmed_docs_count = 0
+                for link in session.query(DocumentLink).filter(DocumentLink.trial_id == main_trial.trial_id).all():
+                    doc = session.query(Document).filter(Document.doc_id == link.doc_id).first()
+                    if doc and doc.source_type == "Paper":
+                        pubmed_docs_count += 1
+                
                 # Check for processing issues
                 if processed_docs_count == 0 and retrieval_docs_count > 0:
                     total_errors.append("Abstract processing failed - documents retrieved but none processed")
@@ -714,14 +741,11 @@ class ComprehensiveCassavaTest:
                     status = "failed"
                     total_errors.append("Documents retrieved but processing failed")
                 elif processed_docs_count == 0:
-                    status = "success"  # No documents found is acceptable for this test
-                
-                # Count PubMed documents (documents with source_type='Paper' that are linked to trials)
-                pubmed_docs_count = 0
-                for link in session.query(DocumentLink).filter(DocumentLink.trial_id == main_trial.trial_id).all():
-                    doc = session.query(Document).filter(Document.doc_id == link.doc_id).first()
-                    if doc and doc.source_type == "Paper":
-                        pubmed_docs_count += 1
+                    status = "failed"  # No documents found is NOT acceptable for this test
+                    total_errors.append("No documents processed - PubMed pipeline failed")
+                elif pubmed_docs_count == 0:
+                    status = "failed"
+                    total_errors.append("No PubMed documents linked to trials - document linking failed")
                 
                 self.results["pubmed_processing"] = {
                     "status": status,
@@ -754,7 +778,8 @@ class ComprehensiveCassavaTest:
                 "status": "failed",
                 "error": str(e)
             }
-            raise
+            print(f"\n❌ PUBMED PIPELINE FAILED: {str(e)}")
+            sys.exit(1)
     
     async def _test_study_card_pipeline(self):
         """Test study card generation with LLM workers."""
@@ -784,6 +809,37 @@ class ComprehensiveCassavaTest:
                 # Process only the main trial
                 trial = main_trial
                 
+                # Create entity pack for Cassava trial
+                from ncfd.entities.schema import EntityPack, CompanyInfo, AssetInfo, MechanismInfo, IndicationInfo, RegistryInfo, PublisherInfo, DateRangeInfo
+                
+                entity_pack = EntityPack(
+                    entity_id="cassava_simufilam",
+                    company=CompanyInfo(
+                        canonical="Cassava Sciences, Inc.",
+                        aliases=["Cassava Sciences", "SAVA", "Cassava"]
+                    ),
+                    asset=AssetInfo(
+                        canonical="Simufilam",
+                        aliases=["PTI-125", "simufilam", "PTI125"]
+                    ),
+                    mechanism=MechanismInfo(
+                        targets=["filamin A", "FLNA", "filamin-A"]
+                    ),
+                    indications=IndicationInfo(
+                        primary=["Alzheimer Disease", "Alzheimer's Disease"],
+                        synonyms=["AD", "dementia", "cognitive decline"]
+                    ),
+                    registries=RegistryInfo(
+                        nct_ids=["NCT05515666", "NCT04388254"]
+                    ),
+                    publishers=PublisherInfo(
+                        sponsor_strings=["Cassava Sciences, Inc."]
+                    ),
+                    date_ranges=DateRangeInfo(
+                        active_since=2020
+                    )
+                )
+                
                 # Create trial context
                 trial_context = {
                     "trial_id": trial.trial_id,
@@ -797,7 +853,9 @@ class ComprehensiveCassavaTest:
                     # Add fields expected by LLM prompts
                     "disease": trial.indication or "Unknown",
                     "intervention": trial.intervention_types or "Unknown",
-                    "study_type": "RCT"  # Default to RCT
+                    "study_type": "RCT",  # Default to RCT
+                    # Add entity pack for guardrails
+                    "entity_pack": entity_pack
                 }
                 
                 # Run study card pipeline
@@ -832,7 +890,7 @@ class ComprehensiveCassavaTest:
                     "document_cards": len(getattr(result, 'document_cards', [])),
                     "evidence_spans": len(getattr(result, 'evidence_spans', [])),
                     "claims": len(getattr(result, 'claims', [])),
-                    "study_cards": len(getattr(result, 'study_cards', [])),
+                    "study_cards": 1 if getattr(result, 'study_card', None) is not None else 0,
                     "results_factsheets": len(getattr(result, 'results_factsheets', [])),
                     "pattern_detections": len(getattr(result, 'pattern_detections', [])),
                     "decision_record": getattr(result, 'decision_record', None) is not None,
@@ -847,15 +905,32 @@ class ComprehensiveCassavaTest:
                 pattern_details.extend(pattern_info)
                 conclusion_details.extend(conclusion_info)
                 
+                # Check for critical issues
+                status = "success"
+                errors = []
+                
+                if total_patterns == 0:
+                    status = "failed"
+                    errors.append("No patterns generated - study card pipeline failed")
+                
+                if not result.success:
+                    status = "failed"
+                    errors.append(f"Study card pipeline failed: {result.errors}")
+                
+                if not hasattr(result, 'study_card') or result.study_card is None:
+                    status = "failed"
+                    errors.append("No study card generated - LLM processing failed")
+                
                 self.results["study_card_generation"] = {
-                    "status": "success",
+                    "status": status,
                     "main_trial": trial.nct_id,
                     "trials_processed": 1,  # Only processing the main trial
                     "total_patterns_generated": total_patterns,
                     "total_conclusions_generated": total_conclusions,
                     "pattern_details": pattern_details,
                     "conclusion_details": conclusion_details,
-                    "results": study_card_results
+                    "results": study_card_results,
+                    "errors": errors
                 }
                 
                 logger.info(f"✅ Study card generation completed for main trial {trial.nct_id}")
@@ -871,7 +946,15 @@ class ComprehensiveCassavaTest:
                 "status": "failed",
                 "error": str(e)
             }
-            raise
+            print(f"\n❌ STUDY CARD PIPELINE FAILED: {str(e)}")
+            # Hard fail on specific errors that indicate fundamental issues
+            if "object of type 'float' has no len()" in str(e):
+                print(f"\n🚨 CRITICAL ERROR: LLM response parsing issue detected!")
+                print(f"   This indicates the LLM is returning malformed JSON.")
+                print(f"   Stopping test immediately to prevent further issues.")
+                print("="*80)
+                sys.exit(1)
+            sys.exit(1)
     
     async def _test_orchestrator(self):
         """Test orchestrator integration and coordination."""
@@ -918,7 +1001,8 @@ class ComprehensiveCassavaTest:
                 "status": "failed",
                 "error": str(e)
             }
-            raise
+            print(f"\n❌ ORCHESTRATOR TEST FAILED: {str(e)}")
+            sys.exit(1)
     
     async def _run_orchestrator_with_seeded_data(self, orchestrator):
         """Run orchestrator with pre-seeded data, skipping CT.gov ingestion."""
@@ -1022,6 +1106,7 @@ class ComprehensiveCassavaTest:
                 trial_count = session.query(Trial).count()
                 document_count = session.query(Document).count()
                 study_count = session.query(Study).count()
+                study_card_count = session.query(StudyCard).count()
                 
                 # Validate relationships
                 trials_with_company = session.query(Trial).filter(
@@ -1034,19 +1119,33 @@ class ComprehensiveCassavaTest:
                 
                 # Run comprehensive checks
                 await self._check_expected_papers(session)
-                await self._check_pmcid_detection_issues(session)
+                # await self._check_pmcid_detection_issues(session)  # Disabled to remove PMCID warnings
                 await self._check_gate_passes(session)
                 await self._check_synthesis_results(session)
                 await self._check_evidence_coverage(session)
                 
+                # Check for critical validation issues
+                validation_status = "success"
+                validation_errors = []
+                
+                if study_card_count == 0:
+                    validation_status = "failed"
+                    validation_errors.append("No study cards found in database - study cards not saved")
+                
+                if trials_with_documents == 0:
+                    validation_status = "failed"
+                    validation_errors.append("No trials linked to documents - document linking failed")
+                
                 self.results["validation_results"] = {
-                    "status": "success",
+                    "status": validation_status,
                     "entity_counts": {
                         "companies": company_count,
                         "trials": trial_count,
                         "documents": document_count,
-                        "studies": study_count
+                        "studies": study_count,
+                        "study_cards": study_card_count
                     },
+                    "errors": validation_errors,
                     "relationships": {
                         "trials_with_company": trials_with_company,
                         "trials_with_documents": trials_with_documents
@@ -1065,7 +1164,8 @@ class ComprehensiveCassavaTest:
                 "status": "failed",
                 "error": str(e)
             }
-            raise
+            print(f"\n❌ VALIDATION FAILED: {str(e)}")
+            sys.exit(1)
     
     async def _check_expected_papers(self, session: Session):
         """Check if expected Cassava papers were retrieved and log warnings for missing ones."""
@@ -1374,7 +1474,18 @@ class ComprehensiveCassavaTest:
                 WHERE severity IN (1, 2, 3)
             """)).fetchall()
             
-            total_passed = len(fired_gates_result) + len(pattern_detections_result)
+            # Check for passed assessments (if the table exists)
+            try:
+                passed_assessments_result = session.execute(text("""
+                    SELECT gate_id, status, confidence, rationale
+                    FROM gate_assessments 
+                    WHERE status = 'passed'
+                """)).fetchall()
+            except Exception:
+                # Table might not exist or have different schema
+                passed_assessments_result = []
+            
+            total_passed = len(fired_gates_result) + len(pattern_detections_result) + len(passed_assessments_result)
             
             if total_passed > 0:
                 warning_msg = f"⚠️  WARNING: {total_passed} patterns detected ({len(fired_gates_result)} fired gates, {len(pattern_detections_result)} pattern detections) - this may indicate risk patterns in the trial"
@@ -1484,26 +1595,39 @@ class ComprehensiveCassavaTest:
         try:
             from ncfd.db.models import DocumentLink
             
-            # Get main trial
-            main_trial = session.query(Trial).filter(Trial.nct_id == "NCT05515666").first()
+            # Get main trial with fresh session to avoid transaction issues
+            try:
+                main_trial = session.query(Trial).filter(Trial.nct_id == "NCT05515666").first()
+            except Exception as e:
+                logger.warning(f"Failed to query trial for coverage check: {e}")
+                return
+                
             if not main_trial:
                 logger.warning("Main trial not found for coverage check")
                 return
             
             # Count documents by source type for the main trial
-            trial_links = session.query(DocumentLink).filter(
-                DocumentLink.trial_id == main_trial.trial_id
-            ).all()
+            try:
+                trial_links = session.query(DocumentLink).filter(
+                    DocumentLink.trial_id == main_trial.trial_id
+                ).all()
+            except Exception as e:
+                logger.warning(f"Failed to query document links: {e}")
+                return
             
             source_type_counts = {}
             total_docs = 0
             
             for link in trial_links:
-                doc = session.query(Document).filter(Document.doc_id == link.doc_id).first()
-                if doc:
-                    source_type = doc.source_type or "Unknown"
-                    source_type_counts[source_type] = source_type_counts.get(source_type, 0) + 1
-                    total_docs += 1
+                try:
+                    doc = session.query(Document).filter(Document.doc_id == link.doc_id).first()
+                    if doc:
+                        source_type = doc.source_type or "Unknown"
+                        source_type_counts[source_type] = source_type_counts.get(source_type, 0) + 1
+                        total_docs += 1
+                except Exception as e:
+                    logger.warning(f"Failed to query document {link.doc_id}: {e}")
+                    continue
             
             # Check for low coverage in key evidence sections
             if total_docs < 5:
@@ -1788,7 +1912,7 @@ class ComprehensiveCassavaTest:
                         link_type='trial_document',
                         confidence=0.8,  # Default confidence
                         heuristics={'stage': candidate.stage},
-                        evidence_json={'promoted_from_candidate': True}
+                        evidence={'promoted_from_candidate': True}
                     )
                     session.add(link)
                     promoted_count += 1

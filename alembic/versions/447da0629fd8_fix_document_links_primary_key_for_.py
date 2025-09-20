@@ -21,22 +21,43 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Fix document_links table to support basic science papers with NULL nct_id and asset_id."""
     
-    # Drop the existing primary key constraint
-    op.drop_constraint('document_links_pkey', 'document_links', type_='primary')
+    # Check if document_links table exists before trying to modify it
+    connection = op.get_bind()
+    inspector = sa.inspect(connection)
     
-    # Make nct_id nullable (for basic science papers that don't have NCT IDs)
-    op.alter_column('document_links', 'nct_id', nullable=True)
+    if 'document_links' not in inspector.get_table_names():
+        # Table doesn't exist yet, skip this migration
+        return
     
-    # Make asset_id nullable (for basic science papers that don't have specific assets)
-    op.alter_column('document_links', 'asset_id', nullable=True)
+    # Check if the primary key constraint exists before trying to drop it
+    constraints = inspector.get_pk_constraint('document_links')
+    if constraints and constraints.get('constrained_columns'):
+        # Drop the existing primary key constraint
+        constraint_name = constraints.get('name', 'document_links_pkey')
+        op.drop_constraint(constraint_name, 'document_links', type_='primary')
     
-    # Create a new primary key that doesn't include nct_id or asset_id
-    # This allows both to be NULL for basic science papers while maintaining uniqueness
-    op.create_primary_key(
-        'document_links_pkey',
-        'document_links',
-        ['doc_id', 'trial_id', 'company_id', 'link_type']
-    )
+    # Check if columns exist and make them nullable if they do
+    columns = inspector.get_columns('document_links')
+    column_names = [col['name'] for col in columns]
+    
+    if 'nct_id' in column_names:
+        # Make nct_id nullable (for basic science papers that don't have NCT IDs)
+        op.alter_column('document_links', 'nct_id', nullable=True)
+    
+    if 'asset_id' in column_names:
+        # Make asset_id nullable (for basic science papers that don't have specific assets)
+        op.alter_column('document_links', 'asset_id', nullable=True)
+    
+    # Check if primary key already exists before creating it
+    constraints = inspector.get_pk_constraint('document_links')
+    if not constraints or not constraints.get('constrained_columns'):
+        # Create a new primary key that doesn't include nct_id or asset_id
+        # This allows both to be NULL for basic science papers while maintaining uniqueness
+        op.create_primary_key(
+            'document_links_pkey',
+            'document_links',
+            ['doc_id', 'trial_id', 'company_id', 'link_type']
+        )
 
 
 def downgrade() -> None:
@@ -51,8 +72,15 @@ def downgrade() -> None:
     2. Or update them to have valid values
     """
     
-    # Check for NULL values first
+    # Check if document_links table exists before trying to modify it
     connection = op.get_bind()
+    inspector = sa.inspect(connection)
+    
+    if 'document_links' not in inspector.get_table_names():
+        # Table doesn't exist, nothing to downgrade
+        return
+    
+    # Check for NULL values first
     null_nct_count = connection.execute(
         sa.text("SELECT COUNT(*) FROM document_links WHERE nct_id IS NULL")
     ).scalar()

@@ -10,7 +10,7 @@ This module implements the guardrails from the retrieval specification:
 import logging
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional, Literal
-from ....entities.schema import EntityPack
+from ncfd.entities.schema import EntityPack
 
 logger = logging.getLogger(__name__)
 
@@ -195,8 +195,9 @@ class GuardrailsSystem:
         
         # Also check for drug terms (expression of concern papers might not mention indication)
         drug_terms = []
-        drug_terms.extend(entity_pack.asset.aliases)
-        drug_terms.append(entity_pack.asset.canonical)
+        if entity_pack.asset is not None:
+            drug_terms.extend(entity_pack.asset.aliases)
+            drug_terms.append(entity_pack.asset.canonical)
         has_drug_signal = any(term.lower() in text for term in drug_terms)
         
         # Check for NCT ID (overrides indication requirement)
@@ -255,8 +256,9 @@ class GuardrailsSystem:
         
         # Check for drug terms in title/abstract
         drug_terms = []
-        drug_terms.extend(entity_pack.asset.aliases)
-        drug_terms.append(entity_pack.asset.canonical)
+        if entity_pack.asset is not None:
+            drug_terms.extend(entity_pack.asset.aliases)
+            drug_terms.append(entity_pack.asset.canonical)
         
         # Also check for mechanism targets (e.g., "filamin A" for simufilam)
         mechanism_terms = entity_pack.mechanism.targets if hasattr(entity_pack.mechanism, 'targets') else []

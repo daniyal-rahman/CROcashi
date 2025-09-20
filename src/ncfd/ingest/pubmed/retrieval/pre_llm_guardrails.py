@@ -16,8 +16,8 @@ Key Features:
 import logging
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional, Tuple
-from ....entities.schema import EntityPack
-from ....db.models import Document, DocumentText
+from ncfd.entities.schema import EntityPack
+from ncfd.db.models import Document, DocumentText
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +95,17 @@ class PreLLMGuardrailsSystem:
         Returns:
             PreLLMGuardrailsResult with decision and details
         """
+        # Check if entity_pack is None
+        if entity_pack is None:
+            logger.warning("Entity pack is None, skipping guardrails checks")
+            return PreLLMGuardrailsResult(
+                should_process=True,
+                risk_score=0.0,
+                reason="No entity pack available",
+                risk_components={},
+                rejection_details={}
+            )
+        
         # Get document content
         title = document.title or ""
         abstract = ""
@@ -239,6 +250,9 @@ class PreLLMGuardrailsSystem:
             Dict with relevance information
         """
         # Get asset terms
+        if entity_pack.asset is None:
+            return {"relevance_score": 0.0, "asset_found": [], "indication_found": []}
+        
         asset_terms = entity_pack.asset.aliases + [entity_pack.asset.canonical]
         asset_found = [term for term in asset_terms if term.lower() in text]
         

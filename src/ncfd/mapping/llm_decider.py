@@ -424,8 +424,8 @@ def decide_with_llm_research(
             resp = cli.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "text": system},
-                    {"role": "user", "text": user}
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user}
                 ],
                 response_format={"type": "json_object"},
             )
