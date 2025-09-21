@@ -1,0 +1,356 @@
+{
+  "resolver_ignore_sponsor_patterns": [
+    {
+      "pattern": "^NIH$",
+      "note": "National Institutes of Health"
+    },
+    {
+      "pattern": "^NCI$",
+      "note": "National Cancer Institute"
+    },
+    {
+      "pattern": "^NIAID$",
+      "note": "National Institute of Allergy and Infectious Diseases"
+    },
+    {
+      "pattern": "^NIMH$",
+      "note": "National Institute of Mental Health"
+    },
+    {
+      "pattern": "^NINDS$",
+      "note": "National Institute of Neurological Disorders and Stroke"
+    },
+    {
+      "pattern": "^NHLBI$",
+      "note": "National Heart, Lung, and Blood Institute"
+    },
+    {
+      "pattern": "^NIDDK$",
+      "note": "National Institute of Diabetes and Digestive and Kidney Diseases"
+    },
+    {
+      "pattern": "^NIEHS$",
+      "note": "National Institute of Environmental Health Sciences"
+    },
+    {
+      "pattern": "^NIGMS$",
+      "note": "National Institute of General Medical Sciences"
+    },
+    {
+      "pattern": "^NICHD$",
+      "note": "National Institute of Child Health and Human Development"
+    },
+    {
+      "pattern": "^NIDA$",
+      "note": "National Institute on Drug Abuse"
+    },
+    {
+      "pattern": "^NIAAA$",
+      "note": "National Institute on Alcohol Abuse and Alcoholism"
+    },
+    {
+      "pattern": "^NIDCR$",
+      "note": "National Institute of Dental and Craniofacial Research"
+    },
+    {
+      "pattern": "^NIBIB$",
+      "note": "National Institute of Biomedical Imaging and Bioengineering"
+    },
+    {
+      "pattern": "^NCCIH$",
+      "note": "National Center for Complementary and Integrative Health"
+    },
+    {
+      "pattern": "^NLM$",
+      "note": "National Library of Medicine"
+    },
+    {
+      "pattern": "^FIC$",
+      "note": "Fogarty International Center"
+    },
+    {
+      "pattern": "^NCATS$",
+      "note": "National Center for Advancing Translational Sciences"
+    },
+    {
+      "pattern": "^OD$",
+      "note": "Office of the Director"
+    },
+    {
+      "pattern": "^ORWH$",
+      "note": "Office of Research on Women's Health"
+    },
+    {
+      "pattern": "^CDC$",
+      "note": "Centers for Disease Control and Prevention"
+    },
+    {
+      "pattern": "^FDA$",
+      "note": "Food and Drug Administration"
+    },
+    {
+      "pattern": "^VA$",
+      "note": "Department of Veterans Affairs"
+    },
+    {
+      "pattern": "^DOD$",
+      "note": "Department of Defense"
+    },
+    {
+      "pattern": "^NSF$",
+      "note": "National Science Foundation"
+    },
+    {
+      "pattern": "^NASA$",
+      "note": "National Aeronautics and Space Administration"
+    },
+    {
+      "pattern": "^DOE$",
+      "note": "Department of Energy"
+    },
+    {
+      "pattern": "^USDA$",
+      "note": "United States Department of Agriculture"
+    },
+    {
+      "pattern": "^EPA$",
+      "note": "Environmental Protection Agency"
+    },
+    {
+      "pattern": "Center",
+      "note": "Contains Center"
+    },
+    {
+      "pattern": "Hospital",
+      "note": "Contains Hospital"
+    },
+    {
+      "pattern": "Institute",
+      "note": "Contains Institute"
+    },
+    {
+      "pattern": "University",
+      "note": "Contains University"
+    },
+    {
+      "pattern": "Foundation",
+      "note": "Contains Foundation"
+    },
+    {
+      "pattern": "Clinic",
+      "note": "Contains Clinic"
+    },
+    {
+      "pattern": "Medical",
+      "note": "Contains Medical"
+    },
+    {
+      "pattern": "Research",
+      "note": "Contains Research"
+    },
+    {
+      "pattern": "Cancer",
+      "note": "Contains Cancer"
+    },
+    {
+      "pattern": "National",
+      "note": "Contains National"
+    },
+    {
+      "pattern": "College",
+      "note": "Contains College"
+    },
+    {
+      "pattern": "Academy",
+      "note": "Contains Academy"
+    },
+    {
+      "pattern": "School",
+      "note": "Contains School"
+    },
+    {
+      "pattern": "Laboratory",
+      "note": "Contains Laboratory"
+    },
+    {
+      "pattern": "Lab",
+      "note": "Contains Lab"
+    },
+    {
+      "pattern": "Department",
+      "note": "Contains Department"
+    },
+    {
+      "pattern": "Division",
+      "note": "Contains Division"
+    },
+    {
+      "pattern": "Program",
+      "note": "Contains Program"
+    },
+    {
+      "pattern": "Government",
+      "note": "Contains Government"
+    },
+    {
+      "pattern": "Public",
+      "note": "Contains Public"
+    },
+    {
+      "pattern": "State",
+      "note": "Contains State"
+    },
+    {
+      "pattern": "Federal",
+      "note": "Contains Federal"
+    },
+    {
+      "pattern": "Ministry",
+      "note": "Contains Ministry"
+    },
+    {
+      "pattern": "Authority",
+      "note": "Contains Authority"
+    },
+    {
+      "pattern": "Agency",
+      "note": "Contains Agency"
+    },
+    {
+      "pattern": "Bureau",
+      "note": "Contains Bureau"
+    },
+    {
+      "pattern": "Office",
+      "note": "Contains Office"
+    },
+    {
+      "pattern": "Service",
+      "note": "Contains Service"
+    },
+    {
+      "pattern": "International",
+      "note": "Contains International"
+    },
+    {
+      "pattern": "European",
+      "note": "Contains European"
+    },
+    {
+      "pattern": "Regional",
+      "note": "Contains Regional"
+    },
+    {
+      "pattern": "Local",
+      "note": "Contains Local"
+    },
+    {
+      "pattern": "^NIH.*Institute",
+      "note": "NIH Institute pattern"
+    },
+    {
+      "pattern": "^National.*Institute",
+      "note": "National Institute pattern"
+    },
+    {
+      "pattern": "^University.*",
+      "note": "University pattern"
+    },
+    {
+      "pattern": "^.*University$",
+      "note": "University pattern"
+    },
+    {
+      "pattern": "^Hospital.*",
+      "note": "Hospital pattern"
+    },
+    {
+      "pattern": "^.*Hospital$",
+      "note": "Hospital pattern"
+    },
+    {
+      "pattern": "^Medical.*Center",
+      "note": "Medical Center pattern"
+    },
+    {
+      "pattern": "^.*Medical Center$",
+      "note": "Medical Center pattern"
+    },
+    {
+      "pattern": "^Foundation.*",
+      "note": "Foundation pattern"
+    },
+    {
+      "pattern": "^.*Foundation$",
+      "note": "Foundation pattern"
+    },
+    {
+      "pattern": "^Research.*Institute",
+      "note": "Research Institute pattern"
+    },
+    {
+      "pattern": "^.*Center$",
+      "note": "Center pattern"
+    },
+    {
+      "pattern": "^Center.*",
+      "note": "Center pattern"
+    },
+    {
+      "pattern": "^.*Medical Center$",
+      "note": "Medical Center pattern"
+    },
+    {
+      "pattern": "^.*Hospital$",
+      "note": "Hospital pattern"
+    },
+    {
+      "pattern": "^.*University$",
+      "note": "University pattern"
+    },
+    {
+      "pattern": "^.*Foundation$",
+      "note": "Foundation pattern"
+    },
+    {
+      "pattern": "^.*Institute$",
+      "note": "Institute pattern"
+    },
+    {
+      "pattern": "^.*Clinic$",
+      "note": "Clinic pattern"
+    },
+    {
+      "pattern": "^.*Laboratory$",
+      "note": "Laboratory pattern"
+    },
+    {
+      "pattern": "^.*Lab$",
+      "note": "Lab pattern"
+    },
+    {
+      "pattern": "^.*Department$",
+      "note": "Department pattern"
+    },
+    {
+      "pattern": "^.*Division$",
+      "note": "Division pattern"
+    },
+    {
+      "pattern": "^.*Program$",
+      "note": "Program pattern"
+    },
+    {
+      "pattern": "^.*College$",
+      "note": "College pattern"
+    },
+    {
+      "pattern": "^.*Academy$",
+      "note": "Academy pattern"
+    },
+    {
+      "pattern": "^.*School$",
+      "note": "School pattern"
+    }
+  ]
+}
