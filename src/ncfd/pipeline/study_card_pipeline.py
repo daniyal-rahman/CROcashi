@@ -678,10 +678,9 @@ class StudyCardPipeline:
         if value is None:
             return None
         
-        # Handle dictionaries - convert to JSON string
+        # Handle dictionaries - try to extract meaningful single value
         if isinstance(value, dict):
-            import json
-            return json.dumps(value)
+            return self._extract_from_dict(value)
         
         # Handle lists/tuples - take the first non-numeric element
         if isinstance(value, (list, tuple)) and len(value) > 0:
@@ -692,6 +691,90 @@ class StudyCardPipeline:
             return str(value[0]) if value else None
         
         return str(value) if value is not None else None
+    
+    def _extract_from_dict(self, value_dict):
+        """Extract meaningful single value from complex dictionary."""
+        if not isinstance(value_dict, dict):
+            return str(value_dict)
+        
+        # If it's a simple dict with one key-value pair, extract the value
+        if len(value_dict) == 1:
+            key, val = next(iter(value_dict.items()))
+            # If the value is a string, use it directly
+            if isinstance(val, str):
+                return val
+            # If the value is a number, include the key for context
+            elif isinstance(val, (int, float)):
+                return f"{key}: {val}"
+            # Otherwise, convert to string
+            else:
+                return str(val)
+        
+        # If it's a complex dict, try to find the most meaningful value
+        # Look for common patterns in LLM responses
+        
+        # Check for study-specific entries (common pattern)
+        study_keys = ['study', 'trial', 'primary', 'main', 'key']
+        for key in study_keys:
+            if key in value_dict:
+                val = value_dict[key]
+                if isinstance(val, str) and len(val.strip()) > 0:
+                    return val
+        
+        # Check for the longest string value
+        string_values = []
+        for key, val in value_dict.items():
+            if isinstance(val, str) and len(val.strip()) > 0:
+                string_values.append((len(val), val))
+        
+        if string_values:
+            # Return the longest string value
+            string_values.sort(reverse=True)
+            return string_values[0][1]
+        
+        # Check for numeric values with context
+        numeric_values = []
+        for key, val in value_dict.items():
+            if isinstance(val, (int, float)):
+                numeric_values.append(f"{key}: {val}")
+        
+        if numeric_values:
+            return numeric_values[0]
+        
+        # Fallback: convert to JSON string
+        import json
+        try:
+            return json.dumps(value_dict)
+        except (TypeError, ValueError):
+            return str(value_dict)
+    
+    def _safe_json_dumps(self, value):
+        """Safely convert value to JSON string, handling complex nested structures."""
+        if value is None:
+            return None
+        
+        import json
+        
+        # If it's already a string, check if it's valid JSON
+        if isinstance(value, str):
+            try:
+                # Try to parse and re-serialize to ensure it's valid JSON
+                parsed = json.loads(value)
+                return json.dumps(parsed)
+            except (json.JSONDecodeError, TypeError):
+                # If it's not valid JSON, wrap it as a string
+                return json.dumps(value)
+        
+        # If it's a dict or list, try to serialize it
+        if isinstance(value, (dict, list)):
+            try:
+                return json.dumps(value)
+            except (TypeError, ValueError):
+                # If serialization fails, convert to string representation
+                return json.dumps(str(value))
+        
+        # For other types, convert to string and wrap in JSON
+        return json.dumps(str(value))
     
     def _extract_boolean_value(self, value):
         """Extract boolean value from potentially complex LLM response."""
@@ -791,21 +874,21 @@ class StudyCardPipeline:
                     'doc_id': study_card.doc_id,
                     'design_archetype': self._extract_single_value(getattr(study_card, 'design_archetype', None)),
                     'is_blinded': self._extract_boolean_value(getattr(study_card, 'is_blinded', None)),
-                    'analysis_set': json.dumps(getattr(study_card, 'analysis_set', None)) if getattr(study_card, 'analysis_set', None) is not None else None,
+                    'analysis_set': self._safe_json_dumps(getattr(study_card, 'analysis_set', None)),
                     'population_description': self._extract_single_value(getattr(study_card, 'population_description', None)),
-                    'stratification_factors': json.dumps(getattr(study_card, 'stratification_factors', [])),
-                    'covariate_adjustment': json.dumps(getattr(study_card, 'covariate_adjustment', [])),
+                    'stratification_factors': self._safe_json_dumps(getattr(study_card, 'stratification_factors', [])),
+                    'covariate_adjustment': self._safe_json_dumps(getattr(study_card, 'covariate_adjustment', [])),
                     'primary_endpoint': self._extract_single_value(getattr(study_card, 'primary_endpoint', None)),
-                    'secondary_endpoints': json.dumps(getattr(study_card, 'secondary_endpoints', [])),
+                    'secondary_endpoints': self._safe_json_dumps(getattr(study_card, 'secondary_endpoints', [])),
                     'summary_measure': getattr(study_card, 'summary_measure', None),
                     'alpha_level': getattr(study_card, 'alpha_level', None),
-                    'is_one_sided': getattr(study_card, 'is_one_sided', None),
+                    'is_one_sided': self._extract_boolean_value(getattr(study_card, 'is_one_sided', None)),
                     'multiplicity_adjustment': getattr(study_card, 'multiplicity_adjustment', None),
-                    'sample_size_reassessment': getattr(study_card, 'sample_size_reassessment', None),
-                    'interim_looks': json.dumps(getattr(study_card, 'interim_looks', [])),
+                    'sample_size_reassessment': self._extract_boolean_value(getattr(study_card, 'sample_size_reassessment', None)),
+                    'interim_looks': self._safe_json_dumps(getattr(study_card, 'interim_looks', [])),
                     'interim_timing': getattr(study_card, 'interim_timing', None),
                     'spending_function': getattr(study_card, 'spending_function', None),
-                    'stop_rules': json.dumps(getattr(study_card, 'stop_rules', [])),
+                    'stop_rules': self._safe_json_dumps(getattr(study_card, 'stop_rules', [])),
                     'missingness_assumption': getattr(study_card, 'missingness_assumption', None),
                     'missingness_pattern': getattr(study_card, 'missingness_pattern', None),
                     'imputation_method': getattr(study_card, 'imputation_method', None),
@@ -813,7 +896,7 @@ class StudyCardPipeline:
                     'intercurrent_events_policy': getattr(study_card, 'intercurrent_events_policy', None),
                     'endpoint_ascertainment': self._extract_single_value(getattr(study_card, 'endpoint_ascertainment', None)),
                     'assessment_interval': getattr(study_card, 'assessment_interval', None),
-                    'adjudication_committee': bool(getattr(study_card, 'adjudication_committee', None)) if getattr(study_card, 'adjudication_committee', None) is not None else None
+                    'adjudication_committee': self._extract_boolean_value(getattr(study_card, 'adjudication_committee', None))
                 })
                 session.commit()
                 logger.info(f"Study card saved to database for doc_id: {study_card.doc_id}")

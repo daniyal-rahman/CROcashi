@@ -402,10 +402,13 @@ class ComprehensiveCassavaTestV2:
             # Phase 4: Study Card Generation
             await self._run_study_card_generation()
             
-            # Phase 5: Independent LLM Analysis
+            # Phase 5: Pattern Evaluation and Gate Firing
+            await self._run_pattern_evaluation()
+            
+            # Phase 6: Independent LLM Analysis
             await self._run_independent_analysis()
             
-            # Phase 6: Validation and Reporting
+            # Phase 7: Validation and Reporting
             await self._validate_results()
             
             # Final reporting
@@ -803,9 +806,65 @@ class ComprehensiveCassavaTestV2:
             print(f"\n❌ STUDY CARD GENERATION FAILED: {str(e)}")
             sys.exit(1)
     
+    async def _run_pattern_evaluation(self):
+        """Run pattern evaluation and gate firing for Cassava trials."""
+        logger.info("🎯 TEST: Phase 5: Running pattern evaluation and gate firing")
+        
+        try:
+            # Initialize orchestrator
+            logger.info("🚪 TEST: Initializing PipelineOrchestrator")
+            orchestrator = PipelineOrchestrator(self.config)
+            
+            # Get Cassava trials from database
+            logger.info("🚪 TEST: Querying database for Cassava trials")
+            with session_scope() as session:
+                cassava_trials = session.query(Trial).filter(
+                    Trial.sponsor_text.like('%Cassava%')
+                ).all()
+                logger.info(f"🚪 TEST: Found {len(cassava_trials)} Cassava trials in database")
+                
+                if not cassava_trials:
+                    logger.warning("🚪 TEST: No Cassava trials found for signal evaluation")
+                    return
+                
+                # Convert to trial list format
+                trial_list = []
+                for trial in cassava_trials:
+                    trial_data = {
+                        'trial_id': trial.trial_id,
+                        'nct_id': trial.nct_id,
+                        'is_pivotal': trial.is_pivotal
+                    }
+                    trial_list.append(trial_data)
+                    logger.info(f"🚪 TEST: Added trial to list: {trial_data}")
+            
+            # Run pattern evaluation
+            logger.info(f"🎯 TEST: Calling orchestrator.run_pattern_evaluation with {len(trial_list)} trials")
+            logger.info(f"🎯 TEST: Trial list being passed to orchestrator: {trial_list}")
+            pattern_result = orchestrator.run_pattern_evaluation(trial_list)
+            
+            if pattern_result:
+                self.results["pattern_evaluation"] = {
+                    "success": True,
+                    "trials_processed": pattern_result.get('trials_processed', 0),
+                    "patterns_detected": pattern_result.get('patterns_detected', 0),
+                    "gates_fired": pattern_result.get('gates_fired', 0),
+                    "trial_results": pattern_result.get('trial_results', [])
+                }
+                logger.info(f"✅ Pattern evaluation completed: {pattern_result.get('trials_processed', 0)} trials, {pattern_result.get('patterns_detected', 0)} patterns, {pattern_result.get('gates_fired', 0)} gates")
+            else:
+                logger.error("❌ Pattern evaluation returned no results")
+                self.results["pattern_evaluation"] = {"success": False, "error": "No results returned"}
+                
+        except Exception as e:
+            logger.error(f"Pattern evaluation failed: {e}")
+            self.results["pattern_evaluation"] = {"success": False, "error": str(e)}
+            print(f"\n❌ PATTERN EVALUATION FAILED: {str(e)}")
+            sys.exit(1)
+    
     async def _run_independent_analysis(self):
         """Run independent LLM analysis for Cassava trials."""
-        logger.info("🧠 Phase 5: Running independent LLM analysis")
+        logger.info("🧠 Phase 6: Running independent LLM analysis")
         
         try:
             # Initialize orchestrator
@@ -868,7 +927,7 @@ class ComprehensiveCassavaTestV2:
     
     async def _validate_results(self):
         """Validate test results and data integrity."""
-        logger.info("✅ Phase 6: Validating results")
+        logger.info("✅ Phase 7: Validating results")
         
         try:
             with session_scope() as session:
@@ -1027,7 +1086,7 @@ class ComprehensiveCassavaTestV2:
     
     async def _check_gate_passes(self, session: Session):
         """Check if any gates passed and log warnings."""
-        logger.info("🚪 Checking for gate passes...")
+        logger.info("🎯 Checking for gate passes...")
         
         # Check for gate passes using raw SQL to avoid model/schema mismatches
         try:

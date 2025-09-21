@@ -339,12 +339,16 @@ class PipelineOrchestrator:
             self.logger.info("Step 6: Running study card generation")
             study_card_results = self.run_study_card_generation(public_trials)
             
-            # Step 7: Independent LLM Analysis
-            self.logger.info("Step 7: Running independent LLM analysis")
+            # Step 7: Signal evaluation and gate firing
+            self.logger.info("Step 7: Running signal evaluation and gate firing")
+            signal_results = self.run_signal_evaluation(public_trials)
+            
+            # Step 8: Independent LLM Analysis
+            self.logger.info("Step 8: Running independent LLM analysis")
             independent_analysis_results = await self.run_independent_llm_analysis(public_trials)
             
-            # Step 8: Update orchestration state
-            self.logger.info("Step 7: Updating orchestration state")
+            # Step 9: Update orchestration state
+            self.logger.info("Step 9: Updating orchestration state")
             self._update_orchestration_state()
             
             # Finalize execution result
@@ -874,6 +878,336 @@ class PipelineOrchestrator:
             self.logger.error(f"Study card generation failed for trial {trial.get('trial_id')}: {e}")
             raise
     
+    # ============================================================================
+    # SIGNAL EVALUATION METHODS
+    # ============================================================================
+    
+    def run_pattern_evaluation(self, trial_list: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        Run pattern-based evaluation for a list of trials.
+        
+        Args:
+            trial_list: List of trial data dictionaries with trial_id, nct_id, is_pivotal
+            
+        Returns:
+            Dictionary with evaluation results
+        """
+        self.logger.info(f"🎯 ORCHESTRATOR: Starting pattern evaluation for {len(trial_list)} trials")
+        self.logger.info(f"🎯 ORCHESTRATOR: Input trial_list = {trial_list}")
+        
+        try:
+            start_time = datetime.now(timezone.utc)
+            results = {
+                'trials_processed': 0,
+                'patterns_detected': 0,
+                'gates_fired': 0,
+                'trial_results': []
+            }
+            
+            with session_scope() as session:
+                self.logger.info(f"🎯 ORCHESTRATOR: Processing {len(trial_list)} trials in session")
+                for i, trial_data in enumerate(trial_list):
+                    trial_id = trial_data.get('trial_id')
+                    self.logger.info(f"🎯 ORCHESTRATOR: Processing trial {i+1}/{len(trial_list)}: trial_id={trial_id}, data={trial_data}")
+                    if not trial_id:
+                        self.logger.warning(f"🎯 ORCHESTRATOR: Skipping trial {i+1} - no trial_id")
+                        continue
+                    
+                    try:
+                        # Get pattern detections for this trial
+                        self.logger.info(f"🎯 ORCHESTRATOR: Getting pattern detections for trial {trial_id}")
+                        pattern_detections = self._get_pattern_detections_for_trial(session, trial_id)
+                        self.logger.info(f"🎯 ORCHESTRATOR: Found {len(pattern_detections)} pattern detections for trial {trial_id}")
+                        
+                        if not pattern_detections:
+                            self.logger.warning(f"🎯 ORCHESTRATOR: No pattern detections found for trial {trial_id}")
+                            continue
+                        
+                        # Evaluate gates based on patterns
+                        self.logger.info(f"🎯 ORCHESTRATOR: Evaluating gates based on patterns for trial {trial_id}")
+                        gates = self._evaluate_pattern_based_gates(pattern_detections)
+                        self.logger.info(f"🎯 ORCHESTRATOR: Gates evaluated for trial {trial_id}: {[(k, v.fired, v.rationale) for k, v in gates.items()]}")
+                        
+                        fired_gates = {gid: gate for gid, gate in gates.items() if gate.fired}
+                        results['gates_fired'] += len(fired_gates)
+                        self.logger.info(f"🎯 ORCHESTRATOR: Fired gates for trial {trial_id}: {len(fired_gates)} gates")
+                        
+                        # Calculate pattern-based score
+                        run_id = f"pattern_eval_{start_time.strftime('%Y%m%d_%H%M%S')}"
+                        self.logger.info(f"🎯 ORCHESTRATOR: Calculating pattern-based score for trial {trial_id} with run_id {run_id}")
+                        score = self._calculate_pattern_score(trial_id, run_id, pattern_detections, gates)
+                        self.logger.info(f"🎯 ORCHESTRATOR: Score calculated for trial {trial_id}: p_fail={score.p_fail}")
+                        
+                        # Save gates to database
+                        self.logger.info(f"🎯 ORCHESTRATOR: Saving pattern-based gates to database for trial {trial_id}")
+                        self._save_pattern_gates_to_db(session, trial_id, run_id, gates, score)
+                        self.logger.info(f"🎯 ORCHESTRATOR: Database save completed for trial {trial_id}")
+                        
+                        # Track results
+                        results['trials_processed'] += 1
+                        results['patterns_detected'] += len(pattern_detections)
+                        results['trial_results'].append({
+                            'trial_id': trial_id,
+                            'patterns_detected': len(pattern_detections),
+                            'gates_fired': len(fired_gates),
+                            'p_fail': score.p_fail,
+                            'success': True
+                        })
+                        
+                    except Exception as e:
+                        self.logger.error(f"🎯 ORCHESTRATOR: Error processing trial {trial_id}: {e}")
+                        results['trial_results'].append({
+                            'trial_id': trial_id,
+                            'patterns_detected': 0,
+                            'gates_fired': 0,
+                            'p_fail': 0.55,  # Default prior
+                            'success': False,
+                            'error': str(e)
+                        })
+            
+            end_time = datetime.now(timezone.utc)
+            processing_time = (end_time - start_time).total_seconds()
+            
+            self.logger.info(f"🎯 ORCHESTRATOR: Pattern evaluation completed: {results['trials_processed']} trials, {results['patterns_detected']} patterns, {results['gates_fired']} gates in {processing_time:.1f}s")
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"🎯 ORCHESTRATOR: Pattern evaluation failed: {e}")
+            return None
+    
+    def _get_pattern_detections_for_trial(self, session, trial_id: int) -> List[Dict[str, Any]]:
+        """Get pattern detections for a trial from the database."""
+        from sqlalchemy import text
+        
+        # Query pattern detections directly since we don't have a model
+        query = text("""
+            SELECT detection_id, family_id, pattern_id, severity, confidence, rationale, detected_at
+            FROM pattern_detections 
+            WHERE trial_id = :trial_id
+            ORDER BY detected_at DESC
+        """)
+        
+        result = session.execute(query, {'trial_id': trial_id})
+        detections = []
+        
+        for row in result:
+            detections.append({
+                'detection_id': row.detection_id,
+                'family_id': row.family_id,
+                'pattern_id': row.pattern_id,
+                'severity': row.severity,
+                'confidence': row.confidence,
+                'rationale': row.rationale,
+                'detected_at': row.detected_at
+            })
+        
+        return detections
+    
+    def _evaluate_pattern_based_gates(self, pattern_detections: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Evaluate gates based on pattern detections using compounding probabilities."""
+        from dataclasses import dataclass
+        
+        @dataclass
+        class PatternGateResult:
+            fired: bool
+            probability: float
+            rationale: str
+            supporting_patterns: List[str]
+        
+        gates = {}
+        
+        # Group patterns by family
+        family_patterns = {}
+        for detection in pattern_detections:
+            family_id = detection['family_id']
+            if family_id not in family_patterns:
+                family_patterns[family_id] = []
+            family_patterns[family_id].append(detection)
+        
+        # Gate 1: Endpoint Risk (F1 + F3 patterns)
+        # High risk if multiple endpoint-related patterns detected
+        endpoint_patterns = []
+        for family_id in ['F1', 'F3']:
+            if family_id in family_patterns:
+                endpoint_patterns.extend(family_patterns[family_id])
+        
+        if len(endpoint_patterns) >= 2:  # Multiple endpoint concerns
+            # Compounding probability: each additional pattern increases risk
+            base_prob = 0.3
+            compounding_factor = 0.2
+            probability = min(0.95, base_prob + (len(endpoint_patterns) - 1) * compounding_factor)
+            
+            gates['G1'] = PatternGateResult(
+                fired=True,
+                probability=probability,
+                rationale=f"Multiple endpoint risk patterns detected ({len(endpoint_patterns)} patterns)",
+                supporting_patterns=[f"{p['family_id']}{p['pattern_id']}" for p in endpoint_patterns]
+            )
+        else:
+            gates['G1'] = PatternGateResult(
+                fired=False,
+                probability=0.1,
+                rationale="Insufficient endpoint risk patterns",
+                supporting_patterns=[]
+            )
+        
+        # Gate 2: Analysis Gaming (F2 + F4 patterns)
+        # High risk if power/analysis patterns detected
+        analysis_patterns = []
+        for family_id in ['F2', 'F4']:
+            if family_id in family_patterns:
+                analysis_patterns.extend(family_patterns[family_id])
+        
+        if len(analysis_patterns) >= 1:  # Any analysis concern
+            # Severity-weighted probability
+            max_severity = max(float(p['severity']) for p in analysis_patterns)
+            base_prob = 0.2 + (max_severity * 0.15)  # 0.2 + (0-3) * 0.15 = 0.2-0.65
+            
+            gates['G2'] = PatternGateResult(
+                fired=True,
+                probability=base_prob,
+                rationale=f"Analysis gaming patterns detected (severity {max_severity})",
+                supporting_patterns=[f"{p['family_id']}{p['pattern_id']}" for p in analysis_patterns]
+            )
+        else:
+            gates['G2'] = PatternGateResult(
+                fired=False,
+                probability=0.05,
+                rationale="No analysis gaming patterns detected",
+                supporting_patterns=[]
+            )
+        
+        # Gate 3: Safety/Tolerability Risk (F7 patterns)
+        # High risk if safety patterns detected
+        safety_patterns = family_patterns.get('F7', [])
+        
+        if len(safety_patterns) >= 1:
+            # Confidence-weighted probability
+            avg_confidence = sum(float(p['confidence']) for p in safety_patterns) / len(safety_patterns)
+            probability = 0.4 + (avg_confidence * 0.4)  # 0.4-0.8 based on confidence
+            
+            gates['G3'] = PatternGateResult(
+                fired=True,
+                probability=probability,
+                rationale=f"Safety/tolerability concerns detected (confidence {avg_confidence:.2f})",
+                supporting_patterns=[f"{p['family_id']}{p['pattern_id']}" for p in safety_patterns]
+            )
+        else:
+            gates['G3'] = PatternGateResult(
+                fired=False,
+                probability=0.1,
+                rationale="No safety/tolerability patterns detected",
+                supporting_patterns=[]
+            )
+        
+        # Gate 4: Overall Risk (any high-severity patterns)
+        # High risk if any pattern has severity >= 2
+        high_severity_patterns = [p for p in pattern_detections if float(p['severity']) >= 2]
+        
+        if len(high_severity_patterns) >= 1:
+            # Compounding probability based on number of high-severity patterns
+            base_prob = 0.5
+            compounding_factor = 0.15
+            probability = min(0.95, base_prob + (len(high_severity_patterns) - 1) * compounding_factor)
+            
+            gates['G4'] = PatternGateResult(
+                fired=True,
+                probability=probability,
+                rationale=f"High-severity risk patterns detected ({len(high_severity_patterns)} patterns)",
+                supporting_patterns=[f"{p['family_id']}{p['pattern_id']}" for p in high_severity_patterns]
+            )
+        else:
+            gates['G4'] = PatternGateResult(
+                fired=False,
+                probability=0.15,
+                rationale="No high-severity patterns detected",
+                supporting_patterns=[]
+            )
+        
+        return gates
+    
+    def _calculate_pattern_score(self, trial_id: int, run_id: str, 
+                                pattern_detections: List[Dict[str, Any]], 
+                                gates: Dict[str, Any]) -> Any:
+        """Calculate final probability of failure based on pattern-based gates."""
+        from dataclasses import dataclass
+        
+        @dataclass
+        class PatternScoreResult:
+            trial_id: int
+            run_id: str
+            p_fail: float
+            gate_contributions: Dict[str, float]
+            rationale: str
+        
+        # Base prior probability
+        base_prior = 0.55  # 55% failure rate baseline
+        
+        # Calculate gate contributions
+        gate_contributions = {}
+        total_log_odds = 0.0
+        
+        for gate_id, gate_result in gates.items():
+            if gate_result.fired:
+                # Convert probability to log odds
+                log_odds = gate_result.probability / (1 - gate_result.probability)
+                gate_contributions[gate_id] = log_odds
+                total_log_odds += log_odds
+        
+        # Convert back to probability
+        if total_log_odds > 0:
+            # Apply compounding effect
+            compounded_prob = min(0.95, base_prior + (total_log_odds * 0.1))
+        else:
+            compounded_prob = base_prior * 0.8  # Slight reduction if no gates fired
+        
+        rationale = f"Pattern-based evaluation: {len(pattern_detections)} patterns, {sum(1 for g in gates.values() if g.fired)} gates fired"
+        
+        return PatternScoreResult(
+            trial_id=trial_id,
+            run_id=run_id,
+            p_fail=compounded_prob,
+            gate_contributions=gate_contributions,
+            rationale=rationale
+        )
+    
+    def _save_pattern_gates_to_db(self, session, trial_id: int, run_id: str, 
+                                 gates: Dict[str, Any], score: Any) -> None:
+        """Save pattern-based gates to database."""
+        from sqlalchemy import text
+        
+        # Save gates using raw SQL since we don't have a model
+        for gate_id, gate_result in gates.items():
+            gate_query = text("""
+                INSERT INTO gates (trial_id, run_id, g_id, fired_bool, supporting_s_ids, lr_used, rationale_text, created_at)
+                VALUES (:trial_id, :run_id, :g_id, :fired_bool, :supporting_s_ids, :lr_used, :rationale_text, NOW())
+            """)
+            
+            session.execute(gate_query, {
+                'trial_id': trial_id,
+                'run_id': run_id,
+                'g_id': gate_id,
+                'fired_bool': gate_result.fired,
+                'supporting_s_ids': [],  # Empty array since we're using patterns, not signals
+                'lr_used': gate_result.probability,  # Use probability as likelihood ratio
+                'rationale_text': gate_result.rationale
+            })
+        
+        # Save score using raw SQL
+        score_query = text("""
+            INSERT INTO scores (trial_id, run_id, p_fail, timestamp)
+            VALUES (:trial_id, :run_id, :p_fail, NOW())
+        """)
+        
+        session.execute(score_query, {
+            'trial_id': trial_id,
+            'run_id': run_id,
+            'p_fail': score.p_fail
+        })
+        
+        session.commit()
+
     # ============================================================================
     # PATENT SEARCH METHODS
     # ============================================================================
@@ -1604,6 +1938,15 @@ class PipelineOrchestrator:
             Analysis results for independent LLM analysis
         """
         self.logger.info(f"Starting independent LLM analysis for {len(trial_list)} trials")
+        
+        # Initialize current_execution if not already initialized
+        if self.current_execution is None:
+            execution_id = f"independent_analysis_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+            self.current_execution = OrchestrationOutput(
+                execution_id=execution_id,
+                start_time=datetime.now(timezone.utc),
+                end_time=datetime.now(timezone.utc)
+            )
         
         start_time = datetime.now(timezone.utc)
         

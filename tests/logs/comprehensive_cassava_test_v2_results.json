@@ -1,10 +1,10 @@
 {
   "test_info": {
-    "start_time": "2025-09-20T22:05:02.958221+00:00",
+    "start_time": "2025-09-21T00:36:25.726874+00:00",
     "test_name": "Comprehensive Cassava Pipeline Test V2",
     "version": "2.0",
-    "end_time": "2025-09-20T22:05:25.059094+00:00",
-    "duration_seconds": 22.100873
+    "end_time": "2025-09-21T00:42:26.330495+00:00",
+    "duration_seconds": 360.603621
   },
   "database_setup": {
     "status": "success",
@@ -32,7 +32,7 @@
   },
   "study_card_generation": {
     "status": "success",
-    "success": false,
+    "success": true,
     "pattern_detections": 0,
     "decision_records": 0,
     "errors": [],
@@ -40,24 +40,22 @@
   },
   "independent_analysis": {
     "status": "success",
-    "success": false,
-    "trials_analyzed": 0,
-    "successful_analyses": 0,
-    "failed_analyses": 1,
-    "execution_time_seconds": 0
+    "success": true,
+    "trials_analyzed": 1,
+    "successful_analyses": 1,
+    "failed_analyses": 0,
+    "execution_time_seconds": 13.130197
   },
   "validation_results": {
-    "status": "failed",
+    "status": "success",
     "entity_counts": {
       "companies": 1,
       "trials": 1,
       "documents": 21,
       "studies": 0,
-      "study_cards": 0
+      "study_cards": 3
     },
-    "errors": [
-      "No study cards found in database - study cards not saved"
-    ],
+    "errors": [],
     "relationships": {
       "trials_with_company": 0,
       "trials_with_documents": 1
@@ -68,5 +66,22 @@
     }
   },
   "errors": [],
-  "warnings": []
+  "warnings": [
+    "\u26a0\ufe0f  WARNING: 9 patterns detected (3 fired gates, 6 pattern detections) - this may indicate risk patterns in the trial"
+  ],
+  "pattern_evaluation": {
+    "success": true,
+    "trials_processed": 1,
+    "patterns_detected": 6,
+    "gates_fired": 3,
+    "trial_results": [
+      {
+        "trial_id": 1,
+        "patterns_detected": 6,
+        "gates_fired": 3,
+        "p_fail": 0.95,
+        "success": true
+      }
+    ]
+  }
 }
