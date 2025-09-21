@@ -12,6 +12,8 @@ from abc import ABC, abstractmethod
 
 from .factory import LLMProviderFactory
 from .models import LLMRequest, LLMResponse, LLMError, LLMMessage, LLMGenerationConfig, LLMSchema
+from ..utils.config_manager import get_config_manager
+from ..utils.error_handler import get_error_handler, safe_execute
 
 
 class BaseLLMWorker:

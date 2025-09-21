@@ -8,6 +8,8 @@ Defaults to LLM-first EnhancedRetriever for document + raw text retrieval.
 import logging
 from typing import Dict, Any, Optional
 from ..base_extract_worker import BaseWorker
+from ...utils.config_manager import get_config_manager
+from ...utils.error_handler import get_error_handler, safe_execute
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +24,11 @@ def build_retriever(config: Optional[Dict[str, Any]] = None) -> BaseWorker:
     Returns:
         Configured retriever instance (defaults to EnhancedRetriever)
     """
-    config = config or {}
+    config_manager = get_config_manager()
     
-    # Get retriever configuration
-    retriever_config = config.get('retriever', {})
-    use_legacy_retriever = retriever_config.get('use_legacy_retriever', False)
+    # Get retriever configuration using centralized config manager
+    retriever_config = config_manager.get_section('retriever', config)
+    use_legacy_retriever = config_manager.get_value('retriever.use_legacy_retriever', False)
     
     # Default: Use Enhanced Retriever for LLM-first architecture
     if not use_legacy_retriever:

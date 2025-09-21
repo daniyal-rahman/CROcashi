@@ -23,6 +23,8 @@ from sqlalchemy import text
 from ..db.models import Asset, Patent, Company
 from ..ingest.uspto.patent_types import PatentLinkCandidate
 from ..extract.models.evidence_span import Span
+from ..utils.config_manager import get_config_manager
+from ..utils.error_handler import get_error_handler, safe_execute
 
 logger = logging.getLogger(__name__)
 

@@ -10,12 +10,14 @@ from pathlib import Path
 from ncfd.backtest.outcomes import BacktestOutcomes
 from ncfd.catalyst.backtest import BacktestRunner
 from ncfd.config import get_config
+from ncfd.utils.config_manager import get_config_manager
+from ncfd.utils.error_handler import get_error_handler, safe_execute
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
-    """Load backtest configuration."""
-    with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
+    """Load backtest configuration using centralized config manager."""
+    config_manager = get_config_manager(config_path)
+    return config_manager.load_config()
 
 
 def load_outcomes_config(config_path: str) -> Dict[str, Any]:

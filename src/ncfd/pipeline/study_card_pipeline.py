@@ -22,6 +22,8 @@ from ncfd.extract.models import (
 from ncfd.ingest.pubmed.document_manager import DocumentManager
 from ncfd.db.session import session_scope
 from ncfd.db.models import Document
+from ncfd.utils.config_manager import get_config_manager
+from ncfd.utils.error_handler import get_pipeline_error_handler, safe_execute
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +68,15 @@ class StudyCardPipeline:
             config: Configuration dictionary with validation settings
         """
         self.config = config or {}
-        self.retriever = build_retriever(self.config)
+        self.logger = logging.getLogger(__name__)
+        
+        # Initialize centralized utilities
+        self.config_manager = get_config_manager()
+        self.error_handler = get_pipeline_error_handler('study_card')
+        
+        # Initialize components using centralized config
+        study_card_config = self.config_manager.get_section('study_card', self.config)
+        self.retriever = build_retriever(study_card_config)
         self.document_manager = DocumentManager()
         
         # Core LLM-first workers
@@ -77,19 +87,18 @@ class StudyCardPipeline:
         self.llm_results_generator = LLMResultsFactsheetGenerator()
         self.pattern_detector = PatternFamilyDetector()
         
-        # Pre-LLM guardrails system
+        # Pre-LLM guardrails system with centralized config
         guardrails_config = PreLLMGuardrailsConfig(
-            reject_off_topic=True,
-            reject_high_risk=True,
-            high_risk_threshold=0.6,
-            require_relevance=True,
-            log_decisions=True,
-            log_rejections=True
+            reject_off_topic=self.config_manager.get_value('study_card.guardrails.reject_off_topic', True),
+            reject_high_risk=self.config_manager.get_value('study_card.guardrails.reject_high_risk', True),
+            high_risk_threshold=self.config_manager.get_value('study_card.guardrails.high_risk_threshold', 0.6),
+            require_relevance=self.config_manager.get_value('study_card.guardrails.require_relevance', True),
+            log_decisions=self.config_manager.get_value('study_card.guardrails.log_decisions', True),
+            log_rejections=self.config_manager.get_value('study_card.guardrails.log_rejections', True)
         )
         self.pre_llm_guardrails = PreLLMGuardrailsSystem(guardrails_config)
         
-        
-        logger.info("StudyCardPipeline initialized with LLM-first architecture")
+        self.logger.info("StudyCardPipeline initialized with LLM-first architecture")
     
     
     def _validate_study_card_quality(self, result: StudyCardPipelineOutput) -> Tuple[bool, List[str]]:

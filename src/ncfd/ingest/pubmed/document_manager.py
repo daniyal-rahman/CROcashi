@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 
 from ...db.session import session_scope
 from ...db.models import Document, Trial
+from ...utils.config_manager import get_config_manager
+from ...utils.error_handler import get_error_handler, safe_execute
 
 logger = logging.getLogger(__name__)
 

@@ -12,6 +12,8 @@ from ..models.study_card import StudyCard
 from ..models.evidence_field import EvidenceField
 from ...llm import BaseLLMGenerator
 from ...llm.json_parser import parse_llm_json_response, validate_confidence_score
+from ...utils.config_manager import get_config_manager
+from ...utils.error_handler import get_error_handler, safe_execute
 
 logger = logging.getLogger(__name__)
 

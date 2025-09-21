@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from .client import PubMedClient
 from .request_queue import get_request_queue, RequestPriority
 from .monitoring import get_monitor, AlertLevel
+from ...utils.config_manager import get_config_manager
+from ...utils.error_handler import get_error_handler, safe_execute
 
 logger = logging.getLogger(__name__)
 

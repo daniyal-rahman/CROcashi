@@ -28,6 +28,8 @@ from ...db.models import Patent, PatentAssignment, Company, Asset
 from ...db.session import get_session
 from ...mapping.patent_assignee_resolver import PatentAssigneeResolver
 from ...mapping.asset_patent_linker import AssetPatentLinker
+from ...utils.config_manager import get_config_manager
+from ...utils.error_handler import get_error_handler, safe_execute
 from ...mapping.ownership_timeline import OwnershipTimelineBuilder
 
 logger = logging.getLogger(__name__)

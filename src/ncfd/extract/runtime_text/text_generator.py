@@ -13,6 +13,8 @@ from .api_clients import PubMedTextClient, PMCTextClient, UnpaywallTextClient, T
 from .config import RUNTIME_TEXT_CONFIG
 from ...db.models import Document, DocumentText
 from ...db.session import get_session
+from ...utils.config_manager import get_config_manager
+from ...utils.error_handler import get_error_handler, safe_execute
 
 logger = logging.getLogger(__name__)
 

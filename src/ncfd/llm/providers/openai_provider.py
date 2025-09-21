@@ -19,6 +19,8 @@ from ..models import (
     LLMRequest, LLMResponse, LLMMessage, LLMTool, LLMToolCall,
     LLMUsage, LLMProviderError, LLMValidationError
 )
+from ...utils.config_manager import get_config_manager
+from ...utils.error_handler import get_error_handler, safe_execute
 
 
 class OpenAIProvider(BaseLLMProvider):

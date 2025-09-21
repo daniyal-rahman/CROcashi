@@ -44,6 +44,11 @@ from ..db.models import Trial, TrialVersion, Company, Asset, CompanyAlias
 
 # Entity imports
 from ..entities.schema import EntityPack as EntityPackSchema, CompanyInfo, AssetInfo, MechanismInfo, IndicationInfo, RegistryInfo, PublisherInfo, DateRangeInfo
+from ..entities.entity_pack_service import EntityPackService
+
+# Utility imports
+from ..utils.config_manager import get_config_manager
+from ..utils.error_handler import get_pipeline_error_handler, safe_execute
 
 logger = logging.getLogger(__name__)
 
@@ -53,115 +58,33 @@ class EntityPackManager:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        self.entity_pack_service = EntityPackService()
     
     def get_or_create_entity_pack(self, trial_id: int, asset_names: Optional[List[str]] = None, indications: Optional[List[str]] = None) -> Optional[EntityPackSchema]:
         """Generate entity pack for a trial from existing database data."""
         try:
-            with session_scope() as session:
-                # Get trial with related data
-                trial = session.query(Trial).filter(Trial.trial_id == trial_id).first()
-                if not trial:
-                    self.logger.error(f"Trial {trial_id} not found")
-                    return None
-                
-                # Generate entity pack from existing database data
-                return self._generate_entity_pack_from_trial(session, trial, asset_names, indications)
+            # Use the centralized service to create entity pack from trial
+            entity_pack = self.entity_pack_service.create_from_trial(trial_id, asset_names, indications)
+            
+            if entity_pack:
+                # Convert to EntityPackSchema (they should be compatible)
+                return EntityPackSchema(
+                    entity_id=entity_pack.entity_id,
+                    company=entity_pack.company,
+                    asset=entity_pack.asset,
+                    mechanism=entity_pack.mechanism,
+                    indications=entity_pack.indications,
+                    registries=entity_pack.registries,
+                    publishers=entity_pack.publishers,
+                    date_ranges=entity_pack.date_ranges
+                )
+            else:
+                self.logger.error(f"Failed to create entity pack for trial {trial_id}")
+                return None
                 
         except Exception as e:
             self.logger.error(f"Error generating entity pack for trial {trial_id}: {e}")
             return None
-    
-    def _generate_entity_pack_from_trial(self, session, trial: Trial, asset_names: Optional[List[str]] = None, indications: Optional[List[str]] = None) -> Optional[EntityPackSchema]:
-        """Generate entity pack from existing database data."""
-        try:
-            # Extract company information
-            company_canonical = "Unknown Company"
-            company_aliases = []
-            if trial.sponsor_company:
-                company_canonical = trial.sponsor_company.name
-                # Get company aliases from the CompanyAlias table
-                company_aliases_query = session.query(CompanyAlias.alias).filter(
-                    CompanyAlias.company_id == trial.sponsor_company.company_id
-                ).all()
-                company_aliases = [alias[0] for alias in company_aliases_query]
-            elif trial.sponsor_text:
-                company_canonical = trial.sponsor_text
-                company_aliases = [trial.sponsor_text]
-            
-            # Extract asset information - use provided asset_names if available, otherwise fall back to intervention types
-            asset_canonical = "Unknown Drug"
-            asset_aliases = []
-            if asset_names:
-                # Use provided asset names from configuration
-                asset_canonical = asset_names[0] if asset_names else "Unknown Drug"
-                asset_aliases = asset_names
-                self.logger.info(f"Using provided asset names: {asset_names}")
-            elif trial.intervention_types:
-                # Fall back to trial's intervention types
-                asset_canonical = trial.intervention_types[0] if trial.intervention_types else "Unknown Drug"
-                asset_aliases = trial.intervention_types
-                self.logger.info(f"Using trial intervention types: {trial.intervention_types}")
-            
-            # Extract indication information - use provided indications if available, otherwise fall back to trial data
-            if indications:
-                indication_primary = [indications[0]] if indications else ["Unknown"]
-                indication_synonyms = indications
-                self.logger.info(f"Using provided indications: {indications}")
-            else:
-                indication_primary = [trial.indication] if trial.indication else ["Unknown"]
-                indication_synonyms = [trial.indication.lower()] if trial.indication else ["unknown"]
-                self.logger.info(f"Using trial indication: {trial.indication}")
-            
-            # Generate entity pack schema
-            entity_pack = EntityPackSchema(
-                entity_id=f"trial_{trial.nct_id}",
-                company=CompanyInfo(
-                    canonical=company_canonical,
-                    aliases=company_aliases
-                ),
-                asset=AssetInfo(
-                    canonical=asset_canonical,
-                    aliases=asset_aliases
-                ),
-                mechanism=MechanismInfo(
-                    targets=self._get_mechanism_targets(asset_canonical)
-                ),
-                indications=IndicationInfo(
-                    primary=indication_primary,
-                    synonyms=indication_synonyms
-                ),
-                registries=RegistryInfo(
-                    nct_ids=[trial.nct_id]
-                ),
-                publishers=PublisherInfo(
-                    sponsor_strings=[company_canonical]
-                ),
-                date_ranges=DateRangeInfo(
-                    active_since=trial.first_posted_date.year if trial.first_posted_date else 2020
-                )
-            )
-            
-            self.logger.info(f"Generated entity pack {entity_pack.entity_id} for trial {trial.nct_id}")
-            return entity_pack
-            
-        except Exception as e:
-            self.logger.error(f"Error generating entity pack from trial {trial.nct_id}: {e}")
-            return None
-    
-    def _get_mechanism_targets(self, asset_name: str) -> List[str]:
-        """Get mechanism targets based on asset name."""
-        # This is a simplified version - in practice, this would query the Asset table
-        # or use a more sophisticated mechanism mapping
-        asset_lower = asset_name.lower()
-        
-        if "simufilam" in asset_lower or "pti-125" in asset_lower:
-            return ["filamin A", "FLNA", "filamin-A", "filamin A protein", "amyloid", "tau", "amyloid-beta", "Aβ", "beta-amyloid", "amyloid precursor protein", "APP", "presenilin"]
-        elif "aducanumab" in asset_lower:
-            return ["amyloid", "amyloid-beta", "Aβ", "beta-amyloid", "amyloid precursor protein", "APP"]
-        elif "lecanemab" in asset_lower:
-            return ["amyloid", "amyloid-beta", "Aβ", "beta-amyloid", "amyloid precursor protein", "APP"]
-        else:
-            return ["unknown mechanism"]
     
 # EntityPack is now generated at runtime - no database persistence needed
     
@@ -249,34 +172,40 @@ class PipelineOrchestrator:
         self.config = config
         self.logger = logging.getLogger(__name__)
         
-        # Initialize core pipelines
-        self.ctgov_pipeline = CtgovPipeline(config.get('ctgov', {}))
-        self.sec_pipeline = SecPipeline(config.get('sec', {}))
-        self.study_card_pipeline = StudyCardPipeline(config.get('study_card', {}))
+        # Initialize centralized config manager
+        self.config_manager = get_config_manager()
+        
+        # Initialize error handler
+        self.error_handler = get_pipeline_error_handler('orchestrator')
+        
+        # Initialize core pipelines using centralized config
+        self.ctgov_pipeline = CtgovPipeline(self.config_manager.get_section('ctgov'))
+        self.sec_pipeline = SecPipeline(self.config_manager.get_section('sec'))
+        self.study_card_pipeline = StudyCardPipeline(self.config_manager.get_section('study_card'))
         
         # Initialize supporting components
         self.asset_resolver = AssetResolver()
-        self.trial_tracker = TrialVersionTracker(config.get('tracking', {}))
-        self.lit_queue = LiteratureQueue(config.get('lit_queue', {}))
+        self.trial_tracker = TrialVersionTracker(self.config_manager.get_section('tracking'))
+        self.lit_queue = LiteratureQueue(self.config_manager.get_section('lit_queue'))
         self.entity_pack_manager = EntityPackManager()
         
         # Initialize PubMed components
-        self.pubmed_pipeline = PubMedPipeline(config.get('pubmed', {}))
+        self.pubmed_pipeline = PubMedPipeline(self.config_manager.get_section('pubmed'))
         
         # Initialize USPTO Patent components
-        self.patent_client = USPTOPatentClient(config.get('uspto', {}))
+        self.patent_client = USPTOPatentClient(self.config_manager.get_section('uspto'))
         
         # Initialize task queue service
         self.task_queue_service = TaskQueueService(
-            worker_id=config.get('worker_id', 'orchestrator')
+            worker_id=self.config_manager.get_value('worker_id', 'orchestrator')
         )
         
         # State management
-        self.execution_order = config.get('execution_order', ['ctgov', 'sec', 'pubmed', 'study_card'])
-        self.parallel_execution = config.get('parallel_execution', True)
-        self.dependency_checking = config.get('dependency_checking', True)
+        self.execution_order = self.config_manager.get_value('execution_order', ['ctgov', 'sec', 'pubmed', 'study_card'])
+        self.parallel_execution = self.config_manager.get_value('parallel_execution', True)
+        self.dependency_checking = self.config_manager.get_value('dependency_checking', True)
         self.orchestration_state = {}
-        self.state_file = Path(config.get('state_file', 'orchestration_state.json'))
+        self.state_file = Path(self.config_manager.get_value('state_file', 'orchestration_state.json'))
         self.execution_history = []
         
         # Load existing orchestration state
@@ -1385,25 +1314,27 @@ class PipelineOrchestrator:
     # ============================================================================
     
     async def _execute_pipeline_with_error_handling(self, pipeline_func, pipeline_name: str):
-        """Execute a pipeline function with error handling."""
+        """Execute a pipeline function with centralized error handling."""
         try:
             return pipeline_func()
         except Exception as e:
-            self.logger.error(f"{pipeline_name} pipeline execution failed: {e}")
+            # Use centralized error handler
+            error_result = self.error_handler.handle_pipeline_error(e, pipeline_name)
+            
             # Return a proper error result instead of None
             if pipeline_name == "ctgov":
                 return CtgovPipelineOutput(
                     success=False,
                     start_time=datetime.now(timezone.utc),
                     end_time=datetime.now(timezone.utc),
-                    errors=[str(e)]
+                    errors=[error_result.error_message] if error_result.error_message else [str(e)]
                 )
             elif pipeline_name == "sec":
                 return SecPipelineOutput(
                     success=False,
                     start_time=datetime.now(timezone.utc),
                     end_time=datetime.now(timezone.utc),
-                    errors=[str(e)]
+                    errors=[error_result.error_message] if error_result.error_message else [str(e)]
                 )
             else:
                 return None

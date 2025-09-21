@@ -25,6 +25,8 @@ from ..ingest.sec_types import (
     FilingMetadata, FilingDocument, EightKItem, TenKSection,
     ExtractionResult, SecIngestionResult
 )
+from ..utils.config_manager import get_config_manager
+from ..utils.error_handler import get_pipeline_error_handler, handle_api_operation
 
 logger = logging.getLogger(__name__)
 
@@ -78,23 +80,31 @@ class SecPipeline:
             config: Configuration dictionary
         """
         self.config = config
-        self.client = SecFilingsClient(config)
-        self.langextract = SecLangExtractor(config)
+        self.logger = logging.getLogger(__name__)
+        
+        # Initialize centralized utilities
+        self.config_manager = get_config_manager()
+        self.error_handler = get_pipeline_error_handler('sec')
+        
+        # Initialize components using centralized config
+        self.client = SecFilingsClient(self.config_manager.get_section('sec'))
+        self.langextract = SecLangExtractor(self.config_manager.get_section('sec'))
         
         # Pipeline state
-        self.state_file = Path(config.get('state_file', '.state/sec_pipeline.json'))
+        state_file_path = self.config_manager.get_value('sec.state_file', '.state/sec_pipeline.json')
+        self.state_file = Path(state_file_path)
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
         self.pipeline_state = self._load_pipeline_state()
         
         # Company monitoring
-        self.monitored_companies = config.get('monitored_companies', [])
+        self.monitored_companies = self.config_manager.get_value('sec.monitored_companies', [])
         self.company_last_check = self.pipeline_state.get('company_last_check', {})
         
         # Processing metrics
         self.daily_stats = self.pipeline_state.get('daily_stats', {})
         self.processing_errors = []
         
-        logger.info(f"SEC Pipeline initialized with {len(self.monitored_companies)} monitored companies")
+        self.logger.info(f"SEC Pipeline initialized with {len(self.monitored_companies)} monitored companies")
     
     def run_daily_scan(self, force_full_scan: bool = False) -> SecIngestionResult:
         """

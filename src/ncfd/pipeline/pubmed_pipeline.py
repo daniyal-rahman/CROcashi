@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from ..ingest.pubmed.db_service import PubMedDBService
 from ..ingest.pubmed.document_manager import DocumentManager
 from ..ingest.pubmed.queue_service import TaskQueueService
+from ..utils.config_manager import get_config_manager
+from ..utils.error_handler import get_pipeline_error_handler, safe_execute
 from ..ingest.pubmed.retrieval.policy_engine import RetrievalPolicy, PolicyConfig
 from ..ingest.pubmed.retrieval.query_builder import MultiTierQueryBuilder
 from ..ingest.pubmed.retrieval.document_scorer import AdvancedDocumentScorer, ScoringConfig
@@ -72,6 +74,11 @@ class PubMedPipeline:
         """Initialize PubMed pipeline with configuration."""
         self.config = config
         self.pubmed_config = config
+        self.logger = logging.getLogger(__name__)
+        
+        # Initialize centralized utilities
+        self.config_manager = get_config_manager()
+        self.error_handler = get_pipeline_error_handler('pubmed')
         
         # Pipeline state
         self.pipeline_results: List[PubMedPipelineOutput] = []
@@ -80,7 +87,7 @@ class PubMedPipeline:
         # Initialize components
         self._initialize_components()
         
-        logger.info("PubMed Pipeline initialized")
+        self.logger.info("PubMed Pipeline initialized")
     
     def _initialize_components(self):
         """Initialize PubMed pipeline components."""

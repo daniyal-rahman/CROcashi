@@ -26,6 +26,8 @@ from ..db.session import get_session
 from ..db.models import Trial, TrialVersion, Company, CtgovIngestState
 from ..config import get_config
 from .asset_resolver import AssetResolver, AssetMatch
+from ..utils.config_manager import get_config_manager
+from ..utils.error_handler import get_pipeline_error_handler, handle_database_operation
 
 logger = logging.getLogger(__name__)
 
@@ -119,13 +121,19 @@ class CtgovPipeline:
         self.config = CtgovPipelineConfig.from_dict(config)
         self.logger = logging.getLogger(__name__)
         
-        # Initialize components
-        self.client = CtgovClient(base_url=self.config.api_base_url)
+        # Initialize centralized utilities
+        self.config_manager = get_config_manager()
+        self.error_handler = get_pipeline_error_handler('ctgov')
+        
+        # Initialize components using centralized config
+        api_base_url = self.config_manager.get_value('ctgov.api.base_url', self.config.api_base_url)
+        self.client = CtgovClient(base_url=api_base_url)
         self.change_detector = CtgovChangeDetector()
         self.asset_resolver = AssetResolver()
         
         # State management
-        self.state_file = Path('.state/ctgov_pipeline.json')
+        state_file_path = self.config_manager.get_value('ctgov.state_file', '.state/ctgov_pipeline.json')
+        self.state_file = Path(state_file_path)
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
         self.pipeline_state = self._load_pipeline_state()
         
@@ -291,15 +299,11 @@ class CtgovPipeline:
                             break
                             
                     except Exception as e:
-                        # Log error but continue processing other trials
+                        # Use centralized error handling
                         nct_id = raw_trial.get('protocolSection', {}).get('identificationModule', {}).get('nctId', 'unknown')
-                        error_msg = f"Error processing trial {nct_id}: {e}"
-                        self.logger.warning(error_msg)
-                        result.errors.append(error_msg)
+                        error_result = self.error_handler.handle_trial_error(e, nct_id, {'raw_trial': raw_trial})
                         
-                        # Log more details about the error
-                        import traceback
-                        self.logger.exception(f"Per-trial failure for {nct_id}")  # includes stack trace
+                        result.errors.append(error_result.error_message)
                         
                         # Don't continue on critical errors that might corrupt the session
                         if "constraint" in str(e).lower() or "foreign key" in str(e).lower():
