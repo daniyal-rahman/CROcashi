@@ -188,11 +188,35 @@ class PatternFamilyDetector(BaseLLMGenerator):
     async def _extract_with_llm(self, doc_text: str, trial_context: Dict[str, Any], prompt: str) -> Dict[str, Any]:
         """Extract data using LLM with the given prompt."""
         try:
+            # Make LLM call with structured JSON schema
+            json_schema = {
+                "type": "object",
+                "properties": {
+                    "detections": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "family_id": {"type": "string"},
+                                "pattern_id": {"type": "string"},
+                                "severity": {"type": "integer", "minimum": 1, "maximum": 3},
+                                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                                "rationale": {"type": "string"},
+                                "evidence_quotes": {"type": "array", "items": {"type": "string"}},
+                                "doc_id": {"type": "string"}
+                            },
+                            "required": ["family_id", "pattern_id", "severity", "confidence", "rationale"]
+                        }
+                    }
+                },
+                "required": ["detections"]
+            }
+            
             response = await self.call_llm(
                 messages=[prompt],
                 temperature=0.1,
                 max_tokens=2000,
-                json_output=True
+                json_schema=json_schema
             )
             
             # Parse the response using robust JSON parsing

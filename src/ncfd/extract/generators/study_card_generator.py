@@ -143,85 +143,7 @@ class LLMStudyCardGenerator(BaseLLMGenerator):
         """Build the standard prompt for the first attempt."""
         return self._build_standard_study_prompt(doc_text, doc_id, trial_context)
     
-    def _build_simplified_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
-        """Build a simplified prompt for the second attempt."""
-        return self._build_simplified_study_prompt(doc_text, doc_id, trial_context)
     
-    def _build_minimal_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
-        """Build a minimal prompt for the third attempt."""
-        return self._build_minimal_study_prompt(doc_text, doc_id, trial_context)
-    
-    async def _generate_study_card_with_quotes(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> tuple:
-        """Generate study card data with evidence quotes for each field."""
-        
-        # Try multiple times with different approaches
-        for attempt in range(3):
-            try:
-                if attempt == 0:
-                    # First attempt: Standard prompt
-                    prompt = self._build_standard_study_prompt(doc_text, doc_id, trial_context)
-                elif attempt == 1:
-                    # Second attempt: Simplified prompt
-                    prompt = self._build_simplified_study_prompt(doc_text, doc_id, trial_context)
-                else:
-                    # Third attempt: Minimal prompt
-                    prompt = self._build_minimal_study_prompt(doc_text, doc_id, trial_context)
-                
-                logger.info(f"DEBUG: Study card attempt {attempt + 1} - Making LLM call")
-                
-                result = await self._extract_study_card_with_llm(doc_text, trial_context, prompt)
-                logger.info(f"DEBUG: LLM extraction result keys: {list(result.keys())}")
-                logger.info(f"DEBUG: LLM extraction result field_quotes: {result.get('field_quotes', [])}")
-                
-                study_card_data = result.get("study_card_data", {})
-                field_quotes = []
-                
-                # Handle case where LLM returns field_quotes as a single number instead of a list
-                raw_field_quotes = result.get("field_quotes", [])
-                if not isinstance(raw_field_quotes, list):
-                    logger.warning(f"LLM returned field_quotes as {type(raw_field_quotes)} instead of list: {raw_field_quotes}")
-                    raw_field_quotes = []
-                
-                for quote_data in raw_field_quotes:
-                    logger.info(f"DEBUG: Processing quote_data: {quote_data}")
-                    
-                    # Validate that quote_data is a dictionary
-                    if not isinstance(quote_data, dict):
-                        logger.error(f"Quote data is not a dictionary, got {type(quote_data)}: {quote_data}")
-                        logger.error("This indicates the LLM returned malformed JSON with numbers instead of quote objects.")
-                        continue
-                    
-                    # Ensure evidence_quote is a string
-                    evidence_quote = quote_data.get("evidence_quote", "")
-                    if not isinstance(evidence_quote, str):
-                        evidence_quote = str(evidence_quote) if evidence_quote is not None else ""
-                    
-                    field_quotes.append(EvidenceField(
-                        field_name=quote_data.get("field_name", ""),
-                        value=quote_data.get("value"),
-                        evidence_quote=evidence_quote,
-                        confidence=quote_data.get("confidence", 0.8)
-                    ))
-                
-                logger.info(f"DEBUG: Generated {len(field_quotes)} field quotes")
-                
-                # If we got field quotes, return the result
-                if len(field_quotes) > 0:
-                    logger.info(f"DEBUG: Study card success on attempt {attempt + 1} with {len(field_quotes)} field quotes")
-                    return study_card_data, field_quotes
-                else:
-                    logger.warning(f"DEBUG: Study card attempt {attempt + 1} returned 0 field quotes, retrying...")
-                    continue
-                    
-            except Exception as e:
-                logger.error(f"DEBUG: Study card attempt {attempt + 1} failed: {e}")
-                if attempt == 2:  # Last attempt
-                    raise e
-                continue
-        
-        # If all attempts failed to get field quotes, return empty result
-        logger.warning("DEBUG: All study card attempts failed to generate field quotes, returning empty result")
-        return {}, []
     
     def _build_standard_study_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
         """Build standard prompt for study card extraction."""
@@ -285,8 +207,14 @@ Extract the following methodology fields:
 Respond in JSON format:
 {{
     "study_card_data": {{
-        "field_name": "extracted_value",
-        ...
+        "design_archetype": "Randomized Controlled Trial",
+        "is_blinded": true,
+        "analysis_set": "Intent-to-Treat",
+        "population_description": "Patients with mild-to-moderate Alzheimer's disease",
+        "primary_endpoint": "Change from baseline in ADAS-Cog11 score at 24 weeks",
+        "statistical_test": "Mixed Model for Repeated Measures",
+        "alpha_level": 0.05,
+        "is_one_sided": false
     }},
     "field_quotes": [
         {{
@@ -295,7 +223,18 @@ Respond in JSON format:
             "evidence_quote": "exact quote from document",
             "confidence": 0.9
         }},
-        ...
+        {{
+            "field_name": "primary_endpoint",
+            "value": "Change from baseline in ADAS-Cog11 score at 24 weeks",
+            "evidence_quote": "The primary endpoint was the change from baseline in the 11-item Alzheimer's Disease Assessment Scale-Cognitive subscale (ADAS-Cog11) score at 24 weeks",
+            "confidence": 0.9
+        }},
+        {{
+            "field_name": "analysis_set",
+            "value": "Intent-to-Treat",
+            "evidence_quote": "Efficacy analyses were performed on the intent-to-treat (ITT) population",
+            "confidence": 0.85
+        }}
     ]
 }}
 
@@ -366,8 +305,14 @@ Extract the following methodology fields:
 Respond in JSON format:
 {{
     "study_card_data": {{
-        "field_name": "extracted_value",
-        ...
+        "design_archetype": "Randomized Controlled Trial",
+        "is_blinded": true,
+        "analysis_set": "Intent-to-Treat",
+        "population_description": "Patients with mild-to-moderate Alzheimer's disease",
+        "primary_endpoint": "Change from baseline in ADAS-Cog11 score at 24 weeks",
+        "statistical_test": "Mixed Model for Repeated Measures",
+        "alpha_level": 0.05,
+        "is_one_sided": false
     }},
     "field_quotes": [
         {{
@@ -376,7 +321,18 @@ Respond in JSON format:
             "evidence_quote": "exact quote from document",
             "confidence": 0.9
         }},
-        ...
+        {{
+            "field_name": "primary_endpoint",
+            "value": "Change from baseline in ADAS-Cog11 score at 24 weeks",
+            "evidence_quote": "The primary endpoint was the change from baseline in the 11-item Alzheimer's Disease Assessment Scale-Cognitive subscale (ADAS-Cog11) score at 24 weeks",
+            "confidence": 0.9
+        }},
+        {{
+            "field_name": "analysis_set",
+            "value": "Intent-to-Treat",
+            "evidence_quote": "Efficacy analyses were performed on the intent-to-treat (ITT) population",
+            "confidence": 0.85
+        }}
     ]
 }}
 
@@ -392,12 +348,62 @@ Only include fields where you found clear evidence in the document. If a field i
             # Log redacted payload preview
             self.logger.debug(f"LLM payload preview: doc_text_length={len(doc_text)}, prompt_length={len(prompt)}")
             
-            # Make LLM call with proper message format
+            # Make LLM call with structured JSON schema
+            json_schema = {
+                "type": "object",
+                "properties": {
+                    "study_card_data": {
+                        "type": "object",
+                        "properties": {
+                            "design_archetype": {"type": "string"},
+                            "is_blinded": {"type": "boolean"},
+                            "analysis_set": {"type": "string"},
+                            "population_description": {"type": "string"},
+                            "stratification_factors": {"type": "array", "items": {"type": "string"}},
+                            "covariate_adjustment": {"type": "array", "items": {"type": "string"}},
+                            "primary_endpoint": {"type": "string"},
+                            "secondary_endpoints": {"type": "array", "items": {"type": "string"}},
+                            "summary_measure": {"type": "string"},
+                            "alpha_level": {"type": "number"},
+                            "is_one_sided": {"type": "boolean"},
+                            "multiplicity_adjustment": {"type": "string"},
+                            "sample_size_reassessment": {"type": "boolean"},
+                            "interim_looks": {"type": "array"},
+                            "interim_timing": {"type": "string"},
+                            "spending_function": {"type": "string"},
+                            "stop_rules": {"type": "array", "items": {"type": "string"}},
+                            "missingness_assumption": {"type": "string"},
+                            "missingness_pattern": {"type": "string"},
+                            "imputation_method": {"type": "string"},
+                            "estimand": {"type": "string"},
+                            "intercurrent_events_policy": {"type": "string"},
+                            "endpoint_ascertainment": {"type": "string"},
+                            "assessment_interval": {"type": "string"},
+                            "adjudication_committee": {"type": "boolean"}
+                        }
+                    },
+                    "field_quotes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "field_name": {"type": "string"},
+                                "value": {"type": "string"},
+                                "evidence_quote": {"type": "string"},
+                                "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+                            },
+                            "required": ["field_name", "value", "evidence_quote", "confidence"]
+                        }
+                    }
+                },
+                "required": ["study_card_data", "field_quotes"]
+            }
+            
             response = await self.call_llm(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=2000,
-                json_output=True
+                json_schema=json_schema
             )
             
             # Parse the response

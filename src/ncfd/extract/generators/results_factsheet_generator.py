@@ -121,16 +121,8 @@ class LLMResultsFactsheetGenerator(BaseLLMGenerator):
         return await self._extract_results_factsheet_with_llm(doc_text, trial_context, prompt)
     
     def _build_standard_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
-        """Build the standard prompt for the first attempt."""
+        """Build the standard prompt for results extraction."""
         return self._build_standard_results_prompt(doc_text, trial_context)
-    
-    def _build_simplified_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
-        """Build a simplified prompt for the second attempt."""
-        return self._build_simplified_results_prompt(doc_text, trial_context)
-    
-    def _build_minimal_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
-        """Build a minimal prompt for the third attempt."""
-        return self._build_minimal_results_prompt(doc_text, trial_context)
     
     async def _generate_results_with_quotes(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> tuple:
         """Generate results factsheet data with evidence quotes for each field."""
@@ -264,90 +256,132 @@ Only include fields where you found clear evidence in the document. If a field i
             return {}, []
     
     async def _extract_results_factsheet_with_llm(self, doc_text: str, trial_context: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract results factsheet using LLM with evidence quotes and retry logic."""
+        """Extract results factsheet using LLM with structured output."""
         
-        # Try multiple times with different approaches
-        for attempt in range(3):
-            try:
-                if attempt == 0:
-                    # First attempt: Standard prompt
-                    prompt = self._build_standard_prompt(doc_text, trial_context)
-                elif attempt == 1:
-                    # Second attempt: Simplified prompt
-                    prompt = self._build_simplified_prompt(doc_text, trial_context)
+        try:
+            # Use the standard prompt (now with complete JSON examples)
+            prompt = self._build_standard_prompt(doc_text, trial_context)
+            
+            logger.info("Making LLM call for results factsheet extraction")
+            
+            # Validate inputs before API call
+            if not doc_text or not doc_text.strip():
+                raise ValueError("Empty doc_text provided to LLM")
+            if not prompt or not prompt.strip():
+                raise ValueError("Empty prompt provided to LLM")
+            
+            # Log redacted payload preview
+            logger.debug(f"LLM payload preview: doc_text_length={len(doc_text)}, prompt_length={len(prompt)}")
+            
+            # Make LLM call with structured JSON schema
+            json_schema = {
+                "type": "object",
+                "properties": {
+                    "results_data": {
+                        "type": "object",
+                        "properties": {
+                            "results": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "metric": {"type": "string"},
+                                        "value": {"type": "string"},
+                                        "units": {"type": ["string", "null"]},
+                                        "timepoint": {"type": ["string", "null"]},
+                                        "analysis_set": {"type": ["string", "null"]},
+                                        "population_slice": {"type": ["string", "null"]},
+                                        "is_posthoc": {"type": "boolean"},
+                                        "flags": {"type": "array", "items": {"type": "string"}},
+                                        "span_ids": {"type": "array", "items": {"type": "string"}},
+                                        "doc_id": {"type": "string"}
+                                    }
+                                }
+                            },
+                            "primary_endpoint_results": {"type": "object"},
+                            "secondary_endpoint_results": {"type": "array"},
+                            "safety_results": {"type": "array"},
+                            "primary_analysis_set": {"type": "string"},
+                            "secondary_analysis_sets": {"type": "array", "items": {"type": "string"}},
+                            "total_enrolled": {"type": "integer"},
+                            "completed_primary_endpoint": {"type": "integer"},
+                            "dropout_rate": {"type": "number"},
+                            "follow_up_completion": {"type": "number"}
+                        }
+                    },
+                    "field_quotes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "field_name": {"type": "string"},
+                                "value": {"type": "string"},
+                                "evidence_quote": {"type": "string"},
+                                "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+                            },
+                            "required": ["field_name", "value", "evidence_quote", "confidence"]
+                        }
+                    }
+                },
+                "required": ["results_data", "field_quotes"]
+            }
+            
+            response = await self.call_llm(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=2000,
+                json_schema=json_schema
+            )
+            
+            # Parse the response
+            result = response.content
+            logger.info(f"LLM response type: {type(result)}")
+            logger.info(f"LLM response content preview: {str(result)[:500]}...")
+            
+            if isinstance(result, str):
+                # Use robust JSON parsing
+                parsed_result = parse_llm_json_response(result, expected_fields=["results_data", "field_quotes"])
+                if parsed_result:
+                    result = parsed_result
+                    field_quotes_count = len(result.get('field_quotes', []))
+                    logger.info(f"Successfully parsed JSON with {field_quotes_count} field quotes")
+                    
+                    # Check if we have meaningful results_data
+                    results_data = result.get('results_data', {})
+                    has_meaningful_results = (
+                        results_data.get("results") or
+                        results_data.get("primary_endpoint_results") or
+                        results_data.get("secondary_endpoint_results") or
+                        results_data.get("safety_results")
+                    )
+                    
+                    if not has_meaningful_results:
+                        logger.warning("LLM returned no meaningful results_data - this may indicate document has no clinical results")
+                        result['results_data'] = {}
+                    
+                    if field_quotes_count == 0:
+                        logger.warning("LLM returned no field_quotes - evidence extraction may be incomplete")
+                        result['field_quotes'] = []
+                    
+                    return result
                 else:
-                    # Third attempt: Minimal prompt
-                    prompt = self._build_minimal_prompt(doc_text, trial_context)
+                    logger.error(f"Failed to parse LLM JSON response: {result}")
+                    raise ValueError("LLM returned invalid JSON format")
+            elif isinstance(result, (int, float)):
+                logger.error(f"LLM returned a number ({result}) instead of JSON")
+                raise ValueError("LLM returned unexpected numeric response")
+            elif not isinstance(result, dict):
+                logger.error(f"LLM returned unexpected type {type(result)}: {result}")
+                raise ValueError("LLM returned unexpected response type")
+            
+            # If we got here, result is already a dict (structured output worked)
+            field_quotes_count = len(result.get('field_quotes', []))
+            logger.info(f"Structured output successful with {field_quotes_count} field quotes")
+            return result
                 
-                logger.info(f"DEBUG: Attempt {attempt + 1} - Making LLM call")
-                
-                # Validate inputs before API call
-                if not doc_text or not doc_text.strip():
-                    raise ValueError("Empty doc_text provided to LLM")
-                if not prompt or not prompt.strip():
-                    raise ValueError("Empty prompt provided to LLM")
-                
-                # Log redacted payload preview
-                logger.debug(f"LLM payload preview: doc_text_length={len(doc_text)}, prompt_length={len(prompt)}")
-                
-                # Make LLM call with proper message format
-                response = await self.call_llm(
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.1,
-                    max_tokens=2000,
-                    json_output=True
-                )
-                
-                # Parse the response
-                result = response.content
-                logger.info(f"DEBUG: LLM raw response type: {type(result)}")
-                logger.info(f"DEBUG: LLM raw response content: {str(result)[:500]}...")
-                
-                if isinstance(result, str):
-                    # Use robust JSON parsing
-                    parsed_result = parse_llm_json_response(result, expected_fields=["results_data", "field_quotes"])
-                    if parsed_result:
-                        result = parsed_result
-                        # Safe field_quotes count logging
-                        field_quotes_for_logging = result.get('field_quotes', [])
-                        if not isinstance(field_quotes_for_logging, list):
-                            field_quotes_for_logging = []
-                        field_quotes_count = len(field_quotes_for_logging)
-                        logger.info(f"DEBUG: Parsed JSON successfully, field_quotes count: {field_quotes_count}")
-                        
-                        # If we got field quotes, return the result
-                        if field_quotes_count > 0:
-                            logger.info(f"DEBUG: Success on attempt {attempt + 1} with {field_quotes_count} field quotes")
-                            return result
-                        else:
-                            logger.warning(f"DEBUG: Attempt {attempt + 1} returned 0 field quotes, retrying...")
-                            continue
-                    else:
-                        logger.error(f"DEBUG: JSON parsing failed on attempt {attempt + 1}")
-                        logger.error(f"DEBUG: Raw response: {result}")
-                        continue
-                elif isinstance(result, (int, float)):
-                    # Handle case where LLM returns a number instead of JSON
-                    logger.error(f"LLM returned a number instead of JSON on attempt {attempt + 1}: {result}")
-                    continue
-                elif not isinstance(result, dict):
-                    # Handle other unexpected types
-                    logger.error(f"LLM returned unexpected type {type(result)} on attempt {attempt + 1}: {result}")
-                    continue
-                
-                # If we got here, we have a valid result but no field quotes
-                logger.warning(f"DEBUG: Attempt {attempt + 1} returned valid JSON but 0 field quotes, retrying...")
-                continue
-                
-            except Exception as e:
-                logger.error(f"DEBUG: Attempt {attempt + 1} failed: {e}")
-                if attempt == 2:  # Last attempt
-                    raise e
-                continue
-        
-        # If all attempts failed to get field quotes, return empty result
-        logger.warning("DEBUG: All attempts failed to generate field quotes, returning empty result")
-        return {"results_data": {}, "field_quotes": []}
+        except Exception as e:
+            logger.error(f"Results factsheet extraction failed: {e}")
+            raise ValueError(f"LLM extraction failed: {str(e)}")
     
     def _build_standard_prompt(self, doc_text: str, trial_context: Dict[str, Any]) -> str:
         """Build standard prompt for results extraction."""
@@ -408,9 +442,46 @@ Respond in JSON format:
                 "doc_id": "doc_id"
             }}
         ],
-        "primary_endpoint_results": {{...}},
-        "secondary_endpoint_results": [{...}],
-        "safety_results": [{...}],
+        "primary_endpoint_results": {{
+            "metric": "primary_endpoint_name",
+            "value": "primary_result_value",
+            "units": "units",
+            "timepoint": "timepoint",
+            "analysis_set": "ITT",
+            "population_slice": "population",
+            "is_posthoc": false,
+            "flags": ["primary"],
+            "span_ids": ["span_id"],
+            "doc_id": "doc_id"
+        }},
+        "secondary_endpoint_results": [
+            {{
+                "metric": "secondary_endpoint_name",
+                "value": "secondary_result_value",
+                "units": "units",
+                "timepoint": "timepoint",
+                "analysis_set": "ITT",
+                "population_slice": "population",
+                "is_posthoc": false,
+                "flags": ["secondary"],
+                "span_ids": ["span_id"],
+                "doc_id": "doc_id"
+            }}
+        ],
+        "safety_results": [
+            {{
+                "metric": "safety_metric_name",
+                "value": "safety_result_value",
+                "units": "units",
+                "timepoint": "timepoint",
+                "analysis_set": "ITT",
+                "population_slice": "population",
+                "is_posthoc": false,
+                "flags": ["safety"],
+                "span_ids": ["span_id"],
+                "doc_id": "doc_id"
+            }}
+        ],
         "primary_analysis_set": "ITT",
         "secondary_analysis_sets": ["mITT", "PP"],
         "total_enrolled": 100,
@@ -432,68 +503,3 @@ Respond in JSON format:
 Only include fields where you found clear evidence in the document. If a field is not mentioned, omit it from both the results_data and field_quotes.
 """
     
-    def _build_simplified_prompt(self, doc_text: str, trial_context: Dict[str, Any]) -> str:
-        """Build simplified prompt for results extraction."""
-        return f"""
-Extract key results from this clinical trial document. Focus on finding specific findings, outcomes, or measurements.
-
-Document Text:
-{doc_text[:3000]}
-
-Trial Context:
-- Disease: {trial_context.get('disease', 'Unknown')}
-- Intervention: {trial_context.get('intervention', 'Unknown')}
-
-Return JSON with this structure:
-{{
-    "results_data": {{
-        "results": [
-            {{
-                "metric": "description of what was measured",
-                "value": "the actual result or finding",
-                "units": "units if applicable",
-                "confidence": 0.9
-            }}
-        ]
-    }},
-    "field_quotes": [
-        {{
-            "field_name": "metric_name",
-            "value": "the result value",
-            "evidence_quote": "exact quote from document supporting this result",
-            "confidence": 0.9
-        }}
-    ]
-}}
-
-IMPORTANT: You must provide at least 2-3 field_quotes with evidence_quote from the document.
-"""
-    
-    def _build_minimal_prompt(self, doc_text: str, trial_context: Dict[str, Any]) -> str:
-        """Build minimal prompt for results extraction."""
-        return f"""
-Find key findings in this text and provide quotes that support them.
-
-Text: {doc_text[:2000]}
-
-Return JSON:
-{{
-    "results_data": {{}},
-    "field_quotes": [
-        {{
-            "field_name": "finding_1",
-            "value": "what was found",
-            "evidence_quote": "quote from text",
-            "confidence": 0.8
-        }},
-        {{
-            "field_name": "finding_2", 
-            "value": "another finding",
-            "evidence_quote": "another quote from text",
-            "confidence": 0.8
-        }}
-    ]
-}}
-
-Provide at least 2 field_quotes with evidence_quote from the text.
-"""

@@ -552,12 +552,12 @@ class ComprehensiveCassavaTestV2:
         with session_scope() as session:
             # Create a sample Cassava trial
             trial = Trial(
-                nct_id="NCT04315066",  # Real Cassava trial NCT ID
-                brief_title="A Study of Simufilam in Patients With Alzheimer's Disease",
-                official_title="A Phase 2, Randomized, Double-Blind, Placebo-Controlled Study of Simufilam in Patients With Alzheimer's Disease",
+                nct_id="NCT05515666",  # Main trial NCT ID (matches test configuration)
+                brief_title="A Phase 3, Randomized, Double-Blind, Placebo-Controlled Study of Simufilam in Patients with Mild-to-Moderate Alzheimer's Disease",
+                official_title="A Phase 3, Randomized, Double-Blind, Placebo-Controlled Study of Simufilam in Patients with Mild-to-Moderate Alzheimer's Disease",
                 sponsor_text="Cassava Sciences, Inc.",
-                phase="PHASE2",
-                status="COMPLETED",
+                phase="PHASE3",
+                status="RECRUITING",
                 indication="Alzheimer's Disease",
                 intervention_types=["DRUG"],
                 primary_endpoint_text="Change from baseline in ADAS-Cog11 total score at 12 months",
@@ -575,9 +575,9 @@ class ComprehensiveCassavaTestV2:
                 raw_jsonb={
                     "protocolSection": {
                         "identificationModule": {
-                            "nctId": "NCT04315066",
-                            "briefTitle": "A Study of Simufilam in Patients With Alzheimer's Disease",
-                            "officialTitle": "A Phase 2, Randomized, Double-Blind, Placebo-Controlled Study of Simufilam in Patients With Alzheimer's Disease"
+                            "nctId": "NCT05515666",
+                            "briefTitle": "A Phase 3, Randomized, Double-Blind, Placebo-Controlled Study of Simufilam in Patients with Mild-to-Moderate Alzheimer's Disease",
+                            "officialTitle": "A Phase 3, Randomized, Double-Blind, Placebo-Controlled Study of Simufilam in Patients with Mild-to-Moderate Alzheimer's Disease"
                         },
                         "sponsorCollaboratorsModule": {
                             "leadSponsor": {

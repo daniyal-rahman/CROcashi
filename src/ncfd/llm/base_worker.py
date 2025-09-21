@@ -144,57 +144,75 @@ class BaseLLMGenerator(BaseLLMWorker, ABC):
     
     async def _execute_with_retry(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Any]]:
         """
-        Execute LLM generation with retry logic and progressive prompt simplification.
+        Execute LLM generation with single robust attempt.
         
         Returns:
             Tuple of (data_dict, field_quotes_list)
         """
-        for attempt in range(self.max_retries):
-            try:
-                if attempt == 0:
-                    # First attempt: Standard prompt
-                    prompt = self._build_standard_prompt(doc_text, doc_id, trial_context)
-                elif attempt == 1:
-                    # Second attempt: Simplified prompt
-                    prompt = self._build_simplified_prompt(doc_text, doc_id, trial_context)
-                else:
-                    # Third attempt: Minimal prompt
-                    prompt = self._build_minimal_prompt(doc_text, doc_id, trial_context)
+        try:
+            # Use the standard prompt (now with complete JSON examples and structured output)
+            prompt = self._build_standard_prompt(doc_text, doc_id, trial_context)
+            
+            self.logger.info(f"Making LLM call for {self.name} extraction")
+            
+            result = await self._extract_with_llm(doc_text, trial_context, prompt)
+            self.logger.info(f"LLM extraction result keys: {list(result.keys())}")
+            
+            data_dict = result.get(self._get_data_key(), {})
+            field_quotes = []
+            
+            # Handle case where LLM returns field_quotes as a single number instead of a list
+            raw_field_quotes = result.get("field_quotes", [])
+            if not isinstance(raw_field_quotes, list):
+                self.logger.warning(f"LLM returned field_quotes as {type(raw_field_quotes)} instead of list: {raw_field_quotes}")
+                raw_field_quotes = []
+            
+            for quote_data in raw_field_quotes:
+                self.logger.debug(f"Processing quote_data: {quote_data}")
+                from ..extract.models.evidence_field import EvidenceField
                 
-                self.logger.info(f"DEBUG: {self.name} attempt {attempt + 1} - Making LLM call")
+                # Validate that quote_data is a dictionary
+                if not isinstance(quote_data, dict):
+                    self.logger.error(f"Quote data is not a dictionary, got {type(quote_data)}: {quote_data}")
+                    self.logger.error("This indicates the LLM returned malformed JSON with numbers instead of quote objects.")
+                    continue
                 
-                result = await self._extract_with_llm(doc_text, trial_context, prompt)
-                self.logger.info(f"DEBUG: LLM extraction result keys: {list(result.keys())}")
-                self.logger.info(f"DEBUG: LLM extraction result field_quotes: {result.get('field_quotes', [])}")
+                # Ensure evidence_quote is a string
+                evidence_quote = quote_data.get("evidence_quote", "")
+                if not isinstance(evidence_quote, str):
+                    evidence_quote = str(evidence_quote) if evidence_quote is not None else ""
                 
-                data_dict = result.get(self._get_data_key(), {})
-                field_quotes = []
+                field_quotes.append(EvidenceField(
+                    field_name=quote_data.get("field_name", ""),
+                    value=quote_data.get("value"),
+                    evidence_quote=evidence_quote,
+                    confidence=quote_data.get("confidence", 0.8)
+                ))
+            
+            self.logger.info(f"Generated {len(field_quotes)} field quotes")
+            
+            # Check if we have meaningful data
+            has_meaningful_data = any([
+                data_dict.get("design_archetype"),
+                data_dict.get("primary_endpoint"),
+                data_dict.get("analysis_set"),
+                data_dict.get("population_description"),
+                data_dict.get("results"),
+                data_dict.get("primary_endpoint_results")
+            ])
+            
+            if not has_meaningful_data:
+                self.logger.warning(f"LLM returned no meaningful {self.name} data - this may indicate document has no relevant information")
+                data_dict = {}
+            
+            if len(field_quotes) == 0:
+                self.logger.warning("LLM returned no field_quotes - evidence extraction may be incomplete")
+            
+            return data_dict, field_quotes
                 
-                for quote_data in result.get("field_quotes", []):
-                    self.logger.info(f"DEBUG: Processing quote_data: {quote_data}")
-                    from ..extract.models.evidence_field import EvidenceField
-                    
-                    # Ensure evidence_quote is a string
-                    evidence_quote = quote_data.get("evidence_quote", "")
-                    if not isinstance(evidence_quote, str):
-                        evidence_quote = str(evidence_quote) if evidence_quote is not None else ""
-                    
-                    field_quotes.append(EvidenceField(
-                        field_name=quote_data.get("field_name", ""),
-                        value=quote_data.get("value"),
-                        evidence_quote=evidence_quote,
-                        confidence=quote_data.get("confidence", 0.8)
-                    ))
-                
-                return data_dict, field_quotes
-                
-            except Exception as e:
-                self.logger.warning(f"DEBUG: {self.name} attempt {attempt + 1} failed: {e}")
-                if attempt == self.max_retries - 1:
-                    self.logger.error(f"All {self.max_retries} attempts failed for {self.name}")
-                    raise
-        
-        return {}, []
+        except Exception as e:
+            self.logger.error(f"{self.name} generation failed: {e}")
+            raise ValueError(f"LLM {self.name} extraction failed: {str(e)}")
     
     @abstractmethod
     def _get_data_key(self) -> str:
@@ -203,17 +221,7 @@ class BaseLLMGenerator(BaseLLMWorker, ABC):
     
     @abstractmethod
     def _build_standard_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
-        """Build the standard prompt for the first attempt."""
-        pass
-    
-    @abstractmethod
-    def _build_simplified_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
-        """Build a simplified prompt for the second attempt."""
-        pass
-    
-    @abstractmethod
-    def _build_minimal_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
-        """Build a minimal prompt for the third attempt."""
+        """Build the standard prompt for extraction."""
         pass
     
     @abstractmethod
