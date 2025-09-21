@@ -72,8 +72,10 @@ class CtgovPipelineConfig:
     # Ingestion settings - FIXED: Proper limiting at source
     batch_size: int = 100
     max_studies_per_run: int = 1000
-    default_since_days: int = 1  # Set to 1 day to get September 19th data
+    default_since_days: int = 1  # Will be overridden by config
     save_cursor: bool = True
+    rate_limit_interval: int = 10  # Process every N trials before sleep
+    sleep_between_batches_ms: int = 200  # Sleep duration in milliseconds
     
     # Change detection
     change_detection_enabled: bool = True
@@ -91,7 +93,8 @@ class CtgovPipelineConfig:
     # Asset resolution
     asset_resolution_enabled: bool = True
     create_new_assets: bool = True
-    min_asset_confidence: float = 0.7
+    min_asset_confidence: float = 0.7  # Will be overridden by config
+    sponsor_resolution_confidence_threshold: float = 0.8  # Will be overridden by config
     
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> CtgovPipelineConfig:
@@ -130,6 +133,13 @@ class CtgovPipeline:
         self.client = CtgovClient(base_url=api_base_url)
         self.change_detector = CtgovChangeDetector()
         self.asset_resolver = AssetResolver()
+        
+        # Override hardcoded values with config values
+        self.config.default_since_days = self.config_manager.get_value('ctgov.ingestion.default_since_days', self.config.default_since_days)
+        self.config.min_asset_confidence = self.config_manager.get_value('ctgov.data_quality.min_asset_confidence', self.config.min_asset_confidence)
+        self.config.sponsor_resolution_confidence_threshold = self.config_manager.get_value('ctgov.data_quality.sponsor_resolution_confidence_threshold', self.config.sponsor_resolution_confidence_threshold)
+        self.config.rate_limit_interval = self.config_manager.get_value('ctgov.ingestion.rate_limit_interval', self.config.rate_limit_interval)
+        self.config.sleep_between_batches_ms = self.config_manager.get_value('ctgov.ingestion.sleep_between_batches_ms', self.config.sleep_between_batches_ms)
         
         # State management
         state_file_path = self.config_manager.get_value('ctgov.state_file', '.state/ctgov_pipeline.json')
@@ -290,8 +300,8 @@ class CtgovPipeline:
                         result.trials_processed += 1
                         
                         # Rate limiting
-                        if processed_count % 10 == 0:
-                            time.sleep(0.2)  # Brief pause every 10 trials
+                        if processed_count % self.config.rate_limit_interval == 0:
+                            time.sleep(self.config.sleep_between_batches_ms / 1000.0)  # Convert ms to seconds
                         
                         # FIXED: Check limit after processing to ensure we don't exceed
                         if processed_count >= max_studies:
@@ -355,16 +365,18 @@ class CtgovPipeline:
                                  status_filter: Optional[List[str]] = None) -> bool:
         """Apply additional filters beyond the basic client filters."""
         try:
-            # Phase filter
+            protocol_section = study.get('protocolSection', {})
+            
+            # Phase filter - use client's comprehensive extraction
             if phase_filter:
-                study_phase = self._extract_phase(study)
-                if study_phase and study_phase not in phase_filter:
+                study_phase = self.client._extract_phase(protocol_section)
+                if study_phase and study_phase.value not in phase_filter:
                     return False
             
-            # Status filter
+            # Status filter - use client's comprehensive extraction
             if status_filter:
-                study_status = self._extract_status(study)
-                if study_status and study_status not in status_filter:
+                study_status, _ = self.client._extract_status_and_dates(protocol_section)
+                if study_status and study_status.value not in status_filter:
                     return False
             
             return True
@@ -394,35 +406,6 @@ class CtgovPipeline:
             official_title=identification.get('officialTitle'),
             raw_jsonb=raw_trial
         )
-    
-    def _extract_phase(self, study: Dict[str, Any]) -> Optional[str]:
-        """Extract trial phase from study data."""
-        try:
-            protocol = study.get('protocolSection', {})
-            design = protocol.get('designModule', {})
-            phases = design.get('phases', [])
-            
-            if phases:
-                # Return the first phase (usually the primary one)
-                return phases[0].upper()
-            
-            return None
-        except Exception:
-            return None
-    
-    def _extract_status(self, study: Dict[str, Any]) -> Optional[str]:
-        """Extract trial status from study data."""
-        try:
-            protocol = study.get('protocolSection', {})
-            status_module = protocol.get('statusModule', {})
-            overall_status = status_module.get('overallStatus', '')
-            
-            if overall_status:
-                return overall_status.upper().replace(' ', '_')
-            
-            return None
-        except Exception:
-            return None
     
     def _passes_filters(self, 
                        trial_fields: ComprehensiveTrialFields,
@@ -567,7 +550,7 @@ class CtgovPipeline:
                     from ncfd.mapping.simple_resolver import resolve_sponsor_simple
                     
                     sponsor_result = resolve_sponsor_simple(session, new_trial.nct_id, sponsor_name)
-                    if sponsor_result.company_id and sponsor_result.confidence >= 0.8:
+                    if sponsor_result.company_id and sponsor_result.confidence >= self.config.sponsor_resolution_confidence_threshold:
                         new_trial.sponsor_company_id = sponsor_result.company_id
                         logger.info(f"Resolved sponsor '{sponsor_name}' to company {sponsor_result.company_id} ({sponsor_result.match_method})")
             except Exception as _e:

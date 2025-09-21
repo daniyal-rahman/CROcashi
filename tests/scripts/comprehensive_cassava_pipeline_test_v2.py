@@ -841,7 +841,7 @@ class ComprehensiveCassavaTestV2:
             # Run pattern evaluation
             logger.info(f"🎯 TEST: Calling orchestrator.run_pattern_evaluation with {len(trial_list)} trials")
             logger.info(f"🎯 TEST: Trial list being passed to orchestrator: {trial_list}")
-            pattern_result = orchestrator.run_pattern_evaluation(trial_list)
+            pattern_result = await orchestrator.run_pattern_evaluation(trial_list)
             
             if pattern_result:
                 self.results["pattern_evaluation"] = {

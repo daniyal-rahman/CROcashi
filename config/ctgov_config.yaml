@@ -26,7 +26,7 @@ ingestion:
   
   # Date filtering
   backfill_start_date: "2000-01-01"
-  default_since_days: 7  # Default to last 7 days if no cursor
+  default_since_days: 1  # Default to last 1 day if no cursor (matches pipeline default)
   
   # Progress tracking
   save_cursor: true
@@ -34,6 +34,7 @@ ingestion:
   
   # Performance
   sleep_between_batches_ms: 200
+  rate_limit_interval: 10  # Process every 10 trials before sleep
   max_concurrent_requests: 1  # CT.gov doesn't support concurrent requests well
 
 # Change Detection Configuration
@@ -93,6 +94,8 @@ data_quality:
   min_sponsor_name_length: 3
   max_sample_size: 100000
   min_quality_score: 0.7
+  min_asset_confidence: 0.7
+  sponsor_resolution_confidence_threshold: 0.8
   
   # Field completeness requirements
   min_required_field_completeness: 0.8

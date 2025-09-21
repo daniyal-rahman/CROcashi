@@ -21,6 +21,7 @@ from .patent_types import (
 from .patent_client import USPTOPatentClient
 from .assignment_client import USPTOAssignmentClient
 from .patent_processor import PatentProcessor
+from .patent_query_builder import PatentQueryBuilder, PatentResultProcessor, TrialPatentContext
 
 __all__ = [
     'PatentRecord',
@@ -31,5 +32,8 @@ __all__ = [
     'IngestionResult',
     'USPTOPatentClient',
     'USPTOAssignmentClient',
-    'PatentProcessor'
+    'PatentProcessor',
+    'PatentQueryBuilder',
+    'PatentResultProcessor',
+    'TrialPatentContext'
 ]
