@@ -15,9 +15,9 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 
 from ncfd.extract.retrieval import build_retriever
-from ncfd.extract.generators import LLMResultsFactsheetGenerator
+from ncfd.extract.generators import LLMFactsheetExtractor
 from ncfd.extract.models import (
-    DocumentCard, Span, StudyCard, ResultsFactsheet, DecisionRecord
+    DocumentCard, Span, StudyCard, Factsheet, DecisionRecord
 )
 from ncfd.ingest.pubmed.document_manager import DocumentManager
 from ncfd.db.session import session_scope
@@ -42,7 +42,7 @@ class StudyCardPipelineOutput:
     document_cards: List[DocumentCard] = field(default_factory=list)
     evidence_spans: List[Span] = field(default_factory=list)
     study_card: Optional[StudyCard] = None
-    results_factsheet: Optional[ResultsFactsheet] = None
+    factsheet: Optional[Factsheet] = None
     
     # Pattern Families system
     pattern_detections: List[Any] = field(default_factory=list)  # PatternDetection objects
@@ -81,11 +81,11 @@ class StudyCardPipeline:
         self.document_manager = DocumentManager()
         
         # Core LLM-first workers
-        from ncfd.extract.generators import LLMStudyCardGenerator, PatternFamilyDetector
+        from ncfd.extract.generators import LLMStudyCardExtractor, PatternFamilyDetector
         from ncfd.ingest.pubmed.retrieval.pre_llm_guardrails import PreLLMGuardrailsSystem, PreLLMGuardrailsConfig
         
-        self.llm_study_generator = LLMStudyCardGenerator()
-        self.llm_results_generator = LLMResultsFactsheetGenerator()
+        self.llm_study_extractor = LLMStudyCardExtractor()
+        self.llm_results_extractor = LLMFactsheetExtractor()
         self.pattern_detector = PatternFamilyDetector()
         
         # Pre-LLM guardrails system with centralized config
@@ -144,9 +144,9 @@ class StudyCardPipeline:
                 errors.append("Study section missing - no study card generated")
         
         # Check results factsheet - always require if we have documents
-        if len(result.document_cards) > 0 and (require_results or not result.results_factsheet):
-            if not result.results_factsheet:
-                errors.append("Results section missing - no results factsheet generated")
+        if len(result.document_cards) > 0 and (require_results or not result.factsheet):
+            if not result.factsheet:
+                errors.append("Results section missing - no factsheet generated")
         
         # Check pattern detections
         if require_patterns and len(result.pattern_detections) == 0:
@@ -181,11 +181,11 @@ class StudyCardPipeline:
                         errors.append(f"Study card not persisted to database for doc_id: {result.study_card.doc_id}")
                 
                 # Check factsheets table
-                if result.results_factsheet:
+                if result.factsheet:
                     factsheet_count = session.execute(text("SELECT COUNT(*) FROM factsheets WHERE doc_id = :doc_id"), 
-                                                    {'doc_id': int(result.results_factsheet.doc_id) if result.results_factsheet.doc_id else None}).scalar()
+                                                    {'doc_id': int(result.factsheet.doc_id) if result.factsheet.doc_id else None}).scalar()
                     if factsheet_count == 0:
-                        errors.append(f"Results factsheet not persisted to database for doc_id: {result.results_factsheet.doc_id}")
+                        errors.append(f"Factsheet not persisted to database for doc_id: {result.factsheet.doc_id}")
                 
                 # Check spans table (evidence quotes)
                 if result.evidence_spans:
@@ -246,6 +246,15 @@ class StudyCardPipeline:
             raw_doc_texts = prioritized_docs['raw_doc_texts']
             
             logger.info(f"Prioritization stats: {rate_stats}")
+            
+            # Check if no documents were selected due to text availability issues
+            if not result.document_cards:
+                logger.error("CRITICAL: No documents selected for study card generation - likely due to text availability issues")
+                result.success = False
+                result.errors.append("No documents selected for processing - all documents lack text for analysis")
+                result.end_time = datetime.now(timezone.utc)
+                result.processing_time_seconds = (result.end_time - result.start_time).total_seconds()
+                return result
             
             # Stage 1.6: Full text retrieval will happen lazily during LLM processing
             logger.info("Stage 1.6: Full text retrieval will happen lazily during LLM processing")
@@ -347,7 +356,7 @@ class StudyCardPipeline:
                         "trial_context": trial_context
                     }
                     study_result = await concurrency_manager.execute_with_concurrency_control(
-                        self.llm_study_generator.process, study_data
+                        self.llm_study_extractor.process, study_data
                     )
                     # Safe field_quotes count logging
                     field_quotes_for_logging = study_result.get('field_quotes', [])
@@ -443,24 +452,24 @@ class StudyCardPipeline:
                             "trial_context": trial_context
                         }
                         results_result = await concurrency_manager.execute_with_concurrency_control(
-                            self.llm_results_generator.process, results_data
+                            self.llm_results_extractor.process, results_data
                         )
                         # Safe field_quotes count logging for results
                         results_field_quotes_for_logging = results_result.get('field_quotes', [])
                         if not isinstance(results_field_quotes_for_logging, list):
                             results_field_quotes_for_logging = []
-                        logger.info(f"DEBUG: Results result for doc {doc_card.doc_id}: success={results_result.get('success')}, has_results_factsheet={bool(results_result.get('results_factsheet'))}, field_quotes_count={len(results_field_quotes_for_logging)}")
+                        logger.info(f"DEBUG: Factsheet result for doc {doc_card.doc_id}: success={results_result.get('success')}, has_factsheet={bool(results_result.get('factsheet'))}, field_quotes_count={len(results_field_quotes_for_logging)}")
                         
                         # Log detailed results factsheet output
-                        if results_result.get("results_factsheet"):
-                            results_factsheet = results_result["results_factsheet"]
-                            logger.info(f"📊 RESULTS FACTSHEET GENERATED for doc {doc_card.doc_id}:")
-                            logger.info(f"   Primary Endpoint Results: {str(getattr(results_factsheet, 'primary_endpoint_results', 'N/A'))[:100]}...")
-                            logger.info(f"   Secondary Endpoint Results: {str(getattr(results_factsheet, 'secondary_endpoint_results', 'N/A'))[:100]}...")
-                            logger.info(f"   Safety Results: {str(getattr(results_factsheet, 'safety_results', 'N/A'))[:100]}...")
-                            logger.info(f"   Total Enrolled: {getattr(results_factsheet, 'total_enrolled', 'N/A')}")
-                            logger.info(f"   Completed Primary Endpoint: {getattr(results_factsheet, 'completed_primary_endpoint', 'N/A')}")
-                            logger.info(f"   Dropout Rate: {getattr(results_factsheet, 'dropout_rate', 'N/A')}")
+                        if results_result.get("factsheet"):
+                            factsheet = results_result["factsheet"]
+                            logger.info(f"📊 FACTSHEET GENERATED for doc {doc_card.doc_id}:")
+                            logger.info(f"   Primary Endpoint Results: {str(getattr(factsheet, 'primary_endpoint_results', 'N/A'))[:100]}...")
+                            logger.info(f"   Secondary Endpoint Results: {str(getattr(factsheet, 'secondary_endpoint_results', 'N/A'))[:100]}...")
+                            logger.info(f"   Safety Results: {str(getattr(factsheet, 'safety_results', 'N/A'))[:100]}...")
+                            logger.info(f"   Total Enrolled: {getattr(factsheet, 'total_enrolled', 'N/A')}")
+                            logger.info(f"   Completed Primary Endpoint: {getattr(factsheet, 'completed_primary_endpoint', 'N/A')}")
+                            logger.info(f"   Dropout Rate: {getattr(factsheet, 'dropout_rate', 'N/A')}")
                         
                         # Log detailed field quotes
                         field_quotes = results_result.get('field_quotes', [])
@@ -478,8 +487,8 @@ class StudyCardPipeline:
                                 logger.info(f"      Evidence: {str(quote.evidence_quote)[:100]}...")
                                 logger.info(f"      Confidence: {quote.confidence}")
                         
-                        if results_result.get("success") and results_result.get("results_factsheet"):
-                            result.results_factsheet = results_result["results_factsheet"]
+                        if results_result.get("success") and results_result.get("factsheet"):
+                            result.factsheet = results_result["factsheet"]
                             
                             # Collect field quotes as evidence spans
                             field_quotes = results_result.get("field_quotes", [])
@@ -496,11 +505,11 @@ class StudyCardPipeline:
                                 result.evidence_spans.append(evidence_span)
                             
                             # Store LLM artifacts
-                            result.llm_artifacts[f"results_factsheet_{doc_card.doc_id}"] = results_result
+                            result.llm_artifacts[f"factsheet_{doc_card.doc_id}"] = results_result
                             
                             # Save results factsheet to database
                             try:
-                                await self._save_results_factsheet_to_db(results_result["results_factsheet"])
+                                await self._save_factsheet_to_db(results_result["factsheet"])
                             except Exception as e:
                                 logger.warning(f"Failed to save results factsheet to database: {e}")
                                 result.warnings.append(f"Failed to save results factsheet to database: {e}")
@@ -578,7 +587,7 @@ class StudyCardPipeline:
             logger.info("🎯 STUDY CARD PIPELINE SUMMARY:")
             logger.info(f"   📄 Documents Processed: {len(result.document_cards)}")
             logger.info(f"   📋 Study Cards Generated: {1 if result.study_card else 0}")
-            logger.info(f"   📊 Results Factsheets Generated: {1 if result.results_factsheet else 0}")
+            logger.info(f"   📊 Results Factsheets Generated: {1 if result.factsheet else 0}")
             logger.info(f"   🚪 Pattern Detections Generated: {len(result.pattern_detections)}")
             logger.info(f"   📝 Total Evidence Spans: {len(result.evidence_spans)}")
             logger.info(f"   🔧 LLM Artifacts Stored: {len(result.llm_artifacts)}")
@@ -586,7 +595,7 @@ class StudyCardPipeline:
             # Add warnings for empty artifacts
             if not result.study_card:
                 logger.warning("⚠️  WARNING: No study card generated!")
-            if not result.results_factsheet:
+            if not result.factsheet:
                 logger.warning("⚠️  WARNING: No results factsheet generated!")
             if not result.pattern_detections:
                 logger.warning("⚠️  WARNING: No pattern detections generated!")
@@ -642,7 +651,7 @@ class StudyCardPipeline:
                 logger.info(f"   📄 Documents Analyzed: {len(result.document_cards)} (≥ 1 required)")
                 logger.info(f"   📝 Quotes Extracted: {len(result.evidence_spans)} (≥ {min_quotes} required)")
                 logger.info(f"   📋 Study Card: {'✅ Generated' if result.study_card else '❌ Missing'}")
-                logger.info(f"   📊 Results Factsheet: {'✅ Generated' if result.results_factsheet else '❌ Missing'}")
+                logger.info(f"   📊 Results Factsheet: {'✅ Generated' if result.factsheet else '❌ Missing'}")
                 logger.info(f"   🔍 Pattern Detections: {'✅ Generated' if result.pattern_detections else '❌ Missing'}")
                 logger.info(f"   🔧 LLM Artifacts: {len(result.llm_artifacts)} (≥ {min_llm_artifacts} required)")
             
@@ -662,15 +671,20 @@ class StudyCardPipeline:
                 logger.warning("⚠️ No decision record generated")
             
             # Complete the pipeline
-            result.success = True
             result.end_time = datetime.now(timezone.utc)
             result.processing_time_seconds = (result.end_time - result.start_time).total_seconds()
             
-            logger.info(f"Study card pipeline completed successfully for trial {trial_id}")
-            logger.info(f"Generated {len(result.document_cards)} document cards, {len(result.evidence_spans)} evidence spans")
+            # Only set success to True if we actually generated a study card
             if result.study_card:
+                result.success = True
+                logger.info(f"Study card pipeline completed successfully for trial {trial_id}")
+                logger.info(f"Generated {len(result.document_cards)} document cards, {len(result.evidence_spans)} evidence spans")
                 logger.info("Study card generated and persisted successfully")
-            if result.results_factsheet:
+            else:
+                result.success = False
+                logger.error(f"Study card pipeline failed for trial {trial_id} - no study card generated")
+                result.errors.append("No study card generated - likely due to text availability issues")
+            if result.factsheet:
                 logger.info("Results factsheet generated and persisted successfully")
             if result.pattern_detections:
                 logger.info(f"Pattern detections generated and persisted successfully ({len(result.pattern_detections)} patterns)")
@@ -915,7 +929,7 @@ class StudyCardPipeline:
             logger.error(f"Failed to save study card to database: {e}")
             raise
     
-    async def _save_results_factsheet_to_db(self, results_factsheet):
+    async def _save_factsheet_to_db(self, factsheet):
         """Save results factsheet to database."""
         try:
             import json
@@ -937,20 +951,20 @@ class StudyCardPipeline:
                         :follow_up_completion, NOW(), NOW()
                     )
                 """), {
-                    'doc_id': int(results_factsheet.doc_id) if results_factsheet.doc_id else None,
-                    'results': json.dumps(getattr(results_factsheet, 'results', [])),
-                    'primary_endpoint_results': json.dumps(getattr(results_factsheet, 'primary_endpoint_results', None)),
-                    'secondary_endpoint_results': json.dumps(getattr(results_factsheet, 'secondary_endpoint_results', [])),
-                    'safety_results': json.dumps(getattr(results_factsheet, 'safety_results', [])),
-                    'primary_analysis_set': getattr(results_factsheet, 'primary_analysis_set', None),
-                    'secondary_analysis_sets': json.dumps(getattr(results_factsheet, 'secondary_analysis_sets', [])),
-                    'total_enrolled': getattr(results_factsheet, 'total_enrolled', None),
-                    'completed_primary_endpoint': getattr(results_factsheet, 'completed_primary_endpoint', None),
-                    'dropout_rate': getattr(results_factsheet, 'dropout_rate', None),
-                    'follow_up_completion': getattr(results_factsheet, 'follow_up_completion', None)
+                    'doc_id': int(factsheet.doc_id) if factsheet.doc_id else None,
+                    'results': json.dumps(getattr(factsheet, 'results', [])),
+                    'primary_endpoint_results': json.dumps(getattr(factsheet, 'primary_endpoint_results', None)),
+                    'secondary_endpoint_results': json.dumps(getattr(factsheet, 'secondary_endpoint_results', [])),
+                    'safety_results': json.dumps(getattr(factsheet, 'safety_results', [])),
+                    'primary_analysis_set': getattr(factsheet, 'primary_analysis_set', None),
+                    'secondary_analysis_sets': json.dumps(getattr(factsheet, 'secondary_analysis_sets', [])),
+                    'total_enrolled': getattr(factsheet, 'total_enrolled', None),
+                    'completed_primary_endpoint': getattr(factsheet, 'completed_primary_endpoint', None),
+                    'dropout_rate': getattr(factsheet, 'dropout_rate', None),
+                    'follow_up_completion': getattr(factsheet, 'follow_up_completion', None)
                 })
                 session.commit()
-                logger.info(f"Results factsheet saved to database for doc_id: {results_factsheet.doc_id}")
+                logger.info(f"Results factsheet saved to database for doc_id: {factsheet.doc_id}")
         except Exception as e:
             logger.error(f"Failed to save results factsheet to database: {e}")
     
@@ -1033,6 +1047,11 @@ class StudyCardPipeline:
             candidates = []
             logger.info(f"DEBUG: Processing {len(document_cards)} document cards from retrieval")
             
+            # Debug: Show what's in raw_doc_texts
+            logger.info(f"DEBUG: raw_doc_texts keys: {list(raw_doc_texts.keys())}")
+            for doc_id, text in list(raw_doc_texts.items())[:3]:  # Show first 3
+                logger.info(f"DEBUG: raw_doc_texts[{doc_id}]: length={len(text) if text else 0}, preview='{str(text)[:100] if text else 'None'}...'")
+            
             for i, doc_card in enumerate(document_cards):
                 doc_info = doc_details.get(doc_card.doc_id)
                 if not doc_info:
@@ -1042,14 +1061,26 @@ class StudyCardPipeline:
                 doc_data = doc_info['doc_data']
                 
                 # Determine text availability from raw_doc_texts
-                has_full_text = bool(raw_doc_texts.get(doc_card.doc_id, {}).get('fulltext'))
-                has_abstract = bool(raw_doc_texts.get(doc_card.doc_id, {}).get('abstract'))
+                # raw_doc_texts contains the actual text content directly, not a dict with 'fulltext'/'abstract' keys
+                doc_id_key = str(doc_card.doc_id)
+                raw_text = raw_doc_texts.get(doc_id_key, '')
+                has_text = bool(raw_text and raw_text.strip())
+                
+                # For now, treat any text as both fulltext and abstract since we don't distinguish
+                has_full_text = has_text
+                has_abstract = has_text
+                
+                # Debug logging for text availability
+                logger.debug(f"DEBUG: Doc {doc_card.doc_id}: raw_text_length={len(raw_text) if raw_text else 0}, has_text={has_text}, has_full_text={has_full_text}, has_abstract={has_abstract}")
                 
                 # Get R/S scores from document data
                 r_score = doc_data.get('r_score', 0.0)
                 s_score = doc_data.get('s_score', 0.0)
                 r_tier = doc_data.get('r_tier', 'R0')
                 s_tier = doc_data.get('s_tier', 'S0')
+                
+                # Debug logging for R/S scores
+                logger.debug(f"DEBUG: Doc {doc_card.doc_id}: r_score={r_score} (type: {type(r_score)}), s_score={s_score} (type: {type(s_score)}), r_tier={r_tier}, s_tier={s_tier}")
                 
                 # Determine priority
                 priority = self._determine_document_priority(
@@ -1068,8 +1099,8 @@ class StudyCardPipeline:
                     s_score=s_score,
                     has_full_text=has_full_text,
                     has_abstract=has_abstract,
-                    full_text_length=len(raw_doc_texts.get(doc_card.doc_id, {}).get('fulltext', '')),
-                    abstract_length=len(raw_doc_texts.get(doc_card.doc_id, {}).get('abstract', ''))
+                    full_text_length=len(raw_text),
+                    abstract_length=len(raw_text)
                 )
                 
                 candidate = {
@@ -1094,10 +1125,14 @@ class StudyCardPipeline:
                 logger.debug(f"DEBUG: Candidate {i+1}: doc_id={doc_card.doc_id}, priority={priority}, R={r_score_str} ({r_tier}), S={s_score_str} ({s_tier})")
             
             # Sort candidates by priority and processing score (moved outside the loop)
+            # Note: This sorting is now mainly for logging/debugging purposes
+            # The actual document selection is done by pure R/S score ranking in _apply_document_rate_limits
             sorted_candidates = self._sort_document_candidates(candidates)
             
-            # Apply rate limiting
+            # Apply rate limiting using pure R/S score ranking
+            logger.info(f"DEBUG: About to call _apply_document_rate_limits with {len(sorted_candidates)} candidates")
             selected_candidates = self._apply_document_rate_limits(sorted_candidates)
+            logger.info(f"DEBUG: _apply_document_rate_limits returned {len(selected_candidates)} selected candidates")
             
             # Generate processing statistics
             stats = self._generate_document_processing_stats(trial_documents, candidates, selected_candidates)
@@ -1252,7 +1287,7 @@ class StudyCardPipeline:
         effective_s_score = s_score + pmcid_boost + clinical_trial_boost + nct_boost
         
         # HIGH priority: Strong R/S scores OR PMCID presence OR clinical trial
-        if (effective_r_score >= 0.5 or effective_s_score >= 0.5) and (has_full_text or has_abstract):
+        if (effective_r_score >= 0.6 or effective_s_score >= 0.6) and (has_full_text or has_abstract):
             return "HIGH"
         
         # MEDIUM priority: Moderate R/S scores OR PMCID presence
@@ -1356,46 +1391,278 @@ class StudyCardPipeline:
         return sorted(candidates, key=sort_key)
     
     def _apply_document_rate_limits(self, candidates):
-        """Apply rate limiting to selected candidates."""
+        """
+        Apply rate limiting using pure R/S score ranking instead of priority buckets.
+        
+        Handles documents without R/S scores (None values) which occur when:
+        - Documents were pulled at runtime but have no text for R/S scoring
+        - R/S scoring process ran but couldn't extract text from documents
+        
+        Fallback strategy:
+        1. Select documents with R≥0.6, ranked by S score
+        2. Fill remaining slots with documents R<0.6, ranked by R score  
+        3. Fill remaining slots with documents without R/S scores (no text for scoring)
+        4. Final fallback: any documents with text
+        """
+        
+        logger.info(f"DEBUG: _apply_document_rate_limits called with {len(candidates)} candidates")
         
         # Get rate limiting config from pipeline config
         max_documents_per_trial = self.config.get('max_documents_per_trial', 20)
-        enable_fallback_processing = self.config.get('enable_fallback_processing', True)
-        max_fallback_documents = self.config.get('max_fallback_documents', 5)
+        r_threshold = self.config.get('high_priority_r_threshold', 0.6)
         
-        # Separate candidates by priority
-        high_priority = [c for c in candidates if c['priority'] == 'HIGH']
-        medium_priority = [c for c in candidates if c['priority'] == 'MEDIUM']
-        low_priority = [c for c in candidates if c['priority'] == 'LOW']
-        fallback_priority = [c for c in candidates if c['priority'] == 'FALLBACK']
+        logger.info(f"DEBUG: Starting R/S score ranking with R threshold={r_threshold}, max_docs={max_documents_per_trial}")
         
-        # DEBUG: Log priority counts
-        logger.info(f"DEBUG: Priority counts - HIGH: {len(high_priority)}, MEDIUM: {len(medium_priority)}, LOW: {len(low_priority)}, FALLBACK: {len(fallback_priority)}")
+        # Debug: Check for documents with missing R/S scores
+        missing_r_scores = [c for c in candidates if c['r_score'] is None]
+        missing_s_scores = [c for c in candidates if c['s_score'] is None]
+        if missing_r_scores:
+            logger.warning(f"DEBUG: Found {len(missing_r_scores)} documents with missing R scores (likely no text for R/S scoring)")
+            # Log details about these documents
+            for doc in missing_r_scores[:3]:  # Show first 3
+                logger.warning(f"  Doc {doc['doc_id']}: title='{doc.get('title', 'No title')[:50]}...', has_full_text={doc.get('has_full_text')}, has_abstract={doc.get('has_abstract')}")
+        if missing_s_scores:
+            logger.warning(f"DEBUG: Found {len(missing_s_scores)} documents with missing S scores (likely no text for R/S scoring)")
         
-        selected = []
+        # Step 1: Filter by R threshold (R≥0.6) and text availability
+        relevant_docs = [
+            c for c in candidates 
+            if c['r_score'] is not None and c['r_score'] >= r_threshold and (c['has_full_text'] or c['has_abstract'])
+        ]
         
-        # Select high priority documents first
-        selected.extend(high_priority[:max_documents_per_trial])
+        logger.info(f"DEBUG: Found {len(relevant_docs)} documents meeting R≥{r_threshold} threshold")
         
-        # Add medium priority if we have room
-        remaining_slots = max_documents_per_trial - len(selected)
-        if remaining_slots > 0:
-            selected.extend(medium_priority[:remaining_slots])
+        # If no documents have R/S scores, fall back to selecting any documents with text
+        if not relevant_docs and not any(c['r_score'] is not None for c in candidates):
+            logger.warning("DEBUG: No documents have R/S scores (likely no text available for R/S scoring), falling back to any documents with text")
+            relevant_docs = [
+                c for c in candidates 
+                if c['has_full_text'] or c['has_abstract']
+            ]
+            # Sort by doc_id for deterministic ordering
+            relevant_docs.sort(key=lambda x: x['doc_id'])
+            logger.info(f"DEBUG: Fallback selected {len(relevant_docs)} documents with text (no R/S scores available)")
         
-        # Add low priority if we have room
-        remaining_slots = max_documents_per_trial - len(selected)
-        if remaining_slots > 0:
-            selected.extend(low_priority[:remaining_slots])
+        # Step 2: Sort by S score (descending), then R score (descending) as tiebreaker
+        def sort_key(doc):
+            # Primary: S score (higher = better) - only for docs with valid scores
+            s_score = float(doc['s_score']) if doc['s_score'] is not None else -1.0  # Use -1 to put None scores last
+            # Secondary: R score (higher = better) - only for docs with valid scores
+            r_score = float(doc['r_score']) if doc['r_score'] is not None else -1.0  # Use -1 to put None scores last
+            # Tertiary: doc_id for deterministic ordering (lower = better for consistency)
+            doc_id = doc['doc_id']
+            return (-s_score, -r_score, doc_id)
         
-        # Add fallback documents if enabled and we have room
-        if enable_fallback_processing:
+        sorted_docs = sorted(relevant_docs, key=sort_key)
+        
+        # Step 3: Take top K documents
+        selected = sorted_docs[:max_documents_per_trial]
+        
+        # Step 4: Fallback logic - if not enough relevant docs, fill with next best R scores
+        if len(selected) < max_documents_per_trial:
+            remaining_slots = max_documents_per_trial - len(selected)
+            fallback_limit = max_documents_per_trial // 2  # Half of rate limit
+            
+            # Get documents that didn't meet R threshold, sorted by R score
+            fallback_docs = [
+                c for c in candidates 
+                if c['r_score'] is not None and c['r_score'] < r_threshold and (c['has_full_text'] or c['has_abstract'])
+            ]
+            
+            # Sort fallback docs by R score (descending)
+            fallback_docs.sort(key=lambda x: (-float(x['r_score']) if x['r_score'] is not None else 0, x['doc_id']))
+            
+            # Add up to fallback_limit or remaining_slots, whichever is smaller
+            fallback_count = min(remaining_slots, fallback_limit, len(fallback_docs))
+            selected.extend(fallback_docs[:fallback_count])
+            
+            logger.info(f"DEBUG: Added {fallback_count} fallback documents (R<{r_threshold})")
+            
+            # If still not enough documents, add documents without R/S scores (no text for scoring)
             remaining_slots = max_documents_per_trial - len(selected)
             if remaining_slots > 0:
-                selected.extend(fallback_priority[:min(remaining_slots, max_fallback_documents)])
+                no_rs_docs = [
+                    c for c in candidates 
+                    if c['r_score'] is None and (c['has_full_text'] or c['has_abstract'])
+                ]
+                # Sort by doc_id for deterministic ordering
+                no_rs_docs.sort(key=lambda x: x['doc_id'])
+                
+                # Add up to remaining slots
+                no_rs_count = min(remaining_slots, len(no_rs_docs))
+                selected.extend(no_rs_docs[:no_rs_count])
+                
+                if no_rs_count > 0:
+                    logger.info(f"DEBUG: Added {no_rs_count} documents without R/S scores (no text for scoring)")
+        
+        # Final fallback: if still no documents selected, take any documents with text
+        if not selected:
+            logger.warning("DEBUG: No documents selected by R/S ranking, taking any documents with text")
+            fallback_docs = [
+                c for c in candidates 
+                if c['has_full_text'] or c['has_abstract']
+            ]
+            # Sort by doc_id for deterministic ordering
+            fallback_docs.sort(key=lambda x: x['doc_id'])
+            selected = fallback_docs[:max_documents_per_trial]
+            logger.info(f"DEBUG: Selected {len(selected)} documents as final fallback (no R/S scores available - likely no text for scoring)")
+            
+            # Log why documents don't have R/S scores
+            no_text_docs = [c for c in candidates if not (c['has_full_text'] or c['has_abstract'])]
+            if no_text_docs:
+                logger.warning(f"DEBUG: {len(no_text_docs)} documents have no text available for R/S scoring")
+                for doc in no_text_docs[:3]:  # Show first 3
+                    logger.warning(f"  Doc {doc['doc_id']}: title='{doc.get('title', 'No title')[:50]}...', has_full_text={doc.get('has_full_text')}, has_abstract={doc.get('has_abstract')}")
+            
+            # If still no documents selected, this is a critical issue
+            if not selected:
+                logger.error("CRITICAL: No documents selected even after all fallbacks - this will cause study card generation to fail")
+                # Only take documents with text - taking documents without text will cause quality gate failures
+                text_docs = [c for c in candidates if c['has_full_text'] or c['has_abstract']]
+                if text_docs:
+                    selected = text_docs[:max_documents_per_trial]
+                    logger.error(f"EMERGENCY: Taking {len(selected)} documents with text (last resort)")
+                else:
+                    logger.error("FATAL: No documents with text available - study card generation will fail")
+                    selected = []  # Return empty list rather than documents without text
+        
+        # TODO: Add junk detection stopping mechanism
+        # When S scores start dropping significantly or documents become obviously irrelevant,
+        # stop selecting more documents even if under rate limit
+        
+        # Final validation: filter out documents without text to prevent quality gate failures
+        validated_selected = []
+        for doc in selected:
+            if doc['has_full_text'] or doc['has_abstract']:
+                validated_selected.append(doc)
+            else:
+                logger.warning(f"DEBUG: Filtering out doc {doc['doc_id']} - no text available (will cause quality gate failure)")
+        
+        if len(validated_selected) < len(selected):
+            logger.warning(f"DEBUG: Filtered out {len(selected) - len(validated_selected)} documents without text")
+            selected = validated_selected
+        
+        # Log selection details
+        if selected:
+            s_scores = [float(doc['s_score']) if doc['s_score'] is not None else 0.0 for doc in selected]
+            r_scores = [float(doc['r_score']) if doc['r_score'] is not None else 0.0 for doc in selected]
+            logger.info(f"DEBUG: Selected {len(selected)} documents")
+            logger.info(f"DEBUG: S score range: {min(s_scores):.3f} - {max(s_scores):.3f}")
+            logger.info(f"DEBUG: R score range: {min(r_scores):.3f} - {max(r_scores):.3f}")
+            
+            # Log R ranking for each selected document
+            self._log_r_rankings(selected, candidates)
+        else:
+            logger.info(f"DEBUG: No documents selected - showing R rankings for all candidates")
+            # Log R ranking for all candidates even when none are selected
+            self._log_r_rankings([], candidates)
         
         logger.info(f"Rate limiting applied: {len(selected)} documents selected from {len(candidates)} candidates")
         
         return selected
+    
+    def _log_r_rankings(self, selected_docs: List[Dict[str, Any]], all_candidates: List[Dict[str, Any]]):
+        """
+        Log R ranking for each selected document showing its position out of total documents found.
+        Specifically track the 3 expected Cassava papers that should show warnings if not found.
+        
+        Args:
+            selected_docs: Documents that were selected for processing (can be empty)
+            all_candidates: All candidate documents that were considered
+        """
+        if not all_candidates:
+            return
+        
+        # Expected Cassava papers that should show warnings if not found
+        expected_cassava_papers = {
+            "PMC10531384": "Simufilam Reverses Aberrant Receptor Interactions (2023)",
+            "PMC10339288": "Simufilam suppresses overactive mTOR and restores its (2023)",
+            "PTI-125": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients (2020)"
+        }
+        
+        # Create a mapping of doc_id to R score for all candidates
+        candidate_r_scores = {}
+        candidate_metadata = {}
+        for candidate in all_candidates:
+            if candidate.get('r_score') is not None:
+                candidate_r_scores[candidate['doc_id']] = float(candidate['r_score'])
+                # Store metadata for identification
+                candidate_metadata[candidate['doc_id']] = {
+                    'pmcid': candidate.get('pmcid'),
+                    'title': candidate.get('title', ''),
+                    'pmid': candidate.get('pmid')
+                }
+        
+        # Sort all candidates by R score (descending) to determine rankings
+        sorted_candidates = sorted(
+            candidate_r_scores.items(), 
+            key=lambda x: x[1], 
+            reverse=True
+        )
+        
+        # Create ranking lookup
+        r_rankings = {}
+        for rank, (doc_id, r_score) in enumerate(sorted_candidates, 1):
+            r_rankings[doc_id] = rank
+        
+        total_docs_with_r_scores = len(sorted_candidates)
+        
+        # Check for expected Cassava papers in all candidates (not just selected)
+        logger.info("🔍 CASSAVA EXPECTED PAPERS R RANKING:")
+        found_expected_papers = []
+        
+        for doc_id, metadata in candidate_metadata.items():
+            pmcid = metadata.get('pmcid')
+            title = metadata.get('title', '').lower()
+            
+            # Check if this is one of the expected papers
+            is_expected = False
+            paper_name = None
+            
+            if pmcid in expected_cassava_papers:
+                is_expected = True
+                paper_name = expected_cassava_papers[pmcid]
+            elif "pti-125" in title and "biomarkers" in title and "alzheimer" in title:
+                is_expected = True
+                paper_name = expected_cassava_papers["PTI-125"]
+            
+            if is_expected:
+                r_score = candidate_r_scores.get(doc_id, 0.0)
+                r_rank = r_rankings.get(doc_id, "N/A")
+                found_expected_papers.append((doc_id, paper_name, r_score, r_rank))
+                logger.info(f"  ✅ {paper_name}")
+                logger.info(f"     Doc {doc_id}: R={r_score:.3f} (Rank {r_rank}/{total_docs_with_r_scores})")
+        
+        # Check for missing expected papers
+        missing_papers = []
+        for paper_id, paper_name in expected_cassava_papers.items():
+            found = any(paper_id in name for _, name, _, _ in found_expected_papers)
+            if not found:
+                missing_papers.append(paper_name)
+        
+        if missing_papers:
+            logger.warning("  ❌ MISSING EXPECTED PAPERS:")
+            for paper_name in missing_papers:
+                logger.warning(f"     {paper_name}")
+        
+        # Log selected documents or all candidates if none selected
+        if selected_docs:
+            logger.info("📊 TOP 5 SELECTED DOCUMENTS R RANKING:")
+            for i, doc in enumerate(selected_docs[:5], 1):
+                doc_id = doc['doc_id']
+                r_score = doc.get('r_score')
+                
+                if r_score is not None:
+                    r_rank = r_rankings.get(doc_id, "N/A")
+                    r_score_float = float(r_score)
+                    logger.info(f"  {i:2d}. Doc {doc_id}: R={r_score_float:.3f} (Rank {r_rank}/{total_docs_with_r_scores})")
+                else:
+                    logger.info(f"  {i:2d}. Doc {doc_id}: R=N/A (No R score)")
+        else:
+            logger.info("📊 ALL CANDIDATE DOCUMENTS R RANKING (None Selected):")
+            for i, (doc_id, r_score) in enumerate(sorted_candidates[:10], 1):  # Show top 10
+                r_rank = r_rankings.get(doc_id, "N/A")
+                logger.info(f"  {i:2d}. Doc {doc_id}: R={r_score:.3f} (Rank {r_rank}/{total_docs_with_r_scores})")
     
     def _generate_document_processing_stats(self, all_documents, candidates, selected):
         """Generate processing statistics."""

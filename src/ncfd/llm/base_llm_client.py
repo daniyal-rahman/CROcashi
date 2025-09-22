@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Callable, Union
 from dataclasses import dataclass
 
-from ..models import LLMRequest, LLMResponse, LLMMessage, LLMSchema, LLMGenerationConfig
+from .models import LLMRequest, LLMResponse, LLMMessage, LLMSchema, LLMGenerationConfig
 
 
 @dataclass
@@ -70,10 +70,7 @@ class BaseLLMClient(ABC):
             elif isinstance(msg, dict):
                 message_list.append(LLMMessage(
                     role=msg.get("role", "user"),
-                    content=msg.get("content", ""),
-                    name=msg.get("name"),
-                    tool_call_id=msg.get("tool_call_id"),
-                    function_call=msg.get("function_call")
+                    content=msg.get("content", "")
                 ))
             else:
                 message_list.append(LLMMessage(role="user", content=str(msg)))

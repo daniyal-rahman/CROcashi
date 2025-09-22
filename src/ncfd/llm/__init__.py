@@ -7,7 +7,7 @@ Supports OpenAI, Anthropic, and Gemini with unified request/response handling.
 
 from .models import LLMRequest, LLMResponse, LLMError, LLMMessage, LLMGenerationConfig, LLMSchema
 from .base_provider import BaseLLMProvider
-from .base_worker import BaseLLMWorker, BaseLLMGenerator
+from .base_worker import BaseLLMWorker, BaseLLMExtractor
 from .factory import LLMProviderFactory
 from .config import LLMConfig, load_llm_config
 from .providers.openai_provider import OpenAIProvider
@@ -21,7 +21,7 @@ __all__ = [
     "LLMSchema",
     "BaseLLMProvider",
     "BaseLLMWorker",
-    "BaseLLMGenerator",
+    "BaseLLMExtractor",
     "LLMProviderFactory",
     "LLMConfig",
     "load_llm_config",

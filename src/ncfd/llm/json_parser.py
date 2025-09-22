@@ -138,6 +138,34 @@ def parse_number_from_text(text: str) -> Optional[float]:
     return None
 
 
+def clean_json_value_preserving_quotes(value: Any) -> Any:
+    """
+    Clean JSON values while preserving evidence_quote fields as text.
+    
+    Args:
+        value: Value to clean
+        
+    Returns:
+        Cleaned value with evidence_quote fields preserved as text
+    """
+    if isinstance(value, dict):
+        cleaned_dict = {}
+        for k, v in value.items():
+            if k == "evidence_quote":
+                # Preserve evidence_quote as text, don't convert to numbers
+                cleaned_dict[k] = str(v) if v is not None else ""
+            elif k == "field_quotes" and isinstance(v, list):
+                # Handle field_quotes array specially
+                cleaned_dict[k] = [clean_json_value_preserving_quotes(item) for item in v]
+            else:
+                cleaned_dict[k] = clean_json_value(v)
+        return cleaned_dict
+    elif isinstance(value, list):
+        return [clean_json_value_preserving_quotes(item) for item in value]
+    else:
+        return clean_json_value(value)
+
+
 def clean_json_value(value: Any) -> Any:
     """
     Clean a JSON value, converting text numbers to proper numeric values.
@@ -268,8 +296,9 @@ def parse_llm_json_response(response: str, expected_fields: Optional[List[str]] 
             )
             return {}
         
-        # Clean all values in the JSON
-        cleaned_data = clean_json_value(json_data)
+        # Skip aggressive cleaning - modern LLMs with structured output don't need it
+        # cleaned_data = clean_json_value_preserving_quotes(json_data)
+        cleaned_data = json_data
         
         # Validate expected fields if provided
         if expected_fields:

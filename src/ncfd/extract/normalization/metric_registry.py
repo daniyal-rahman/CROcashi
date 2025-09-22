@@ -1,7 +1,7 @@
 """
 Metric Registry and Normalization Layer
 
-Defines allowed metrics, units, and normalization rules for ResultsFactsheet.
+Defines allowed metrics, units, and normalization rules for Factsheet.
 Implements hard-fail validation for unit mismatches and missing required fields.
 """
 
@@ -446,12 +446,12 @@ class MetricRegistry:
         else:
             return None
     
-    def validate_results_factsheet(self, factsheet_data: Dict[str, Any]) -> Tuple[bool, List[str]]:
-        """Validate a complete ResultsFactsheet against the registry."""
+    def validate_factsheet(self, factsheet_data: Dict[str, Any]) -> Tuple[bool, List[str]]:
+        """Validate a complete Factsheet against the registry."""
         errors = []
         
         if "rows" not in factsheet_data:
-            return False, ["ResultsFactsheet must contain 'rows' field"]
+            return False, ["Factsheet must contain 'rows' field"]
         
         for i, row in enumerate(factsheet_data["rows"]):
             row_errors = self._validate_factsheet_row(row, i)
@@ -461,7 +461,7 @@ class MetricRegistry:
     
     def normalize_metric_row(self, row: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """
-        Normalize a single ResultsFactsheet row.
+        Normalize a single Factsheet row.
         
         Args:
             row: Dictionary containing metric data
@@ -524,7 +524,7 @@ class MetricRegistry:
         return True, errors
     
     def _validate_factsheet_row(self, row: Dict[str, Any], row_index: int) -> List[str]:
-        """Validate a single ResultsFactsheet row (validation only, no normalization)."""
+        """Validate a single Factsheet row (validation only, no normalization)."""
         errors = []
         row_prefix = f"Row {row_index + 1}:"
         

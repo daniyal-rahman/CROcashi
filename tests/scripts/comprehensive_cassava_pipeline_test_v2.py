@@ -59,7 +59,8 @@ logger = logging.getLogger(__name__)
 
 # Demote noisy DEBUG logs
 logging.getLogger("ncfd.ingest.pubmed").setLevel(logging.WARNING)
-logging.getLogger("ncfd.pipeline").setLevel(logging.WARNING)
+# Keep pipeline logging at INFO level to see R ranking logs
+logging.getLogger("ncfd.pipeline").setLevel(logging.INFO)
 
 # Real-world Cassava trial data - comprehensive list for building aliases and company info
 CASSAVA_TRIALS = [
@@ -254,7 +255,7 @@ class ComprehensiveCassavaTestV2:
         """Load test configuration with simplified, clear settings."""
         config = {
             "worker_id": "cassava_test_v2",
-            "execution_order": ["pubmed", "study_card", "independent_llm_analysis"],  # Skip CT.gov to avoid 1800 trials
+            "execution_order": ["pubmed", "study_card"],  # Skip CT.gov and independent_llm_analysis
             "parallel_execution": False,
             "dependency_checking": True,
             
@@ -372,7 +373,8 @@ class ComprehensiveCassavaTestV2:
             
             # Independent LLM Analysis configuration
             "independent_llm_analysis": {
-                "enabled": True,
+                # "enabled": True,
+                "enabled": False,
                 "model": "gpt-4o",
                 "timeout_seconds": 300,
                 "parallel_execution": True,

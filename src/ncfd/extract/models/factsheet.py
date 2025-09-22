@@ -1,6 +1,6 @@
-# src/ncfd/extract/models/results_factsheet.py
+# src/ncfd/extract/models/factsheet.py
 """
-ResultsFactsheet Model
+Factsheet Model
 
 Represents normalized results data extracted from study results.
 """
@@ -28,7 +28,7 @@ def extract_doc_id_from_span_id(span_id: str) -> Optional[str]:
 
 
 class MetricType(Enum):
-    """Enum for metric types in ResultsFactsheet."""
+    """Enum for metric types in Factsheet."""
     MEDIAN_OS = "median_os"
     MEDIAN_TTP = "median_ttp"
     MEDIAN_PFS = "median_pfs"
@@ -41,7 +41,7 @@ class MetricType(Enum):
 
 
 class UnitType(Enum):
-    """Enum for units in ResultsFactsheet."""
+    """Enum for units in Factsheet."""
     MONTHS = "months"
     WEEKS = "weeks"
     DAYS = "days"
@@ -51,7 +51,7 @@ class UnitType(Enum):
 
 
 class AnalysisSetType(Enum):
-    """Enum for analysis sets in ResultsFactsheet."""
+    """Enum for analysis sets in Factsheet."""
     NOT_SPECIFIED = "not_specified"
     INTENT_TO_TREAT = "intent_to_treat"
     PER_PROTOCOL = "per_protocol"
@@ -63,7 +63,7 @@ class AnalysisSetType(Enum):
 
 
 @dataclass
-class ResultsFactsheet(BaseModel, ProvenanceMixin):
+class Factsheet(BaseModel, ProvenanceMixin):
     """Normalized results data with facts only."""
     
     # Document identifier - now required
@@ -121,7 +121,7 @@ class ResultsFactsheet(BaseModel, ProvenanceMixin):
             self.input_hash = f"{uuid.uuid4().hex[:16]}"
     
     def validate(self) -> bool:
-        """Validate the ResultsFactsheet."""
+        """Validate the Factsheet."""
         # Ensure doc_id is present
         if not self.doc_id:
             return False

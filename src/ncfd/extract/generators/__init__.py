@@ -1,19 +1,19 @@
 """
-LLM Content Generators
+LLM Content Extractors
 
-Contains LLM-based generators for study card content:
-- MethodCardGenerator: Generates method cards with evidence quotes
-- ResultsFactsheetGenerator: Generates results factsheets with evidence quotes  
+Contains LLM-based extractors for study card content:
+- LLMStudyCardExtractor: Extracts study cards with evidence quotes
+- LLMFactsheetExtractor: Extracts factsheets with evidence quotes  
 - PatternDetector: Detects risk patterns (F1-F9 Pattern Families)
-- BaseLLMGenerator: Base class for LLM generators
+- BaseLLMExtractor: Base class for LLM extractors
 """
 
-from .study_card_generator import LLMStudyCardGenerator
-from .results_factsheet_generator import LLMResultsFactsheetGenerator
+from .study_card_generator import LLMStudyCardExtractor
+from .factsheet_extractor import LLMFactsheetExtractor
 from .pattern_detector import PatternFamilyDetector
 
 __all__ = [
-    "LLMStudyCardGenerator",
-    "LLMResultsFactsheetGenerator", 
+    "LLMStudyCardExtractor",
+    "LLMFactsheetExtractor",
     "PatternFamilyDetector"
 ]

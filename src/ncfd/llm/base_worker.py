@@ -2,7 +2,7 @@
 Base LLM Worker Class
 
 Provides LLM functionality with modular provider support and content generation patterns.
-Consolidates BaseLLMWorker and BaseLLMGenerator into a single, comprehensive class.
+Consolidates BaseLLMWorker and BaseLLMExtractor into a single, comprehensive class.
 """
 
 from typing import Dict, Any, Optional, List, Tuple

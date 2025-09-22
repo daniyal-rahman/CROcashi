@@ -13,18 +13,29 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..risk_assessment.models import PatternDetection, SeverityLevel
-from ...llm import BaseLLMGenerator
+from ...llm.base_worker import BaseLLMWorker
 
 logger = logging.getLogger(__name__)
 
 
-class PatternFamilyDetector(BaseLLMGenerator):
+class PatternFamilyDetector(BaseLLMWorker):
     """LLM-driven pattern detection for Pattern Families system."""
     
     def __init__(self, config_path: str = "config/pattern_families.yaml", llm_config: Optional[Dict[str, Any]] = None):
         super().__init__("PatternFamilyDetector", "1.0.0", llm_config)
+    
+    
+    
+    def _get_json_schema(self) -> Dict[str, Any]:
+        """Return the JSON schema for pattern detection."""
+        return {
+            "type": "object",
+            "properties": {
+                "pattern_detections": {"type": "array", "items": {"type": "string"}}
+            }
+        }
+        
         self.config_path = config_path
-        self.logger = logging.getLogger(__name__)
         self.config = self._load_config()
         self.patterns = self._load_patterns()
         

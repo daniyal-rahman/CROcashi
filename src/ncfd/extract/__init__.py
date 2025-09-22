@@ -2,15 +2,15 @@
 Extract module for NCFD.
 
 Contains document processing and extraction components:
-- Generators: LLM-based content generation (method cards, results factsheets, pattern detection)
+- Extractors: LLM-based content extraction (study cards, factsheets, pattern detection)
 - Risk Assessment: Pattern Families risk scoring system
 - Retrieval: Document retrieval and processing
 - Models: Data models for study cards and evidence
 """
 
 from .generators import (
-    LLMStudyCardGenerator, 
-    LLMResultsFactsheetGenerator, 
+    LLMStudyCardExtractor, 
+    LLMFactsheetExtractor, 
     PatternFamilyDetector
 )
 from .risk_assessment import (
@@ -25,9 +25,9 @@ from .retrieval import (
 )
 
 __all__ = [
-    # Generators
-    'LLMStudyCardGenerator',
-    'LLMResultsFactsheetGenerator', 
+    # Extractors
+    'LLMStudyCardExtractor',
+    'LLMFactsheetExtractor', 
     'PatternFamilyDetector',
     # Risk Assessment
     'PatternFamilyScorer',

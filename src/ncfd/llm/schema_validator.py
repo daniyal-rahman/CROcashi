@@ -304,7 +304,7 @@ def create_study_card_schema() -> SchemaDefinition:
     )
 
 
-def create_results_factsheet_schema() -> SchemaDefinition:
+def create_factsheet_schema() -> SchemaDefinition:
     """Create schema for results factsheet responses."""
     return SchemaDefinition(
         fields=[
@@ -351,9 +351,9 @@ def validate_study_card(data: Dict[str, Any]) -> Dict[str, Any]:
     return validator.validate(data)
 
 
-def validate_results_factsheet(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Validate results factsheet response."""
-    validator = SchemaValidator(create_results_factsheet_schema())
+def validate_factsheet(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate factsheet response."""
+    validator = SchemaValidator(create_factsheet_schema())
     return validator.validate(data)
 
 

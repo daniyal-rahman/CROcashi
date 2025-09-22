@@ -2,7 +2,7 @@
 EvidenceField Model
 
 Common field class for LLM-generated evidence with quotes.
-Used by MethodCard, ResultsFactsheet, and GateAssessment generators.
+Used by StudyCard, Factsheet, and GateAssessment extractors.
 """
 
 from dataclasses import dataclass

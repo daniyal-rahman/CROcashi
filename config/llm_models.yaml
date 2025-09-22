@@ -230,8 +230,8 @@ workers:
     max_tokens: 4000
     json_output: true
     
-  # Direct card generators - use GPT-5-mini for efficiency
-  LLMStudyCardGenerator:
+  # Direct card extractors - use GPT-5-mini for efficiency
+  LLMStudyCardExtractor:
     provider: openai
     model: gpt-5-mini
     max_retries: 3
@@ -239,7 +239,7 @@ workers:
     max_tokens: 2000
     json_output: true
     
-  LLMResultsFactsheetGenerator:
+  LLMFactsheetExtractor:
     provider: openai
     model: gpt-5-mini
     max_retries: 3

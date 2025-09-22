@@ -838,7 +838,7 @@ class PipelineOrchestrator:
                     FROM documents d
                     JOIN document_text dt ON d.doc_id = dt.doc_id
                     WHERE d.trial_id = :trial_id 
-                    ORDER BY d.created_at DESC LIMIT 1
+                    ORDER BY d.discovered_at DESC LIMIT 1
                 """)
                 
                 result = session.execute(doc_query, {'trial_id': trial_id}).fetchone()

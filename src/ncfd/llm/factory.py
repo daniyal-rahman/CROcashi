@@ -129,7 +129,8 @@ class LLMProviderFactory:
             Model name
         """
         worker_config = self.config.get_worker_config(worker_name)
-        return worker_config.get("model", self.config.providers[self.config.default_provider].default_model)
+        provider_name = worker_config.get("provider", self.config.default_provider)
+        return worker_config.get("model", self.config.providers[provider_name].default_model)
     
     def create_with_fallback(self, preferred_provider: Optional[str] = None) -> BaseLLMProvider:
         """
