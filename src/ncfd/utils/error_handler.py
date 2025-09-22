@@ -9,7 +9,7 @@ import logging
 import traceback
 from typing import Any, Optional, Callable, Type, Union, Dict
 from functools import wraps
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)

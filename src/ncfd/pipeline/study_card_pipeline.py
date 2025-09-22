@@ -24,6 +24,7 @@ from ncfd.db.session import session_scope
 from ncfd.db.models import Document
 from ncfd.utils.config_manager import get_config_manager
 from ncfd.utils.error_handler import get_pipeline_error_handler, safe_execute
+from ncfd.llm.concurrency_manager import concurrency_manager
 
 logger = logging.getLogger(__name__)
 
@@ -175,20 +176,20 @@ class StudyCardPipeline:
                 # Check study cards table
                 if result.study_card:
                     study_card_count = session.execute(text("SELECT COUNT(*) FROM study_cards WHERE doc_id = :doc_id"), 
-                                                     {'doc_id': result.study_card.doc_id}).scalar()
+                                                     {'doc_id': int(result.study_card.doc_id) if result.study_card.doc_id else None}).scalar()
                     if study_card_count == 0:
                         errors.append(f"Study card not persisted to database for doc_id: {result.study_card.doc_id}")
                 
                 # Check factsheets table
                 if result.results_factsheet:
                     factsheet_count = session.execute(text("SELECT COUNT(*) FROM factsheets WHERE doc_id = :doc_id"), 
-                                                    {'doc_id': result.results_factsheet.doc_id}).scalar()
+                                                    {'doc_id': int(result.results_factsheet.doc_id) if result.results_factsheet.doc_id else None}).scalar()
                     if factsheet_count == 0:
                         errors.append(f"Results factsheet not persisted to database for doc_id: {result.results_factsheet.doc_id}")
                 
                 # Check spans table (evidence quotes)
                 if result.evidence_spans:
-                    doc_ids = [span.doc_id for span in result.evidence_spans]
+                    doc_ids = [int(span.doc_id) if span.doc_id else None for span in result.evidence_spans]
                     spans_count = session.execute(text("SELECT COUNT(*) FROM spans WHERE doc_id = ANY(:doc_ids)"), 
                                                 {'doc_ids': doc_ids}).scalar()
                     if spans_count == 0:
@@ -246,9 +247,8 @@ class StudyCardPipeline:
             
             logger.info(f"Prioritization stats: {rate_stats}")
             
-            # Stage 1.6: Full text retrieval for documents with PMCIDs
-            logger.info("Stage 1.6: Full text retrieval for documents with PMCIDs")
-            await self._retrieve_full_texts(result.document_cards, raw_doc_texts)
+            # Stage 1.6: Full text retrieval will happen lazily during LLM processing
+            logger.info("Stage 1.6: Full text retrieval will happen lazily during LLM processing")
             
             # Stage 2: Direct LLM processing using our working components
             logger.info("Stage 2: Direct LLM processing")
@@ -334,13 +334,15 @@ class StudyCardPipeline:
                 except Exception as e:
                     logger.warning(f"Failed to mark document {doc_card.doc_id} as processed: {e}")
                 
-                # Use our working LLM components with concurrency control
+                # Lazy load full text right before LLM processing
                 try:
+                    full_text = await self._get_full_text_for_processing(doc_card.doc_id)
+                    
                     from ncfd.llm.concurrency_manager import concurrency_manager
                     
                     # Study card generation
                     study_data = {
-                        "raw_doc_text": doc_text,
+                        "raw_doc_text": full_text,
                         "doc_id": doc_card.doc_id,
                         "trial_context": trial_context
                     }
@@ -453,12 +455,12 @@ class StudyCardPipeline:
                         if results_result.get("results_factsheet"):
                             results_factsheet = results_result["results_factsheet"]
                             logger.info(f"📊 RESULTS FACTSHEET GENERATED for doc {doc_card.doc_id}:")
-                            logger.info(f"   Primary Outcome: {str(getattr(results_factsheet, 'primary_outcome', 'N/A'))[:100]}...")
-                            logger.info(f"   Secondary Outcomes: {str(getattr(results_factsheet, 'secondary_outcomes', 'N/A'))[:100]}...")
-                            logger.info(f"   Statistical Method: {getattr(results_factsheet, 'statistical_method', 'N/A')}")
-                            logger.info(f"   Effect Size: {getattr(results_factsheet, 'effect_size', 'N/A')}")
-                            logger.info(f"   P-Value: {getattr(results_factsheet, 'p_value', 'N/A')}")
-                            logger.info(f"   Confidence Interval: {getattr(results_factsheet, 'confidence_interval', 'N/A')}")
+                            logger.info(f"   Primary Endpoint Results: {str(getattr(results_factsheet, 'primary_endpoint_results', 'N/A'))[:100]}...")
+                            logger.info(f"   Secondary Endpoint Results: {str(getattr(results_factsheet, 'secondary_endpoint_results', 'N/A'))[:100]}...")
+                            logger.info(f"   Safety Results: {str(getattr(results_factsheet, 'safety_results', 'N/A'))[:100]}...")
+                            logger.info(f"   Total Enrolled: {getattr(results_factsheet, 'total_enrolled', 'N/A')}")
+                            logger.info(f"   Completed Primary Endpoint: {getattr(results_factsheet, 'completed_primary_endpoint', 'N/A')}")
+                            logger.info(f"   Dropout Rate: {getattr(results_factsheet, 'dropout_rate', 'N/A')}")
                         
                         # Log detailed field quotes
                         field_quotes = results_result.get('field_quotes', [])
@@ -880,7 +882,7 @@ class StudyCardPipeline:
                         :adjudication_committee, NOW(), NOW()
                     )
                 """), {
-                    'doc_id': study_card.doc_id,
+                    'doc_id': int(study_card.doc_id) if study_card.doc_id else None,
                     'design_archetype': self._extract_single_value(getattr(study_card, 'design_archetype', None)),
                     'is_blinded': self._extract_boolean_value(getattr(study_card, 'is_blinded', None)),
                     'analysis_set': self._safe_json_dumps(getattr(study_card, 'analysis_set', None)),
@@ -935,7 +937,7 @@ class StudyCardPipeline:
                         :follow_up_completion, NOW(), NOW()
                     )
                 """), {
-                    'doc_id': results_factsheet.doc_id,
+                    'doc_id': int(results_factsheet.doc_id) if results_factsheet.doc_id else None,
                     'results': json.dumps(getattr(results_factsheet, 'results', [])),
                     'primary_endpoint_results': json.dumps(getattr(results_factsheet, 'primary_endpoint_results', None)),
                     'secondary_endpoint_results': json.dumps(getattr(results_factsheet, 'secondary_endpoint_results', [])),
@@ -1562,6 +1564,75 @@ class StudyCardPipeline:
         except Exception as e:
             logger.error(f"Failed to generate comprehensive analysis: {e}")
     
+    async def _get_full_text_for_processing(self, doc_id: int) -> str:
+        """
+        Lazy load full text for a specific document right before LLM processing.
+        
+        Args:
+            doc_id: Document ID to get full text for
+            
+        Returns:
+            Full text content (retrieved and persisted if needed)
+        """
+        try:
+            from ncfd.db.session import session_scope
+            from ncfd.db.models import Document, DocumentText
+            
+            # First check if we already have full text in database
+            with session_scope() as session:
+                doc = session.query(Document).filter(Document.doc_id == doc_id).first()
+                if not doc:
+                    logger.warning(f"Document {doc_id} not found")
+                    return ""
+                
+                doc_text = session.query(DocumentText).filter(DocumentText.doc_id == doc_id).first()
+                if doc_text and doc_text.fulltext_text:
+                    logger.info(f"✅ Using existing fulltext for doc {doc_id} ({len(doc_text.fulltext_text)} chars)")
+                    return doc_text.fulltext_text
+            
+            # If no full text and document has PMCID, retrieve it
+            if doc.pmcid:
+                logger.info(f"🔄 Retrieving full text for doc {doc_id} (PMCID: {doc.pmcid})")
+                
+                from ncfd.ingest.pubmed.client_manager import get_client_manager
+                client_manager = get_client_manager()
+                client = await client_manager.get_client({})
+                
+                async with client:
+                    # Try JATS XML first (most comprehensive)
+                    full_text = await client.get_pmc_full_text_jats(
+                        doc.pmcid, 
+                        include_refs=True, 
+                        include_captions=True
+                    )
+                    
+                    # Fallback to plain text if JATS fails
+                    if not full_text:
+                        logger.warning(f"JATS fetch failed for {doc.pmcid}, trying plain text fallback")
+                        full_text = await client.get_pmc_full_text(doc.pmcid)
+                    
+                    if full_text:
+                        # Persist full text to database
+                        await self._store_fulltext(doc_id, full_text, source='PMC')
+                        logger.info(f"✅ Retrieved and persisted {len(full_text)} characters for doc {doc_id}")
+                        return full_text
+                    else:
+                        logger.warning(f"❌ Failed to retrieve full text for doc {doc_id}")
+            
+            # Fallback to abstract if no PMCID or full text retrieval failed
+            with session_scope() as session:
+                doc_text = session.query(DocumentText).filter(DocumentText.doc_id == doc_id).first()
+                if doc_text and doc_text.abstract_text:
+                    logger.info(f"📄 Using abstract for doc {doc_id} ({len(doc_text.abstract_text)} chars)")
+                    return doc_text.abstract_text
+            
+            logger.warning(f"No text available for doc {doc_id}")
+            return ""
+            
+        except Exception as e:
+            logger.error(f"Error getting full text for doc {doc_id}: {e}")
+            return ""
+    
     async def _retrieve_full_texts(self, document_cards: List[DocumentCard], raw_doc_texts: Dict[int, str]) -> None:
         """
         Retrieve full text for documents that have PMCIDs but no full text content.
@@ -1580,7 +1651,7 @@ class StudyCardPipeline:
             client = await client_manager.get_client({})
             
             async with client:
-                # Get documents with PMCIDs but no full text
+                # Get documents with PMCIDs - always check for full text availability
                 documents_to_process = []
                 with session_scope() as session:
                     for doc_card in document_cards:
@@ -1590,12 +1661,24 @@ class StudyCardPipeline:
                             doc_text = session.query(DocumentText).filter(DocumentText.doc_id == doc.doc_id).first()
                             has_full_text = bool(doc_text and doc_text.fulltext_text and len(doc_text.fulltext_text.strip()) > 0)
                             
-                            if not has_full_text:
-                                documents_to_process.append({
-                                    'doc_id': doc.doc_id,
-                                    'pmid': doc.pmid,
-                                    'pmcid': doc.pmcid
-                                })
+                            # Always add documents with PMCIDs to processing list
+                            # This ensures we check for full text even if raw_doc_texts already has abstract
+                            documents_to_process.append({
+                                'doc_id': doc.doc_id,
+                                'pmid': doc.pmid,
+                                'pmcid': doc.pmcid,
+                                'has_full_text': has_full_text
+                            })
+                        elif doc:
+                            # For documents without PMCIDs, get whatever text is available (abstract)
+                            doc_text = session.query(DocumentText).filter(DocumentText.doc_id == doc.doc_id).first()
+                            if doc_text:
+                                if doc_text.fulltext_text:
+                                    raw_doc_texts[str(doc.doc_id)] = doc_text.fulltext_text
+                                    logger.info(f"✅ Using existing fulltext for doc {doc.doc_id} ({len(doc_text.fulltext_text)} chars)")
+                                elif doc_text.abstract_text:
+                                    raw_doc_texts[str(doc.doc_id)] = doc_text.abstract_text
+                                    logger.info(f"📄 Using abstract for doc {doc.doc_id} ({len(doc_text.abstract_text)} chars)")
                 
                 if not documents_to_process:
                     logger.info("No documents need full text retrieval")
@@ -1611,6 +1694,17 @@ class StudyCardPipeline:
                     
                     for doc_info in batch:
                         try:
+                            doc_id_key = str(doc_info['doc_id'])
+                            
+                            # If we already have full text, use it instead of fetching
+                            if doc_info['has_full_text']:
+                                with session_scope() as session:
+                                    doc_text = session.query(DocumentText).filter(DocumentText.doc_id == doc_info['doc_id']).first()
+                                    if doc_text and doc_text.fulltext_text:
+                                        raw_doc_texts[doc_id_key] = doc_text.fulltext_text
+                                        logger.info(f"✅ Using existing fulltext for PMID {doc_info['pmid']} ({len(doc_text.fulltext_text)} chars)")
+                                        continue
+                            
                             logger.info(f"Retrieving full text for PMID {doc_info['pmid']} (PMCID: {doc_info['pmcid']})")
                             
                             # Try JATS XML first (most comprehensive)
@@ -1630,7 +1724,7 @@ class StudyCardPipeline:
                                 await self._store_fulltext(doc_info['doc_id'], full_text, source='PMC')
                                 
                                 # Update raw_doc_texts for immediate use (ensure consistent string keys)
-                                raw_doc_texts[str(doc_info['doc_id'])] = full_text
+                                raw_doc_texts[doc_id_key] = full_text
                                 
                                 logger.info(f"✅ Retrieved {len(full_text)} characters for PMID {doc_info['pmid']}")
                             else:

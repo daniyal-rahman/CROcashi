@@ -11,10 +11,9 @@ from datetime import datetime, timezone
 
 from .api_clients import PubMedTextClient, PMCTextClient, UnpaywallTextClient, TextRetrievalOutput
 from .config import RUNTIME_TEXT_CONFIG
+from ..utils import resolve_external_doc_id, get_document_metadata
 from ...db.models import Document, DocumentText
 from ...db.session import get_session
-from ...utils.config_manager import get_config_manager
-from ...utils.error_handler import get_error_handler, safe_execute
 
 logger = logging.getLogger(__name__)
 
@@ -76,49 +75,13 @@ class RuntimeTextGenerator:
         """Get document metadata from database."""
         try:
             with get_session() as session:
-                # Resolve external doc_id to internal doc_id
-                internal_doc_id = self._resolve_external_doc_id(session, doc_id)
-                if not internal_doc_id:
-                    return None
-                
-                document = session.query(Document).filter(
-                    Document.doc_id == internal_doc_id
-                ).first()
-                
-                if not document:
-                    return None
-                
-                return {
-                    "doc_id": internal_doc_id,
-                    "pmid": document.pmid,
-                    "pmcid": document.pmcid,
-                    "doi": document.doi,
-                    "title": document.title,
-                    "source_type": document.source_type
-                }
+                # Use shared utility to get document metadata
+                return get_document_metadata(session, doc_id)
                 
         except Exception as e:
             logger.error(f"Error getting metadata for doc {doc_id}: {e}")
             return None
     
-    def _resolve_external_doc_id(self, session, doc_id: str) -> Optional[int]:
-        """Resolve external doc_id format to internal doc_id."""
-        try:
-            if doc_id.startswith('db:'):
-                return int(doc_id.split(':')[1])
-            elif doc_id.startswith('pmid:'):
-                pmid = doc_id.split(':')[1]
-                doc = session.query(Document).filter(Document.pmid == pmid).first()
-                return doc.doc_id if doc else None
-            elif doc_id.startswith('pmcid:'):
-                pmcid = doc_id.split(':')[1]
-                doc = session.query(Document).filter(Document.pmcid == pmcid).first()
-                return doc.doc_id if doc else None
-            else:
-                # Assume it's already an internal doc_id
-                return int(doc_id)
-        except (ValueError, AttributeError):
-            return None
     
     async def _try_source(self, doc_metadata: Dict[str, Any], source: str) -> TextRetrievalOutput:
         """Try to get text from a specific source."""

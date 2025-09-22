@@ -8,6 +8,7 @@ import time
 from typing import Optional, Dict, Any
 import aiohttp
 from dataclasses import dataclass
+from ..utils import extract_abstract_from_pubmed_xml, extract_fulltext_from_pmc_xml
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ class PubMedTextClient(BaseTextClient):
                 )
             
             # Parse XML to extract abstract
-            abstract = self._extract_abstract_from_xml(text)
+            abstract = extract_abstract_from_pubmed_xml(text)
             
             if abstract and len(abstract.strip()) >= 100:
                 return TextRetrievalOutput(
@@ -131,22 +132,6 @@ class PubMedTextClient(BaseTextClient):
                 error_message=str(e)
             )
     
-    def _extract_abstract_from_xml(self, xml_text: str) -> str:
-        """Extract abstract text from PubMed XML."""
-        try:
-            # Simple XML parsing - look for AbstractText tags
-            import re
-            abstract_match = re.search(r'<AbstractText[^>]*>(.*?)</AbstractText>', xml_text, re.DOTALL)
-            if abstract_match:
-                abstract = abstract_match.group(1)
-                # Clean up HTML entities and tags
-                abstract = re.sub(r'<[^>]+>', '', abstract)
-                abstract = abstract.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
-                return abstract.strip()
-            return ""
-        except Exception as e:
-            logger.warning(f"Error parsing PubMed XML: {e}")
-            return ""
 
 
 class PMCTextClient(BaseTextClient):
@@ -173,7 +158,7 @@ class PMCTextClient(BaseTextClient):
                 )
             
             # Parse XML to extract full text
-            fulltext = self._extract_fulltext_from_xml(text)
+            fulltext = extract_fulltext_from_pmc_xml(text)
             
             if fulltext and len(fulltext.strip()) >= 500:
                 return TextRetrievalOutput(
@@ -202,25 +187,6 @@ class PMCTextClient(BaseTextClient):
                 error_message=str(e)
             )
     
-    def _extract_fulltext_from_xml(self, xml_text: str) -> str:
-        """Extract full text from PMC XML."""
-        try:
-            # Simple XML parsing - look for article body
-            import re
-            
-            # Extract main text content
-            body_match = re.search(r'<body[^>]*>(.*?)</body>', xml_text, re.DOTALL)
-            if body_match:
-                body_text = body_match.group(1)
-                # Clean up XML tags but preserve structure
-                body_text = re.sub(r'<[^>]+>', ' ', body_text)
-                body_text = re.sub(r'\s+', ' ', body_text)
-                return body_text.strip()
-            
-            return ""
-        except Exception as e:
-            logger.warning(f"Error parsing PMC XML: {e}")
-            return ""
 
 
 class UnpaywallTextClient(BaseTextClient):

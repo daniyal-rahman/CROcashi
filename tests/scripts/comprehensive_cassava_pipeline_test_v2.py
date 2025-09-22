@@ -520,7 +520,8 @@ class ComprehensiveCassavaTestV2:
                 try:
                     session.execute(text(extension_sql))
                     session.commit()
-                    logger.info(f"✅ Created extension: {extension_sql.split()[2]}")
+                    extension_name = extension_sql.split()[5].rstrip(';')
+                    logger.info(f"✅ Created extension: {extension_name}")
                 except Exception as e:
                     logger.warning(f"⚠️  Could not create extension {extension_sql}: {e}")
                     session.rollback()

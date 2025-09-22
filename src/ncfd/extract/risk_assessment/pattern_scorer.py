@@ -142,9 +142,20 @@ class PatternFamilyScorer:
         return over_index
     
     def _get_historical_baseline(self, trial_context: Dict[str, Any]) -> Dict[str, float]:
-        """Get historical baseline for peer comparison."""
-        # TODO: Implement historical baseline lookup
-        # For now, return mock baseline
+        """
+        Get historical baseline for peer comparison.
+        
+        Note: This is a placeholder implementation. Historical baseline lookup
+        would require access to a database of historical trial pattern scores
+        filtered by trial characteristics (phase, indication, etc.).
+        
+        Args:
+            trial_context: Trial context information
+            
+        Returns:
+            Dictionary with 'mean' and 'std' of historical baseline
+        """
+        # Placeholder implementation - would require historical data access
         return {
             'mean': 2.5,
             'std': 1.2

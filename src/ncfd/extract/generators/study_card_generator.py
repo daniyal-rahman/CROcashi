@@ -1,7 +1,7 @@
 """
-LLM Study Card Generator
+LLM Study Card Extractor
 
-Directly generates StudyCard with evidence quotes for each field.
+Extracts StudyCard data with evidence quotes for each field.
 """
 
 import logging
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from ..models.study_card import StudyCard
 from ..models.evidence_field import EvidenceField
-from ...llm import BaseLLMGenerator
+from ...llm.base_worker import BaseLLMExtractor
 from ...llm.json_parser import parse_llm_json_response, validate_confidence_score
 from ...utils.config_manager import get_config_manager
 from ...utils.error_handler import get_error_handler, safe_execute
@@ -18,14 +18,11 @@ from ...utils.error_handler import get_error_handler, safe_execute
 logger = logging.getLogger(__name__)
 
 
-# Use common EvidenceField instead of MethodCardField
-
-
-class LLMStudyCardGenerator(BaseLLMGenerator):
-    """Generates StudyCard directly with evidence quotes."""
+class LLMStudyCardExtractor(BaseLLMExtractor):
+    """Extracts StudyCard data directly with evidence quotes."""
     
     def __init__(self, llm_config: Optional[Dict[str, Any]] = None):
-        super().__init__("LLMStudyCardGenerator", "1.0.0", llm_config)
+        super().__init__("LLMStudyCardExtractor", llm_config)
     
     async def process(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -61,8 +58,8 @@ class LLMStudyCardGenerator(BaseLLMGenerator):
             
             self.logger.info(f"Generating study card for doc_id: {doc_id}")
             
-            # Generate study card with evidence quotes using base class retry logic
-            study_card_data, field_quotes = await self._execute_with_retry(
+            # Extract study card data with evidence quotes using base class
+            study_card_data, field_quotes = await self.extract_document(
                 raw_doc_text, doc_id, trial_context
             )
             
@@ -71,6 +68,18 @@ class LLMStudyCardGenerator(BaseLLMGenerator):
             if not isinstance(field_quotes, list):
                 field_quotes = []
             
+            # Enhanced logging for debugging
+            meaningful_fields = sum(1 for field in [
+                'design_archetype', 'primary_endpoint', 'population_description'
+            ] if study_card_data.get(field))
+            
+            self.logger.info(f"Extraction result for {doc_id}: "
+                           f"meaningful_fields={meaningful_fields}, "
+                           f"field_quotes_count={len(field_quotes)}, "
+                           f"doc_length={len(raw_doc_text)}")
+            
+            # Check if study_card_data is empty or has no meaningful content
+            study_card_data_empty = not study_card_data or len(study_card_data) == 0
             has_meaningful_content = (
                 study_card_data.get('design_archetype') or
                 study_card_data.get('primary_endpoint') or
@@ -78,8 +87,21 @@ class LLMStudyCardGenerator(BaseLLMGenerator):
                 len(field_quotes) > 0
             )
             
+            if study_card_data_empty and len(field_quotes) == 0:
+                self.logger.warning(f"Study card generation produced completely empty response for doc_id: {doc_id} "
+                                   f"(doc_length={len(raw_doc_text)})")
+                return {
+                    "study_card": None,
+                    "field_quotes": [],
+                    "success": False,
+                    "error_message": "LLM returned empty response - may indicate insufficient content or prompt issue"
+                }
+            
             if not has_meaningful_content:
-                self.logger.warning(f"Study card generation produced no meaningful content for doc_id: {doc_id}")
+                self.logger.warning(f"Study card generation produced no meaningful content for doc_id: {doc_id} "
+                                   f"(meaningful_fields={meaningful_fields}, "
+                                   f"field_quotes={len(field_quotes)}, "
+                                   f"doc_length={len(raw_doc_text)})")
                 return {
                     "study_card": None,
                     "field_quotes": [],
@@ -137,33 +159,88 @@ class LLMStudyCardGenerator(BaseLLMGenerator):
         """Return the key for the main data in the LLM response."""
         return "study_card_data"
     
-    async def _extract_with_llm(self, doc_text: str, trial_context: Dict[str, Any], prompt: str) -> Dict[str, Any]:
-        """Extract study card data using LLM with the given prompt."""
-        return await self._extract_study_card_with_llm(doc_text, trial_context, prompt)
+    def _get_meaningful_fields(self) -> List[str]:
+        """Return the list of fields that indicate meaningful data for this extractor."""
+        return [
+            "design_archetype", "primary_endpoint", "analysis_set", 
+            "population_description", "is_blinded", "alpha_level"
+        ]
     
-    def _build_standard_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
-        """Build the standard prompt for the first attempt."""
-        return self._build_standard_study_prompt(doc_text, doc_id, trial_context)
+    def _build_extraction_prompt(self, doc_text: str, doc_id: str, context: Dict[str, Any]) -> str:
+        """Build the extraction prompt for this specific extractor."""
+        return self._build_standard_study_prompt(doc_text, doc_id, context)
     
+    def _get_json_schema(self) -> Dict[str, Any]:
+        """Return the JSON schema for this extractor's LLM calls."""
+        return {
+            "type": "object",
+            "properties": {
+                "study_card_data": {
+                    "type": "object",
+                    "properties": {
+                        "design_archetype": {"type": "string"},
+                        "is_blinded": {"type": "boolean"},
+                        "analysis_set": {"type": "string"},
+                        "population_description": {"type": "string"},
+                        "primary_endpoint": {"type": "string"},
+                        "statistical_test": {"type": "string"},
+                        "alpha_level": {"type": "number"},
+                        "is_one_sided": {"type": "boolean"}
+                    }
+                },
+                "field_quotes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field_name": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]*$"
+                            },
+                            "value": {"type": ["string", "number", "boolean"]},
+                            "evidence_quote": {
+                                "type": "string",
+                                "minLength": 10,
+                                "pattern": "^[A-Za-z].*[A-Za-z]$"
+                            },
+                            "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+                        },
+                        "required": ["field_name", "value", "evidence_quote", "confidence"]
+                    }
+                }
+            },
+            "required": ["study_card_data", "field_quotes"]
+        }
     
     
     def _build_standard_study_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
-        """Build standard prompt for study card extraction."""
+        """Build enhanced prompt for study card extraction with better guidance."""
         return f"""
-You are a clinical trial methodology expert. Extract methodology information from this clinical trial document and provide evidence quotes for each field you fill.
+You are a clinical trial methodology expert. Extract methodology information from this document.
+
+IMPORTANT: Only extract information if this document contains clinical trial methodology details.
+If this is just an abstract, press release, or non-methodology content, return empty results.
 
 Document Text:
-{doc_text[:4000]}  # Truncate for token limits
+{doc_text[:4000]}
 
 Trial Context:
 - Trial ID: {trial_context.get('trial_id', 'Unknown')}
 - Disease: {trial_context.get('disease', 'Unknown')}
 - Intervention: {trial_context.get('intervention', 'Unknown')}
 
-For each field you fill, provide:
-1. The extracted value
-2. A direct quote from the document that supports this value
-3. Your confidence in the extraction (0.0-1.0)
+Look for these methodology elements:
+1. Study design (randomized, blinded, controlled, single-arm, crossover, etc.)
+2. Population description (patient characteristics, inclusion/exclusion criteria)
+3. Primary/secondary endpoints (outcome measures, assessment scales)
+4. Statistical methods (sample size, alpha level, analysis population, statistical tests)
+5. Interim analysis plans (timing, stopping rules, spending functions)
+6. Missing data handling (imputation methods, assumptions)
+
+For each field you find, provide:
+- The extracted value
+- A direct quote from the document that supports this value
+- Your confidence in the extraction (0.0-1.0)
 
 Extract the following methodology fields:
 
@@ -206,41 +283,22 @@ Extract the following methodology fields:
 - assessment_interval: Interval between assessments
 - adjudication_committee: Whether there's an adjudication committee
 
-Respond in JSON format:
-{{
-    "study_card_data": {{
-        "design_archetype": "Randomized Controlled Trial",
-        "is_blinded": true,
-        "analysis_set": "Intent-to-Treat",
-        "population_description": "Patients with mild-to-moderate Alzheimer's disease",
-        "primary_endpoint": "Change from baseline in ADAS-Cog11 score at 24 weeks",
-        "statistical_test": "Mixed Model for Repeated Measures",
-        "alpha_level": 0.05,
-        "is_one_sided": false
-    }},
-    "field_quotes": [
-        {{
-            "field_name": "field_name",
-            "value": "extracted_value", 
-            "evidence_quote": "exact quote from document",
-            "confidence": 0.9
-        }},
-        {{
-            "field_name": "primary_endpoint",
-            "value": "Change from baseline in ADAS-Cog11 score at 24 weeks",
-            "evidence_quote": "The primary endpoint was the change from baseline in the 11-item Alzheimer's Disease Assessment Scale-Cognitive subscale (ADAS-Cog11) score at 24 weeks",
-            "confidence": 0.9
-        }},
-        {{
-            "field_name": "analysis_set",
-            "value": "Intent-to-Treat",
-            "evidence_quote": "Efficacy analyses were performed on the intent-to-treat (ITT) population",
-            "confidence": 0.85
-        }}
-    ]
-}}
+CRITICAL REQUIREMENTS:
+1. Only include fields where you found clear evidence in the document
+2. For each field you extract, provide the exact text quote from the document that supports it
+3. field_name must ALWAYS be a text string (never a number like 2017.0)
+4. evidence_quote must ALWAYS be a text string containing actual words from the document (never a number like 37.0 or 2.0)
+5. value can be a string, number, or boolean depending on the field type
+6. If no methodology information is found, return empty objects
+7. If a field is not mentioned, omit it entirely
+8. IMPORTANT: Never use numeric values as field names or evidence quotes
 
-Only include fields where you found clear evidence in the document. If a field is not mentioned, omit it from both the study_card_data and field_quotes.
+RESPONSE STRUCTURE:
+You must return a JSON object with exactly two top-level keys:
+- "study_card_data": An object containing the extracted field values (just the values, not objects)
+- "field_quotes": An array of objects, each with field_name, value, evidence_quote, and confidence
+
+The response will be automatically formatted according to the required schema.
 """
     async def _extract_study_card_with_llm(self, doc_text: str, trial_context: Dict[str, Any], prompt: str = None) -> Dict[str, Any]:
         """Extract study card using LLM with evidence quotes."""
@@ -304,41 +362,22 @@ Extract the following methodology fields:
 - assessment_interval: Interval between assessments
 - adjudication_committee: Whether there's an adjudication committee
 
-Respond in JSON format:
-{{
-    "study_card_data": {{
-        "design_archetype": "Randomized Controlled Trial",
-        "is_blinded": true,
-        "analysis_set": "Intent-to-Treat",
-        "population_description": "Patients with mild-to-moderate Alzheimer's disease",
-        "primary_endpoint": "Change from baseline in ADAS-Cog11 score at 24 weeks",
-        "statistical_test": "Mixed Model for Repeated Measures",
-        "alpha_level": 0.05,
-        "is_one_sided": false
-    }},
-    "field_quotes": [
-        {{
-            "field_name": "field_name",
-            "value": "extracted_value", 
-            "evidence_quote": "exact quote from document",
-            "confidence": 0.9
-        }},
-        {{
-            "field_name": "primary_endpoint",
-            "value": "Change from baseline in ADAS-Cog11 score at 24 weeks",
-            "evidence_quote": "The primary endpoint was the change from baseline in the 11-item Alzheimer's Disease Assessment Scale-Cognitive subscale (ADAS-Cog11) score at 24 weeks",
-            "confidence": 0.9
-        }},
-        {{
-            "field_name": "analysis_set",
-            "value": "Intent-to-Treat",
-            "evidence_quote": "Efficacy analyses were performed on the intent-to-treat (ITT) population",
-            "confidence": 0.85
-        }}
-    ]
-}}
+CRITICAL REQUIREMENTS:
+1. Only include fields where you found clear evidence in the document
+2. For each field you extract, provide the exact text quote from the document that supports it
+3. field_name must ALWAYS be a text string (never a number like 2017.0)
+4. evidence_quote must ALWAYS be a text string containing actual words from the document (never a number like 37.0 or 2.0)
+5. value can be a string, number, or boolean depending on the field type
+6. If no methodology information is found, return empty objects
+7. If a field is not mentioned, omit it entirely
+8. IMPORTANT: Never use numeric values as field names or evidence quotes
 
-Only include fields where you found clear evidence in the document. If a field is not mentioned, omit it from both the study_card_data and field_quotes.
+RESPONSE STRUCTURE:
+You must return a JSON object with exactly two top-level keys:
+- "study_card_data": An object containing the extracted field values (just the values, not objects)
+- "field_quotes": An array of objects, each with field_name, value, evidence_quote, and confidence
+
+The response will be automatically formatted according to the required schema.
 """
             
             # Validate inputs before API call
@@ -389,9 +428,16 @@ Only include fields where you found clear evidence in the document. If a field i
                         "items": {
                             "type": "object",
                             "properties": {
-                                "field_name": {"type": "string"},
-                                "value": {"type": "string"},
-                                "evidence_quote": {"type": "string"},
+                                "field_name": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_]*$"
+                                },
+                                "value": {"type": ["string", "number", "boolean"]},
+                                "evidence_quote": {
+                                    "type": "string",
+                                    "minLength": 10,
+                                    "pattern": "^[A-Za-z].*[A-Za-z]$"
+                                },
                                 "confidence": {"type": "number", "minimum": 0, "maximum": 1}
                             },
                             "required": ["field_name", "value", "evidence_quote", "confidence"]
@@ -410,31 +456,42 @@ Only include fields where you found clear evidence in the document. If a field i
             
             # Parse the response
             result = response.content
-            logger.info(f"DEBUG: LLM raw response type: {type(result)}")
-            logger.info(f"DEBUG: LLM raw response content: {str(result)[:500]}...")
+            self.logger.info(f"🔍 LLM RAW RESPONSE DEBUG:")
+            self.logger.info(f"   Type: {type(result)}")
+            self.logger.info(f"   Content length: {len(str(result))}")
+            self.logger.info(f"   Content preview: {str(result)[:500]}...")
             
             if isinstance(result, str):
                 # Use robust JSON parsing
+                self.logger.info(f"🔍 PARSING STRING RESPONSE:")
                 parsed_result = parse_llm_json_response(result, expected_fields=["study_card_data", "field_quotes"])
                 if parsed_result:
                     result = parsed_result
-                    # Safe field_quotes count logging
-                    field_quotes_for_logging = result.get('field_quotes', [])
-                    if not isinstance(field_quotes_for_logging, list):
-                        field_quotes_for_logging = []
-                    logger.info(f"DEBUG: Parsed JSON successfully, field_quotes count: {len(field_quotes_for_logging)}")
+                    self.logger.info(f"✅ JSON PARSING SUCCESSFUL:")
+                    self.logger.info(f"   Parsed keys: {list(result.keys())}")
+                    self.logger.info(f"   study_card_data type: {type(result.get('study_card_data'))}")
+                    self.logger.info(f"   study_card_data content: {result.get('study_card_data')}")
+                    self.logger.info(f"   field_quotes type: {type(result.get('field_quotes'))}")
+                    self.logger.info(f"   field_quotes count: {len(result.get('field_quotes', []))}")
+                    if result.get('field_quotes'):
+                        self.logger.info(f"   field_quotes preview: {result.get('field_quotes')[:2]}")
                 else:
-                    logger.error(f"DEBUG: JSON parsing failed")
-                    logger.error(f"DEBUG: Raw response: {result}")
+                    self.logger.error(f"❌ JSON PARSING FAILED:")
+                    self.logger.error(f"   Raw response: {result}")
                     return {}
             elif isinstance(result, (int, float)):
                 # Handle case where LLM returns a number instead of JSON
-                logger.error(f"LLM returned a number instead of JSON: {result}")
+                self.logger.error(f"❌ LLM RETURNED NUMBER: {result}")
                 return {}
             elif not isinstance(result, dict):
                 # Handle other unexpected types
-                logger.error(f"LLM returned unexpected type {type(result)}: {result}")
+                self.logger.error(f"❌ LLM RETURNED UNEXPECTED TYPE {type(result)}: {result}")
                 return {}
+            
+            self.logger.info(f"🔍 FINAL RESULT BEFORE RETURN:")
+            self.logger.info(f"   Keys: {list(result.keys())}")
+            self.logger.info(f"   study_card_data: {result.get('study_card_data')}")
+            self.logger.info(f"   field_quotes count: {len(result.get('field_quotes', []))}")
             
             return result
             
@@ -445,7 +502,9 @@ Only include fields where you found clear evidence in the document. If a field i
     def _build_simplified_study_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
         """Build simplified prompt for study card extraction."""
         return f"""
-Extract methodology information from this clinical trial document. Focus on study design, population, and key methods.
+Extract methodology information from this clinical trial document. Focus on the most important methodology elements.
+
+IMPORTANT: Only extract if this document contains clinical trial methodology details.
 
 Document Text:
 {doc_text[:3000]}
@@ -454,45 +513,51 @@ Trial Context:
 - Disease: {trial_context.get('disease', 'Unknown')}
 - Intervention: {trial_context.get('intervention', 'Unknown')}
 
-Return JSON:
-{{
-    "study_card_data": {{
-        "population_description": "description of study population",
-        "design_archetype": "study design type",
-        "primary_endpoint": "main outcome measure"
-    }},
-    "field_quotes": [
-        {{
-            "field_name": "population_description",
-            "value": "extracted population description",
-            "evidence_quote": "quote from document",
-            "confidence": 0.9
-        }}
-    ]
-}}
+Look for: study design, population description, primary endpoint, statistical methods.
 
-IMPORTANT: You must provide at least 1-2 field_quotes with evidence_quote from the document.
+CRITICAL REQUIREMENTS:
+1. Only include fields where you found clear evidence in the document
+2. For each field you extract, provide the exact text quote from the document that supports it
+3. field_name must ALWAYS be a text string (never a number like 2017.0)
+4. evidence_quote must ALWAYS be a text string containing actual words from the document (never a number like 37.0 or 2.0)
+5. value can be a string, number, or boolean depending on the field type
+6. If no methodology information is found, return empty objects
+7. If a field is not mentioned, omit it entirely
+8. IMPORTANT: Never use numeric values as field names or evidence quotes
+
+RESPONSE STRUCTURE:
+You must return a JSON object with exactly two top-level keys:
+- "study_card_data": An object containing the extracted field values (just the values, not objects)
+- "field_quotes": An array of objects, each with field_name, value, evidence_quote, and confidence
+
+The response will be automatically formatted according to the required schema.
 """
     
     def _build_minimal_study_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
         """Build minimal prompt for study card extraction."""
         return f"""
-Find methodology information in this text and provide quotes.
+Find any methodology information in this text and provide quotes.
+
+IMPORTANT: Only extract if methodology information is present.
 
 Text: {doc_text[:2000]}
 
-Return JSON:
-{{
-    "study_card_data": {{}},
-    "field_quotes": [
-        {{
-            "field_name": "methodology_finding",
-            "value": "what was found about methods",
-            "evidence_quote": "quote from text",
-            "confidence": 0.8
-        }}
-    ]
-}}
+Look for: study design, endpoints, statistical methods, population.
 
-Provide at least 1 field_quote with evidence_quote from the text.
+CRITICAL REQUIREMENTS:
+1. Only include fields where you found clear evidence in the document
+2. For each field you extract, provide the exact text quote from the document that supports it
+3. field_name must ALWAYS be a text string (never a number like 2017.0)
+4. evidence_quote must ALWAYS be a text string containing actual words from the document (never a number like 37.0 or 2.0)
+5. value can be a string, number, or boolean depending on the field type
+6. If no methodology information is found, return empty objects
+7. If a field is not mentioned, omit it entirely
+8. IMPORTANT: Never use numeric values as field names or evidence quotes
+
+RESPONSE STRUCTURE:
+You must return a JSON object with exactly two top-level keys:
+- "study_card_data": An object containing the extracted field values (just the values, not objects)
+- "field_quotes": An array of objects, each with field_name, value, evidence_quote, and confidence
+
+The response will be automatically formatted according to the required schema.
 """

@@ -650,7 +650,7 @@ class PubMedClient:
                 content_map = self._parse_efetch_response(result, batch, rettype)
                 all_results.update(content_map)
             else:
-                logger.warning(f"Unexpected EFetch response type: {type(result)}")
+                logger.warn(f"Unexpected EFetch response type: {type(result)}")
         
         return all_results
     
@@ -687,7 +687,7 @@ class PubMedClient:
                 content_map = self._parse_xml_response(result, batch)
                 all_results.update(content_map)
             else:
-                logger.warning(f"Unexpected EFetch XML response type: {type(result)}")
+                logger.warn(f"Unexpected EFetch XML response type: {type(result)}")
         
         return all_results
     
@@ -746,7 +746,7 @@ class PubMedClient:
             # Log missing PMIDs for debugging
             missing = pmid_set - returned_pmids
             if missing:
-                logger.warning(f"EFetch returned {len(returned_pmids)}/{len(pmids)} PMIDs; missing: {sorted(missing)[:10]}")
+                logger.warn(f"EFetch returned {len(returned_pmids)}/{len(pmids)} PMIDs; missing: {sorted(missing)[:10]}")
             
             abstract_count = len([k for k, v in content_map.items() if v["abstract"]])
             logger.info(f"✅ Parsed {abstract_count}/{len(pmids)} abstracts, {pmcid_count}/{len(pmids)} PMCIDs")
@@ -1136,7 +1136,7 @@ class PubMedClient:
                 content_map[pmids[0]] = response_text.strip()
                 parsed = True
             else:
-                logger.warning("Could not parse abstract response - no recognizable format found")
+                logger.warn("Could not parse abstract response - no recognizable format found")
                 logger.debug(f"Response contains: {response_text[:1000]}...")
         
         return content_map
@@ -1327,7 +1327,7 @@ class PubMedClient:
             if isinstance(result, str):
                 return result
             else:
-                logger.warning(f"Unexpected full text response type: {type(result)}")
+                logger.warn(f"Unexpected full text response type: {type(result)}")
                 return None
         except Exception as e:
             logger.error(f"Failed to fetch full text for PMCID {pmcid}: {e}")
@@ -1357,7 +1357,7 @@ class PubMedClient:
         try:
             xml_str = await self._make_request(self.EFETCH_URL, params, expect_json=False)
             if not isinstance(xml_str, str):
-                logger.warning(f"Unexpected JATS response type for {pmcid}: {type(xml_str)}")
+                logger.warn(f"Unexpected JATS response type for {pmcid}: {type(xml_str)}")
                 return None
 
             # Parse XML

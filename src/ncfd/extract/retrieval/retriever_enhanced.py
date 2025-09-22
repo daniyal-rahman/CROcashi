@@ -9,6 +9,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 from ..base_extract_worker import BaseWorker, WorkerOutput
 from ..models import DocumentCard
+from ..utils import resolve_external_doc_id, get_document_metadata, get_document_text, get_standardized_doc_id
 from ...db.models import Document, DocumentText
 from ...db.session import get_session
 
@@ -20,9 +21,8 @@ class EnhancedRetriever(BaseWorker):
     
     def __init__(self, max_span_length: int = 400, min_confidence: float = 0.7):
         super().__init__("EnhancedRetriever", "3.0.0")  # Version bump for LLM-first
-        # Keep legacy params for backward compatibility but they're unused now
-        self.max_span_length = max_span_length
-        self.min_confidence = min_confidence
+        # Note: max_span_length and min_confidence are kept for API compatibility
+        # but are not used in LLM-first architecture
         
         
     def _validate_inputs(self, inputs: Dict[str, Any]) -> bool:
@@ -39,14 +39,16 @@ class EnhancedRetriever(BaseWorker):
             # Retrieve documents based on trial context
             document_cards = self._retrieve_documents(trial_context, date_window, use_real_retrieval)
             
-            # Get raw document text for each document
+            # Get abstracts for prioritization (runtime only, not persisted)
+            # Full text will be lazy-loaded during LLM processing
             raw_doc_texts = {}
             for doc_card in document_cards:
                 # Ensure doc_id is consistently a string for key consistency
                 doc_id_key = str(doc_card.doc_id)
-                raw_text = self._get_raw_document_text(doc_id_key)
-                if raw_text:
-                    raw_doc_texts[doc_id_key] = raw_text
+                abstract_text = self._get_abstract_for_prioritization(doc_id_key)
+                if abstract_text:
+                    raw_doc_texts[doc_id_key] = abstract_text
+                    logger.debug(f"Loaded abstract for prioritization: doc {doc_card.doc_id} ({len(abstract_text)} chars)")
             
             # Add provenance to document cards
             for i, doc_card in enumerate(document_cards):
@@ -184,24 +186,7 @@ class EnhancedRetriever(BaseWorker):
     
     def _get_standardized_doc_id(self, doc: Document) -> str:
         """Get standardized doc_id format per docs/ids.md"""
-        # Priority order: nct_id > pmcid > pmid > source_type fallback > db fallback
-        if doc.nct_id:
-            return f"ctgov:{doc.nct_id}"
-        elif doc.pmcid:
-            return f"pmc:{doc.pmcid}"
-        elif doc.pmid:
-            return f"pmid:{doc.pmid}"
-        elif doc.source_type:
-            source_lower = doc.source_type.lower()
-            if source_lower in ['sec', '8k', '10k', '10q']:
-                return f"sec:{doc.doc_id}"
-            elif source_lower in ['pr', 'press_release']:
-                return f"pr:{doc.doc_id}"
-            elif source_lower in ['fda']:
-                return f"fda:{doc.doc_id}"
-        
-        # Fallback to db: prefix
-        return f"db:{doc.doc_id}"
+        return get_standardized_doc_id(doc)
     
     def _get_raw_document_text(self, doc_id: str) -> str:
         """Get raw text content from document using runtime generation."""
@@ -219,7 +204,7 @@ class EnhancedRetriever(BaseWorker):
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     # If we're already in an async context, we need to handle this differently
-                    # For now, fall back to the old method
+                    # Fall back to synchronous method
                     return self._get_raw_document_text_fallback(doc_id)
                 else:
                     return loop.run_until_complete(self._text_cache.get_document_text(doc_id, prefer_fulltext=True))
@@ -229,57 +214,32 @@ class EnhancedRetriever(BaseWorker):
                     
         except Exception as e:
             logger.error(f"Error getting raw text for {doc_id}: {e}")
-            # Fall back to old method
+            # Fall back to synchronous method
             return self._get_raw_document_text_fallback(doc_id)
+    
+    def _get_abstract_for_prioritization(self, doc_id: str) -> str:
+        """Get abstract text for prioritization purposes (runtime only, not persisted)."""
+        try:
+            with get_session() as session:
+                # Use shared utility to get document text
+                text = get_document_text(session, doc_id, prefer_fulltext=False)
+                if text:
+                    logger.debug(f"Retrieved {len(text)} characters of abstract for prioritization")
+                return text
+                    
+        except Exception as e:
+            logger.error(f"Error getting abstract for prioritization for {doc_id}: {e}")
+            return ""
     
     def _get_raw_document_text_fallback(self, doc_id: str) -> str:
         """Fallback method for getting document text (original implementation)."""
         try:
             with get_session() as session:
-                internal_doc_id = self._resolve_external_doc_id(session, doc_id)
-                if not internal_doc_id:
-                    return ""
-                
-                # Get document from documents table
-                document = session.query(Document).filter(
-                    Document.doc_id == internal_doc_id
-                ).first()
-                
-                if not document:
-                    logger.warning(f"Document {internal_doc_id} not found in documents table")
-                    return ""
-                
-                # Try to get text from document_text table (if it exists from processing)
-                doc_text = session.query(DocumentText).filter(
-                    DocumentText.doc_id == internal_doc_id
-                ).first()
-                
-                if doc_text:
-                    # Try fulltext first - with quality check
-                    if hasattr(doc_text, 'fulltext_text') and doc_text.fulltext_text:
-                        fulltext_length = len(doc_text.fulltext_text)
-                        # Quality check: ensure fulltext is substantial
-                        if fulltext_length >= 500:  # Minimum length for methods/results extraction
-                            logger.info(f"Retrieved {fulltext_length} characters of fulltext from document_text")
-                            return doc_text.fulltext_text
-                        else:
-                            logger.info(f"Fulltext too short ({fulltext_length} chars) for document {internal_doc_id}, falling back to abstract...")
-                    
-                    # Fallback to abstract - accept abstracts for LLM processing
-                    if doc_text.abstract_text:
-                        abstract_length = len(doc_text.abstract_text)
-                        logger.info(f"Retrieved {abstract_length} characters of abstract text from document_text")
-                        
-                        # Accept abstracts for LLM processing (more flexible than before)
-                        if abstract_length >= 100:  # Lowered threshold for abstract acceptance
-                            logger.info(f"Using abstract ({abstract_length} chars) for LLM processing")
-                            return doc_text.abstract_text
-                        else:
-                            logger.warning(f"Abstract too short ({abstract_length} chars) for quality study card generation")
-                            return doc_text.abstract_text  # Still return it, let LLM decide
-                
-                logger.info(f"No text found in document_text for {internal_doc_id}")
-                return ""
+                # Use shared utility to get document text
+                text = get_document_text(session, doc_id, prefer_fulltext=True)
+                if text:
+                    logger.info(f"Retrieved {len(text)} characters of text for LLM processing")
+                return text
                     
         except Exception as e:
             logger.error(f"Error getting raw text for {doc_id}: {e}")
@@ -360,56 +320,6 @@ class EnhancedRetriever(BaseWorker):
             logger.error(f"Error validating full text availability: {e}")
             return False, issues
     
-    
-    def _resolve_external_doc_id(self, session, external_doc_id: str) -> Optional[int]:
-        """Resolve external document ID to internal doc_id."""
-        if not external_doc_id:
-            return None
-        
-        # Handle plain integer doc_id (from database)
-        if external_doc_id.isdigit():
-            return int(external_doc_id)
-        
-        if ':' in external_doc_id:
-            source, identifier = external_doc_id.split(':', 1)
-            source = source.lower()
-            
-            if source == 'ctgov':
-                document = session.query(Document).filter(
-                    Document.nct_id == identifier
-                ).first()
-            elif source == 'pmc':
-                document = session.query(Document).filter(
-                    Document.pmcid == identifier
-                ).first()
-            elif source == 'pmid':
-                document = session.query(Document).filter(
-                    Document.pmid == identifier
-                ).first()
-            elif source == 'db':
-                try:
-                    internal_id = int(identifier)
-                    document = session.query(Document).filter(
-                        Document.doc_id == internal_id
-                    ).first()
-                except ValueError:
-                    return None
-            else:
-                # Handle sec:, fda:, pr: etc.
-                document = session.query(Document).filter(
-                    Document.source_type == source.upper(),
-                    Document.source_url.contains(identifier)
-                ).first()
-        else:
-            try:
-                internal_id = int(external_doc_id)
-                document = session.query(Document).filter(
-                    Document.doc_id == internal_id
-                ).first()
-            except ValueError:
-                return None
-        
-        return document.doc_id if document else None
     
     def _add_provenance(self, item, inputs):
         """Add provenance information."""

@@ -665,8 +665,23 @@ class PipelineOrchestrator:
             trial_id = trial['trial_id']
             trial_data = trial.get('trial_data', {})
             
-            # Get or create entity pack for this trial
-            entity_pack = self.entity_pack_service.create_from_trial(trial_id)
+            # Get asset names from config to ensure consistency with PubMed phase
+            asset_names = self.config.get('pubmed', {}).get('asset_names', [])
+            indications = self.config.get('pubmed', {}).get('indications', [])
+            
+            self.logger.info(f"Study card generation for trial {trial_id}: using asset_names={asset_names}, indications={indications}")
+            
+            # Get or create entity pack for this trial using the same asset names as PubMed phase
+            entity_pack = self.entity_pack_service.create_from_trial(
+                trial_id, 
+                asset_names=asset_names, 
+                indications=indications
+            )
+            
+            if entity_pack:
+                self.logger.info(f"Entity pack created for trial {trial_id}: asset_canonical={entity_pack.asset.canonical}, asset_aliases={entity_pack.asset.aliases}")
+            else:
+                self.logger.warning(f"Failed to create entity pack for trial {trial_id}")
             
             # Create proper trial context for the retriever
             trial_context = {
@@ -802,23 +817,28 @@ class PipelineOrchestrator:
         """Get document text for a trial (from study card or latest document)."""
         try:
             with session_scope() as session:
-                # Try to get study card text first
+                # Try to get study card text first - join study_cards -> documents -> document_text
                 from sqlalchemy import text
                 study_card_query = text("""
-                    SELECT study_card_text FROM study_cards 
-                    WHERE trial_id = :trial_id 
-                    ORDER BY created_at DESC LIMIT 1
+                    SELECT COALESCE(dt.fulltext_text, dt.abstract_text) as text_content
+                    FROM study_cards sc
+                    JOIN documents d ON sc.doc_id = d.doc_id
+                    JOIN document_text dt ON d.doc_id = dt.doc_id
+                    WHERE d.trial_id = :trial_id 
+                    ORDER BY sc.created_at DESC LIMIT 1
                 """)
                 
                 result = session.execute(study_card_query, {'trial_id': trial_id}).fetchone()
                 if result and result[0]:
                     return result[0]
                 
-                # Fallback: get latest document text
+                # Fallback: get latest document text directly
                 doc_query = text("""
-                    SELECT doc_text FROM documents 
-                    WHERE trial_id = :trial_id 
-                    ORDER BY created_at DESC LIMIT 1
+                    SELECT COALESCE(dt.fulltext_text, dt.abstract_text) as text_content
+                    FROM documents d
+                    JOIN document_text dt ON d.doc_id = dt.doc_id
+                    WHERE d.trial_id = :trial_id 
+                    ORDER BY d.created_at DESC LIMIT 1
                 """)
                 
                 result = session.execute(doc_query, {'trial_id': trial_id}).fetchone()
@@ -847,14 +867,14 @@ class PipelineOrchestrator:
             if family_id == 'F1':  # Endpoint Validity
                 signals['S1'] = SignalResult(
                     fired=True,
-                    severity="H" if detection.severity >= 2 else "M",
+                    severity="H" if detection.severity.value >= 2 else "M",
                     reason=f"Endpoint validity pattern detected: {detection.rationale}",
                     value=detection.confidence
                 )
             elif family_id == 'F2':  # Power & Analysis
                 signals['S2'] = SignalResult(
                     fired=True,
-                    severity="H" if detection.severity >= 2 else "M",
+                    severity="H" if detection.severity.value >= 2 else "M",
                     reason=f"Power/analysis pattern detected: {detection.rationale}",
                     value=detection.confidence
                 )

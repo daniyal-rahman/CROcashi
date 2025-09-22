@@ -42,7 +42,7 @@ def setup_database():
                 try:
                     session.execute(text(extension_sql))
                     session.commit()
-                    extension_name = extension_sql.split()[2]
+                    extension_name = extension_sql.split()[5].rstrip(';')
                     print(f"✅ Created extension: {extension_name}")
                 except Exception as e:
                     print(f"⚠️  Could not create extension {extension_sql}: {e}")

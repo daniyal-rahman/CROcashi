@@ -8,15 +8,7 @@ failure detection workflows.
 
 from .orchestrator import (
     PipelineOrchestrator,
-    UnifiedPipelineOrchestrator,  # Alias for backward compatibility
     OrchestrationOutput,
-)
-
-from .ingestion import (
-    DocumentIngestionPipeline,
-    ingest_document,
-    batch_ingest_documents,
-    validate_ingested_data,
 )
 
 from .tracking import (
@@ -31,13 +23,6 @@ from .lit_queue import (
     TrialQueueItem,
 )
 
-from .early_stopping import (
-    should_stop_early,
-    plateau_detected,
-    calculate_expected_utility,
-    update_trial_state,
-)
-
 from .ctgov_pipeline import CtgovPipeline, CtgovPipelineOutput
 from .sec_pipeline import SecPipeline, SecPipelineOutput
 from .study_card_pipeline import StudyCardPipeline, StudyCardPipelineOutput
@@ -47,14 +32,7 @@ from .asset_resolver import AssetResolver
 __all__ = [
     # Main orchestrator
     "PipelineOrchestrator",
-    "UnifiedPipelineOrchestrator",
     "OrchestrationOutput",
-    
-    # Document ingestion
-    "DocumentIngestionPipeline",
-    "ingest_document",
-    "batch_ingest_documents", 
-    "validate_ingested_data",
     
     # Trial version tracking
     "TrialVersionTracker",
@@ -65,12 +43,6 @@ __all__ = [
     # Literature queue management
     "LiteratureQueue",
     "TrialQueueItem",
-    
-    # Early stopping rules
-    "should_stop_early",
-    "plateau_detected",
-    "calculate_expected_utility",
-    "update_trial_state",
     
     # Individual pipelines
     "CtgovPipeline",

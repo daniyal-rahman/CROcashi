@@ -345,8 +345,48 @@ class OpenAIProvider(BaseLLMProvider):
         try:
             response = self.client.responses.create(**responses_request)
             
+            # Extract usage information from responses API response
+            usage_info = {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0
+            }
+            
+            # Try to extract usage from various possible attributes
+            if hasattr(response, 'usage') and response.usage:
+                usage_info = {
+                    "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0),
+                    "completion_tokens": getattr(response.usage, 'completion_tokens', 0),
+                    "total_tokens": getattr(response.usage, 'total_tokens', 0)
+                }
+            elif hasattr(response, 'token_usage'):
+                usage_info = {
+                    "prompt_tokens": getattr(response.token_usage, 'prompt_tokens', 0),
+                    "completion_tokens": getattr(response.token_usage, 'completion_tokens', 0),
+                    "total_tokens": getattr(response.token_usage, 'total_tokens', 0)
+                }
+            elif hasattr(response, 'tokens'):
+                # If tokens is a dict or object with usage info
+                tokens = response.tokens
+                if isinstance(tokens, dict):
+                    usage_info = {
+                        "prompt_tokens": tokens.get('prompt_tokens', 0),
+                        "completion_tokens": tokens.get('completion_tokens', 0),
+                        "total_tokens": tokens.get('total_tokens', 0)
+                    }
+                else:
+                    usage_info = {
+                        "prompt_tokens": getattr(tokens, 'prompt_tokens', 0),
+                        "completion_tokens": getattr(tokens, 'completion_tokens', 0),
+                        "total_tokens": getattr(tokens, 'total_tokens', 0)
+                    }
+            
+            # Log the response structure for debugging
+            self.logger.debug(f"Responses API response structure: {dir(response)}")
+            if hasattr(response, '__dict__'):
+                self.logger.debug(f"Responses API response attributes: {response.__dict__}")
+            
             # Transform responses API response to chat completion format
-            # This is a simplified transformation - may need adjustment based on actual API
             return ChatCompletion(
                 id=getattr(response, 'id', 'resp_unknown'),
                 object="chat.completion",
@@ -360,11 +400,7 @@ class OpenAIProvider(BaseLLMProvider):
                     },
                     "finish_reason": "stop"
                 }],
-                usage={
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "total_tokens": 0
-                }
+                usage=usage_info
             )
             
         except AttributeError:

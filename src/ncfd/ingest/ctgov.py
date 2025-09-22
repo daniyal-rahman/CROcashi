@@ -308,7 +308,7 @@ class CtgovClient:
             logger.info(f"Extracted {len(primary_assets)} primary assets and {len(aliases)} aliases for {nct_id}")
             
         except Exception as e:
-            logger.warning(f"Asset extraction failed for {nct_id}, falling back to simple extraction: {e}")
+            logger.warn(f"Asset extraction failed for {nct_id}, falling back to simple extraction: {e}")
             # Fallback to simple extraction if asset extractor fails
             intervention_types = []
             for item in (ps.get("armsInterventionsModule", {}) or {}).get("interventions", []) or []:

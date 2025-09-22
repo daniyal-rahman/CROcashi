@@ -171,18 +171,8 @@ class PatternFamilyDetector(BaseLLMGenerator):
         return "pattern_detections"
     
     def _build_standard_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
-        """Build the standard prompt for the first attempt."""
+        """Build the standard prompt for pattern detection."""
         documents = [{"text": doc_text, "doc_id": doc_id}]
-        return self._build_detection_prompt(documents, trial_context)
-    
-    def _build_simplified_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
-        """Build a simplified prompt for the second attempt."""
-        documents = [{"text": doc_text[:2000], "doc_id": doc_id}]  # Truncate for simplicity
-        return self._build_detection_prompt(documents, trial_context)
-    
-    def _build_minimal_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
-        """Build a minimal prompt for the third attempt."""
-        documents = [{"text": doc_text[:1000], "doc_id": doc_id}]  # Further truncate
         return self._build_detection_prompt(documents, trial_context)
     
     async def _extract_with_llm(self, doc_text: str, trial_context: Dict[str, Any], prompt: str) -> Dict[str, Any]:
@@ -436,7 +426,18 @@ Severity Rules: {pattern['severity_rules']}
         return detections
     
     def _calculate_power(self, trial_context: Dict[str, Any]) -> Optional[float]:
-        """Calculate statistical power for F2P1 guard."""
-        # TODO: Implement power calculation
-        # This would use the same logic as the old S2 signal
+        """
+        Calculate statistical power for F2P1 guard.
+        
+        Note: This is a placeholder implementation. Statistical power calculation
+        would require trial design parameters (sample size, effect size, alpha level)
+        that are not currently available in the trial context.
+        
+        Args:
+            trial_context: Trial context information
+            
+        Returns:
+            Statistical power (0-1) or None if calculation not possible
+        """
+        # Placeholder implementation - would require trial design parameters
         return None

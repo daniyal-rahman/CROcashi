@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from .text_generator import RuntimeTextGenerator
 from .config import RUNTIME_TEXT_CONFIG
+from ..utils import resolve_external_doc_id, get_document_text
 from ...db.models import Document, DocumentText
 from ...db.session import get_session
 
@@ -122,56 +123,16 @@ class DocumentTextCache:
         """Get text from database cache."""
         try:
             with get_session() as session:
-                # Resolve external doc_id to internal doc_id
-                internal_doc_id = self._resolve_external_doc_id(session, doc_id)
-                if not internal_doc_id:
-                    return ""
-                
-                doc_text = session.query(DocumentText).filter(
-                    DocumentText.doc_id == internal_doc_id
-                ).first()
-                
-                if not doc_text:
-                    return ""
-                
-                # Try fulltext first if preferred
-                if prefer_fulltext and doc_text.fulltext_text:
-                    fulltext_length = len(doc_text.fulltext_text)
-                    min_length = self.quality_config.get("min_fulltext_length", 500)
-                    if fulltext_length >= min_length:
-                        return doc_text.fulltext_text
-                
-                # Fallback to abstract
-                if doc_text.abstract_text:
-                    abstract_length = len(doc_text.abstract_text)
-                    min_length = self.quality_config.get("min_abstract_length", 100)
-                    if abstract_length >= min_length:
-                        return doc_text.abstract_text
-                
-                return ""
+                # Use shared utility to get document text
+                text = get_document_text(session, doc_id, prefer_fulltext)
+                if text:
+                    logger.info(f"Retrieved {len(text)} characters of text from database")
+                return text
                 
         except Exception as e:
             logger.error(f"Error getting text from database for doc {doc_id}: {e}")
             return ""
     
-    def _resolve_external_doc_id(self, session, doc_id: str) -> Optional[int]:
-        """Resolve external doc_id format to internal doc_id."""
-        try:
-            if doc_id.startswith('db:'):
-                return int(doc_id.split(':')[1])
-            elif doc_id.startswith('pmid:'):
-                pmid = doc_id.split(':')[1]
-                doc = session.query(Document).filter(Document.pmid == pmid).first()
-                return doc.doc_id if doc else None
-            elif doc_id.startswith('pmcid:'):
-                pmcid = doc_id.split(':')[1]
-                doc = session.query(Document).filter(Document.pmcid == pmcid).first()
-                return doc.doc_id if doc else None
-            else:
-                # Assume it's already an internal doc_id
-                return int(doc_id)
-        except (ValueError, AttributeError):
-            return None
     
     def _cache_in_memory(self, doc_id: str, text: str, source: str, metadata: Optional[Dict[str, Any]] = None):
         """Cache text in memory."""

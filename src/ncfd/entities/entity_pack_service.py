@@ -59,7 +59,7 @@ class EntityPackService:
                     return None
                 
                 # Extract company information
-                company_canonical = trial.sponsor or "Unknown Company"
+                company_canonical = trial.sponsor_text or "Unknown Company"
                 company_aliases = [company_canonical.lower()] if company_canonical else []
                 
                 # Extract asset information
@@ -72,10 +72,12 @@ class EntityPackService:
                     if trial.intervention_types:
                         asset_canonical = trial.intervention_types[0] if isinstance(trial.intervention_types, list) else str(trial.intervention_types)
                         asset_aliases = [asset_canonical.lower()]
+                        self.logger.warning(f"FALLBACK: Using trial intervention types instead of real asset names: {trial.intervention_types}")
+                        self.logger.warning(f"This may cause 'No mechanism targets for asset' warnings. Consider providing asset_names parameter.")
                     else:
                         asset_canonical = "Unknown Asset"
                         asset_aliases = ["unknown"]
-                    self.logger.info(f"Using trial intervention types: {trial.intervention_types}")
+                        self.logger.warning(f"No intervention types found for trial {trial_id}, using 'Unknown Asset'")
                 
                 # Extract indication information
                 if indications:

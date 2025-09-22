@@ -1,10 +1,10 @@
 {
   "test_info": {
-    "start_time": "2025-09-21T01:08:49.411885+00:00",
+    "start_time": "2025-09-22T07:25:53.139328+00:00",
     "test_name": "Comprehensive Cassava Pipeline Test V2",
     "version": "2.0",
-    "end_time": "2025-09-21T01:15:23.757082+00:00",
-    "duration_seconds": 394.345197
+    "end_time": "2025-09-22T07:30:26.998276+00:00",
+    "duration_seconds": 273.858948
   },
   "database_setup": {
     "status": "success",
@@ -32,7 +32,7 @@
   },
   "study_card_generation": {
     "status": "success",
-    "success": true,
+    "success": false,
     "pattern_detections": 0,
     "decision_records": 0,
     "errors": [],
@@ -44,7 +44,7 @@
     "trials_analyzed": 1,
     "successful_analyses": 1,
     "failed_analyses": 0,
-    "execution_time_seconds": 11.755536
+    "execution_time_seconds": 20.739031
   },
   "validation_results": {
     "status": "success",
@@ -53,7 +53,7 @@
       "trials": 1,
       "documents": 21,
       "studies": 0,
-      "study_cards": 3
+      "study_cards": 1
     },
     "errors": [],
     "relationships": {
@@ -66,20 +66,17 @@
     }
   },
   "errors": [],
-  "warnings": [
-    "\u26a0\ufe0f  WARNING: 8 patterns detected (3 fired gates, 5 pattern detections) - this may indicate risk patterns in the trial"
-  ],
+  "warnings": [],
   "pattern_evaluation": {
     "success": true,
     "trials_processed": 1,
-    "patterns_detected": 5,
-    "gates_fired": 3,
+    "patterns_detected": 3,
+    "gates_fired": 0,
     "trial_results": [
       {
         "trial_id": 1,
-        "patterns_detected": 5,
-        "gates_fired": 3,
-        "p_fail": 0.95,
+        "patterns_detected": 3,
+        "gates_fired": 0,
         "success": true
       }
     ]
