@@ -128,9 +128,10 @@ class EnhancedRetriever(BaseWorker):
                         abstract = doc_text.abstract_text or ""
                         
                         # Skip non-trial papers (reviews, mechanistic studies, etc.)
+                        # Be more specific to avoid filtering out clinical trial papers that mention mechanisms
                         non_trial_keywords = [
-                            "review", "mechanism", "preclinical", "in vitro", "in vivo", 
-                            "animal model", "cell line", "molecular", "pathway", "signaling"
+                            "review", "in vitro", "in vivo", 
+                            "animal model", "cell line", "molecular pathway", "signaling pathway"
                         ]
                         
                         is_non_trial = any(keyword in title.lower() or keyword in abstract.lower() 

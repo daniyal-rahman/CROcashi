@@ -1,10 +1,10 @@
 {
   "test_info": {
-    "start_time": "2025-09-22T18:13:46.127582+00:00",
+    "start_time": "2025-09-23T18:24:02.187563+00:00",
     "test_name": "Comprehensive Cassava Pipeline Test V2",
     "version": "2.0",
-    "end_time": "2025-09-22T18:14:28.915028+00:00",
-    "duration_seconds": 42.787446
+    "end_time": "2025-09-23T18:26:44.538669+00:00",
+    "duration_seconds": 162.351106
   },
   "database_setup": {
     "status": "success",
@@ -32,7 +32,7 @@
   },
   "study_card_generation": {
     "status": "success",
-    "success": false,
+    "success": true,
     "pattern_detections": 0,
     "decision_records": 0,
     "errors": [],
@@ -44,7 +44,7 @@
     "trials_analyzed": 1,
     "successful_analyses": 1,
     "failed_analyses": 0,
-    "execution_time_seconds": 36.117479
+    "execution_time_seconds": 30.83032
   },
   "validation_results": {
     "status": "failed",
@@ -72,12 +72,12 @@
   "pattern_evaluation": {
     "success": true,
     "trials_processed": 1,
-    "patterns_detected": 0,
+    "patterns_detected": 2,
     "gates_fired": 0,
     "trial_results": [
       {
         "trial_id": 1,
-        "patterns_detected": 0,
+        "patterns_detected": 2,
         "gates_fired": 0,
         "success": true
       }

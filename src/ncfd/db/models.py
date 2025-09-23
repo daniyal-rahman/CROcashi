@@ -498,6 +498,32 @@ class Gate(Base):
     )
 
 
+class GateAssessment(Base):
+    """SQLAlchemy model for gate_assessments table."""
+    __tablename__ = 'gate_assessments'
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    gate_id: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    p_gate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    rationale: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    sensitivity: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    computed_values: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    threshold_comparisons: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    assessment_method: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    confidence_in_assessment: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    assessment_notes: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    next_steps: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("idx_gate_assessments_gate_id", "gate_id"),
+        Index("idx_gate_assessments_status", "status"),
+        Index("idx_gate_assessments_created_at", "created_at"),
+    )
+
+
 class Score(Base):
     """Scores table - posterior probabilities per run"""
     __tablename__ = "scores"
@@ -1223,4 +1249,45 @@ class Factsheet(Base):
         Index("idx_factsheets_created_at", "created_at"),
         Index("idx_factsheets_total_enrolled", "total_enrolled"),
         Index("idx_factsheets_dropout_rate", "dropout_rate"),
+    )
+
+
+class PatternFamily(Base):
+    """SQLAlchemy model for pattern_families table."""
+    __tablename__ = 'pattern_families'
+    
+    family_id: Mapped[str] = mapped_column(String(2), primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=True)
+
+    # Relationships
+    pattern_detections: Mapped[List["PatternDetection"]] = relationship("PatternDetection", foreign_keys="PatternDetection.family_id", primaryjoin="PatternFamily.family_id == PatternDetection.family_id")
+
+
+class PatternDetection(Base):
+    """SQLAlchemy model for pattern_detections table."""
+    __tablename__ = 'pattern_detections'
+    
+    detection_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trial_id: Mapped[int] = mapped_column(Integer, ForeignKey("trials.trial_id"), nullable=False)
+    run_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    family_id: Mapped[str] = mapped_column(String(2), ForeignKey("pattern_families.family_id"), nullable=False)
+    pattern_id: Mapped[str] = mapped_column(String(4), nullable=False)
+    severity: Mapped[int] = mapped_column(Integer, nullable=False)
+    confidence: Mapped[float] = mapped_column(Numeric(3, 2), nullable=False)
+    rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    evidence_spans: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    detected_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=True)
+
+    # Relationships
+    trial: Mapped[Optional["Trial"]] = relationship("Trial", foreign_keys=[trial_id], primaryjoin="PatternDetection.trial_id == Trial.trial_id")
+    pattern_family: Mapped[Optional["PatternFamily"]] = relationship("PatternFamily", foreign_keys=[family_id], primaryjoin="PatternDetection.family_id == PatternFamily.family_id")
+
+    __table_args__ = (
+        Index("idx_pattern_detections_trial", "trial_id"),
+        Index("idx_pattern_detections_family", "family_id"),
+        Index("idx_pattern_detections_run", "run_id"),
+        Index("idx_pattern_detections_severity", "severity"),
     )

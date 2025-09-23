@@ -25,11 +25,7 @@ from ..ingest.pubmed.document_manager import DocumentManager
 from ..ingest.pubmed.queue_service import TaskQueueService
 from ..utils.config_manager import get_config_manager
 from ..utils.error_handler import get_pipeline_error_handler, safe_execute
-from ..ingest.pubmed.retrieval.policy_engine import RetrievalPolicy, PolicyConfig
-from ..ingest.pubmed.retrieval.query_builder import MultiTierQueryBuilder
-from ..ingest.pubmed.retrieval.document_scorer import AdvancedDocumentScorer, ScoringConfig
-from ..ingest.pubmed.retrieval.guardrails import GuardrailsSystem, GuardrailConfig
-from ..ingest.pubmed.retrieval.ctgov_discovery import CTgovIntegration, CTgovConfig
+# Removed unused imports - these services are used by RetrievalProcessor, not directly by this pipeline
 from ..db.session import get_session, session_scope
 from ..db.models import Trial, Document
 from ..config import get_config

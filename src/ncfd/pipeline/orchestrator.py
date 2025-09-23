@@ -25,6 +25,7 @@ from dataclasses import dataclass, field, asdict
 from .ctgov_pipeline import CtgovPipeline, CtgovPipelineOutput
 from .sec_pipeline import SecPipeline, SecPipelineOutput
 from .study_card_pipeline import StudyCardPipeline, StudyCardPipelineOutput
+from .study_card_pipeline_refactored import StudyCardPipelineRefactored, StudyCardPipelineOutput as StudyCardPipelineOutputRefactored
 from .pubmed_pipeline import PubMedPipeline, PubMedPipelineOutput
 from .asset_resolver import AssetResolver
 from .tracking import TrialVersionTracker
@@ -69,7 +70,7 @@ class OrchestrationOutput:
     ctgov_result: Optional['CtgovPipelineOutput'] = None
     sec_result: Optional['SecPipelineOutput'] = None
     pubmed_result: Optional['PubMedPipelineOutput'] = None
-    study_card_result: Optional['StudyCardPipelineOutput'] = None
+    study_card_result: Optional['StudyCardPipelineOutputRefactored'] = None
     independent_analysis_result: Optional[Dict[str, Any]] = None
     
     # Overall metrics
@@ -143,10 +144,11 @@ class PipelineOrchestrator:
         # Initialize error handler
         self.error_handler = get_pipeline_error_handler('orchestrator')
         
-        # Initialize core pipelines using centralized config
-        self.ctgov_pipeline = CtgovPipeline(self.config_manager.get_section('ctgov'))
-        self.sec_pipeline = SecPipeline(self.config_manager.get_section('sec'))
-        self.study_card_pipeline = StudyCardPipeline(self.config_manager.get_section('study_card'))
+        # Initialize core pipelines using passed config
+        self.ctgov_pipeline = CtgovPipeline(self.config.get('ctgov', {}))
+        self.sec_pipeline = SecPipeline(self.config.get('sec', {}))
+        # Use refactored study card pipeline with enhanced services
+        self.study_card_pipeline = StudyCardPipelineRefactored(self.config.get('study_card', {}))
         
         # Initialize supporting components
         self.asset_resolver = AssetResolver()
@@ -588,7 +590,7 @@ class PipelineOrchestrator:
     # STUDY CARD GENERATION METHODS
     # ============================================================================
     
-    async def run_study_card_generation(self, trial_list: List[Dict[str, Any]]) -> Optional[StudyCardPipelineOutput]:
+    async def run_study_card_generation(self, trial_list: List[Dict[str, Any]]) -> Optional[StudyCardPipelineOutputRefactored]:
         """
         Run study card generation for filtered trial list.
         
@@ -632,11 +634,17 @@ class PipelineOrchestrator:
             
             end_time = datetime.now(timezone.utc)
             
-            result = StudyCardPipelineOutput(
-                trial_id="multiple",  # Multiple trials processed
+            result = StudyCardPipelineOutputRefactored(
                 success=len(failed_results) == 0,
                 start_time=start_time,
-                end_time=end_time
+                end_time=end_time,
+                trials_processed=len(trial_list),
+                study_cards_generated=len(successful_results),
+                factsheets_generated=0,  # Will be updated by individual trial processing
+                patterns_detected=0,     # Will be updated by individual trial processing
+                quotes_extracted=0,      # Will be updated by individual trial processing
+                errors=[r.get('error', 'Unknown error') for r in failed_results],
+                warnings=[]
             )
             
             # Store result
@@ -649,11 +657,17 @@ class PipelineOrchestrator:
             self.logger.error(f"Study card generation failed: {e}")
             end_time = datetime.now(timezone.utc)
             
-            result = StudyCardPipelineOutput(
-                trial_id="multiple",
+            result = StudyCardPipelineOutputRefactored(
                 success=False,
                 start_time=start_time,
-                end_time=end_time
+                end_time=end_time,
+                trials_processed=len(trial_list),
+                study_cards_generated=0,
+                factsheets_generated=0,
+                patterns_detected=0,
+                quotes_extracted=0,
+                errors=[str(e)],
+                warnings=[]
             )
             
             self.current_execution.study_card_result = result
@@ -691,13 +705,22 @@ class PipelineOrchestrator:
                 **trial_data  # Include all trial data
             }
             
-            # Generate study card using the study card pipeline
-            study_card_result = await self.study_card_pipeline.execute(trial_id, trial_context)
+            # Generate study card using the refactored study card pipeline
+            # The refactored pipeline expects a list of trials with entity packs
+            trial_with_entity_pack = {
+                'trial_id': trial_id,
+                'nct_id': trial.get('nct_id'),
+                **trial_data,
+                'entity_pack': entity_pack
+            }
+            study_card_result = await self.study_card_pipeline.execute([trial_with_entity_pack], [entity_pack] if entity_pack else None)
             
             return {
                 'trial_id': trial_id,
-                'success': study_card_result.success if hasattr(study_card_result, 'success') else True,
-                'study_card_id': getattr(study_card_result, 'study_card_id', None),
+                'success': study_card_result.success,
+                'study_cards_generated': study_card_result.study_cards_generated,
+                'factsheets_generated': study_card_result.factsheets_generated,
+                'patterns_detected': study_card_result.patterns_detected,
                 'generated_at': datetime.now(timezone.utc)
             }
             

@@ -23,8 +23,19 @@ class PatternFamilyDetector(BaseLLMWorker):
     
     def __init__(self, config_path: str = "config/pattern_families.yaml", llm_config: Optional[Dict[str, Any]] = None):
         super().__init__("PatternFamilyDetector", "1.0.0", llm_config)
-    
-    
+        
+        self.config_path = config_path
+        self.config = self._load_config()
+        self.patterns = self._load_patterns()
+        
+        # Ensure patterns is always a dictionary, even if empty
+        if not isinstance(self.patterns, dict):
+            self.patterns = {}
+        
+        # Log initialization status
+        self.logger.info(f"PatternFamilyDetector initialized with {len(self.patterns)} patterns from {self.config_path}")
+        if not self.patterns:
+            self.logger.warning("No patterns loaded - pattern detection will not work")
     
     def _get_json_schema(self) -> Dict[str, Any]:
         """Return the JSON schema for pattern detection."""
@@ -34,15 +45,6 @@ class PatternFamilyDetector(BaseLLMWorker):
                 "pattern_detections": {"type": "array", "items": {"type": "string"}}
             }
         }
-        
-        self.config_path = config_path
-        self.config = self._load_config()
-        self.patterns = self._load_patterns()
-        
-        # Log initialization status
-        self.logger.info(f"PatternFamilyDetector initialized with {len(self.patterns)} patterns from {self.config_path}")
-        if not self.patterns:
-            self.logger.warning("No patterns loaded - pattern detection will not work")
     
     async def process(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """

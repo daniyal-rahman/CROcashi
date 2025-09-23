@@ -333,10 +333,22 @@ class ComprehensiveCassavaTestV2:
             
             # Study card configuration
             "study_card": {
-                "max_documents_per_trial": 5,
+                "max_documents_per_trial": 3,
                 "store_json_snapshots": True,
                 "llm_timeout_seconds": 120,
                 "retrieval_timeout_seconds": 180,
+                "prioritization": {
+                    "max_documents_per_trial": 3,
+                    "min_r_score": 0.0,
+                    "min_s_score": 0.0,
+                    "high_priority_r_threshold": 0.6,
+                    "weights": {
+                        "r_score": 0.4,
+                        "s_score": 0.3,
+                        "recency": 0.2,
+                        "text_availability": 0.1
+                    }
+                },
                 "retriever": {
                     "auto_span_generation": True,
                     "late_fusion": False,
