@@ -132,11 +132,13 @@ class FactsheetExtractionService:
                     successful += 1
                 else:
                     failed += 1
-                    errors.append(f"Failed to extract factsheet from document {doc.doc_id if hasattr(doc, 'doc_id') else doc.get('doc_id', 'unknown')}")
+                    doc_id = doc.get('doc_id', 'unknown') if isinstance(doc, dict) else (doc.doc_id if hasattr(doc, 'doc_id') else 'unknown')
+                    errors.append(f"Failed to extract factsheet from document {doc_id}")
                     
             except Exception as e:
                 failed += 1
-                error_msg = f"Error extracting factsheet from document {doc.doc_id if hasattr(doc, 'doc_id') else doc.get('doc_id', 'unknown')}: {str(e)}"
+                doc_id = doc.get('doc_id', 'unknown') if isinstance(doc, dict) else (doc.doc_id if hasattr(doc, 'doc_id') else 'unknown')
+                error_msg = f"Error extracting factsheet from document {doc_id}: {str(e)}"
                 errors.append(error_msg)
                 logger.error(error_msg)
         
@@ -159,13 +161,15 @@ class FactsheetExtractionService:
             document_text = self._prepare_document_text(document)
             
             if not document_text:
-                logger.warning(f"No text available for document {document.doc_id if hasattr(document, 'doc_id') else document.get('doc_id', 'unknown')}")
+                doc_id = document.get('doc_id', 'unknown') if isinstance(document, dict) else (document.doc_id if hasattr(document, 'doc_id') else 'unknown')
+                logger.warning(f"No text available for document {doc_id}")
                 return None
             
             # Extract factsheet using LLM
+            doc_id = document.get('doc_id', 'unknown') if isinstance(document, dict) else (document.doc_id if hasattr(document, 'doc_id') else 'unknown')
             inputs = {
                 "raw_doc_text": document_text,
-                "doc_id": document.doc_id if hasattr(document, 'doc_id') else document.get('doc_id', 'unknown'),
+                "doc_id": doc_id,
                 "trial_context": {
                     "trial_id": trial_id,
                     "entity_pack": entity_pack
@@ -186,6 +190,12 @@ class FactsheetExtractionService:
                     # It's a SQLAlchemy model or dataclass
                     factsheet_dict = {
                         'doc_id': getattr(factsheet, 'doc_id', None),
+                        # New JSONB-based fields
+                        'study_type': getattr(factsheet, 'study_type', None),
+                        'factsheet_sections': getattr(factsheet, 'factsheet_sections', {}),
+                        'provenance': getattr(factsheet, 'provenance', {}),
+                        'normalized_facts': getattr(factsheet, 'normalized_facts', {}),
+                        # Legacy fields for backward compatibility
                         'results': getattr(factsheet, 'results', []),
                         'primary_endpoint_results': getattr(factsheet, 'primary_endpoint_results', None),
                         'secondary_endpoint_results': getattr(factsheet, 'secondary_endpoint_results', []),
@@ -203,8 +213,15 @@ class FactsheetExtractionService:
                 
                 # Add metadata
                 factsheet_dict['trial_id'] = trial_id
-                factsheet_dict['document_id'] = document.doc_id if hasattr(document, 'doc_id') else document.get('doc_id', 'unknown')
+                factsheet_dict['document_id'] = document.get('doc_id', 'unknown')
                 factsheet_dict['extraction_timestamp'] = self._get_current_timestamp()
+                
+                # Debug logging to see what we're returning
+                logger.info(f"🔍 DEBUG: Factsheet extraction result for doc {document.get('doc_id', 'unknown')}:")
+                logger.info(f"  study_type: {factsheet_dict.get('study_type')}")
+                logger.info(f"  factsheet_sections keys: {list(factsheet_dict.get('factsheet_sections', {}).keys())}")
+                logger.info(f"  factsheet_sections content: {factsheet_dict.get('factsheet_sections', {})}")
+                logger.info(f"  provenance keys: {list(factsheet_dict.get('provenance', {}).keys())}")
                 
                 return factsheet_dict
             

@@ -14,7 +14,7 @@ from ncfd.extract.retrieval import build_retriever
 from ncfd.ingest.pubmed.document_manager import DocumentManager
 from ncfd.utils.config_manager import get_config_manager
 
-from .services import (
+from ncfd.extract.services import (
     DocumentPrioritizationService,
     StudyCardExtractionService,
     FactsheetExtractionService,
@@ -179,10 +179,11 @@ class StudyCardPipelineRefactored:
         
         try:
             # Step 1: Retrieve documents
-            logger.info(f"Retrieving documents for trial {trial_id}")
+            logger.info(f"📚 Step 1: Retrieving documents for trial {trial_id}")
             documents = await self._retrieve_documents(trial, entity_pack)
             
             if not documents:
+                logger.warning(f"⚠️ No documents found for trial {trial_id}")
                 warnings.append(f"No documents found for trial {trial_id}")
                 return {
                     'study_cards': 0,
@@ -193,8 +194,10 @@ class StudyCardPipelineRefactored:
                     'warnings': warnings
                 }
             
+            logger.info(f"✅ Retrieved {len(documents)} documents for trial {trial_id}")
+            
             # Step 2: Apply document prioritization with enhanced logic
-            logger.info(f"Applying document prioritization for trial {trial_id}")
+            logger.info(f"🎯 Step 2: Applying document prioritization for trial {trial_id}")
             raw_doc_texts = getattr(self, '_raw_doc_texts', {})
             prioritization_result = await self.document_prioritization.prioritize_documents(
                 documents, raw_doc_texts, trial_id, trial, entity_pack
@@ -233,11 +236,15 @@ class StudyCardPipelineRefactored:
             
             # Step 6: Quality gate validation
             logger.info(f"Validating quality for trial {trial_id}")
+            
+            # Extract quotes from factsheet provenance
+            extracted_quotes = self._extract_quotes_from_factsheets(factsheet_result.factsheets, trial_id)
+            
             quality_result = await self.quality_validation.validate_study_card_quality(
                 study_card_result.study_cards,
                 factsheet_result.factsheets,
                 pattern_result.detected_patterns,
-                [],  # Quotes would be extracted separately
+                extracted_quotes,
                 trial_id
             )
             
@@ -445,3 +452,33 @@ class StudyCardPipelineRefactored:
         except Exception as e:
             logger.error(f"Error retrieving documents for trial {trial.get('trial_id')}: {e}")
             return []
+    
+    def _extract_quotes_from_factsheets(self, factsheets: List[Dict[str, Any]], trial_id: str) -> List[Dict[str, Any]]:
+        """Extract quotes from factsheet provenance for quality validation."""
+        extracted_quotes = []
+        
+        for factsheet in factsheets:
+            if not isinstance(factsheet, dict):
+                continue
+                
+            provenance = factsheet.get('provenance', {})
+            document_id = factsheet.get('document_id', 'unknown')
+            
+            # Extract quotes from each field's provenance
+            for field_name, field_provenance in provenance.items():
+                if isinstance(field_provenance, dict) and 'quotes' in field_provenance:
+                    quotes = field_provenance['quotes']
+                    if isinstance(quotes, list):
+                        for quote in quotes:
+                            if isinstance(quote, dict) and 'text' in quote:
+                                extracted_quotes.append({
+                                    'trial_id': trial_id,
+                                    'document_id': document_id,
+                                    'field_name': field_name,
+                                    'text': quote['text'],
+                                    'confidence': quote.get('confidence', 0.8),
+                                    'location': quote.get('loc', {})
+                                })
+        
+        logger.info(f"Extracted {len(extracted_quotes)} quotes from {len(factsheets)} factsheets")
+        return extracted_quotes

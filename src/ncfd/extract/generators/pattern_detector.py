@@ -253,8 +253,12 @@ class PatternFamilyDetector(BaseLLMWorker):
     def _build_detection_prompt(self, documents: List[Dict[str, Any]], trial_context: Dict[str, Any]) -> str:
         """Build LLM prompt for pattern detection."""
         
-        # Extract relevant text from documents
-        text_slices = self._extract_text_slices(documents)
+        # Use prepared content if available, otherwise extract from documents
+        if 'content_text' in trial_context and trial_context['content_text']:
+            text_slices = trial_context['content_text']
+        else:
+            # Fallback to extracting text from documents
+            text_slices = self._extract_text_slices(documents)
         
         # Build pattern cards
         pattern_cards = self._build_pattern_cards()

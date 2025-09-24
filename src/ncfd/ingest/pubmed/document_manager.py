@@ -219,10 +219,20 @@ class DocumentManager:
         """
         try:
             with session_scope() as session:
-                query = session.query(Document).filter(Document.trial_id == trial_id)
+                # Use DocumentLink table to find documents linked to this trial
+                from ncfd.db.models import DocumentLink
+                linked_doc_ids = session.query(DocumentLink.doc_id).filter(
+                    DocumentLink.trial_id == trial_id
+                ).all()
+                linked_doc_ids = [row[0] for row in linked_doc_ids]
+                
+                if not linked_doc_ids:
+                    return []
+                
+                query = session.query(Document).filter(Document.doc_id.in_(linked_doc_ids))
                 
                 if status:
-                    query = query.filter(Document.processing_status == status)
+                    query = query.filter(Document.status == status)
                 
                 documents = query.all()
                 

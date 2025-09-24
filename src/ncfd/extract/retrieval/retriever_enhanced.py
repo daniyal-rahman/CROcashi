@@ -99,11 +99,20 @@ class EnhancedRetriever(BaseWorker):
                             logger.warning(f"Could not convert trial_id '{trial_id}' to integer, skipping trial_id lookup")
                         
                         if trial_id_int is not None:
-                            # Use simplified system - documents are directly linked to trials
-                            linked_docs = session.query(Document).filter(
-                                Document.trial_id == trial_id_int
+                            # Use DocumentLink table to find documents linked to this trial
+                            from ...db.models import DocumentLink
+                            linked_doc_ids = session.query(DocumentLink.doc_id).filter(
+                                DocumentLink.trial_id == trial_id_int
                             ).all()
-                            logger.info(f"DEBUG: Found {len(linked_docs)} documents linked to trial_id {trial_id_int}")
+                            linked_doc_ids = [row[0] for row in linked_doc_ids]
+                            
+                            if linked_doc_ids:
+                                linked_docs = session.query(Document).filter(
+                                    Document.doc_id.in_(linked_doc_ids)
+                                ).all()
+                                logger.info(f"DEBUG: Found {len(linked_docs)} documents linked to trial_id {trial_id_int}")
+                            else:
+                                logger.info(f"DEBUG: Found 0 documents linked to trial_id {trial_id_int}")
                     
                     # Also try NCT ID lookup (fallback strategy)
                     if not linked_docs and nct_id:

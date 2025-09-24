@@ -77,7 +77,7 @@ class PatternDetectionService:
         Returns:
             PatternDetectionResult with detected patterns
         """
-        logger.info(f"Detecting patterns from {len(study_cards)} study cards and {len(factsheets)} factsheets for trial {trial_id}")
+        logger.info(f"🔍 Starting pattern detection for trial {trial_id}: {len(study_cards)} study cards, {len(factsheets)} factsheets")
         
         # Combine all content for pattern detection
         all_content = []
@@ -85,6 +85,7 @@ class PatternDetectionService:
         all_content.extend(factsheets)
         
         if not all_content:
+            logger.warning(f"⚠️ No content available for pattern detection in trial {trial_id}")
             return PatternDetectionResult(
                 detected_patterns=[],
                 total_items_processed=0,
@@ -101,7 +102,7 @@ class PatternDetectionService:
         # Process content in batches
         for i in range(0, len(all_content), self.batch_size):
             batch = all_content[i:i + self.batch_size]
-            logger.info(f"Processing batch {i//self.batch_size + 1} with {len(batch)} items")
+            logger.info(f"📦 Processing pattern detection batch {i//self.batch_size + 1}/{len(all_content)//self.batch_size + 1} with {len(batch)} items")
             
             # Process batch
             batch_result = await self._process_batch(batch, trial_id)
@@ -112,7 +113,7 @@ class PatternDetectionService:
             successful_detections += batch_result['successful']
             failed_detections += batch_result['failed']
         
-        logger.info(f"Pattern detection completed: {successful_detections} successful, {failed_detections} failed")
+        logger.info(f"✅ Pattern detection completed for trial {trial_id}: {successful_detections} successful, {failed_detections} failed, {len(detected_patterns)} total patterns")
         
         return PatternDetectionResult(
             detected_patterns=detected_patterns,
@@ -230,7 +231,43 @@ class PatternDetectionService:
             else:
                 text_parts.append(str(endpoints))
         
-        # Add factsheet content if available
+        # Add factsheet content from new JSONB sections
+        factsheet_sections = content_item.get('factsheet_sections', {})
+        if factsheet_sections:
+            meaningful_fields = [
+                'key_findings', 'efficacy_data', 'safety_data', 
+                'mechanism_data', 'biomarker_data', 'dosing_data',
+                'population_data', 'limitations'
+            ]
+            for field in meaningful_fields:
+                # Check both lowercase and uppercase field names
+                if factsheet_sections.get(field) and str(factsheet_sections[field]).strip():
+                    text_parts.append(str(factsheet_sections[field]))
+                elif factsheet_sections.get(field.upper()) and str(factsheet_sections[field.upper()]).strip():
+                    text_parts.append(str(factsheet_sections[field.upper()]))
+        
+        # Add normalized facts for better pattern detection
+        normalized_facts = content_item.get('normalized_facts', {})
+        if normalized_facts:
+            # Add mechanism targets
+            mechanism_targets = normalized_facts.get('mechanism_targets', [])
+            if mechanism_targets:
+                text_parts.append(f"Mechanism targets: {', '.join(mechanism_targets)}")
+            
+            # Add biomarker observations
+            biomarkers = normalized_facts.get('biomarkers_observed', [])
+            if biomarkers:
+                biomarker_text = []
+                for biomarker in biomarkers:
+                    if isinstance(biomarker, dict):
+                        name = biomarker.get('name', '')
+                        direction = biomarker.get('direction', '')
+                        if name and direction:
+                            biomarker_text.append(f"{name}: {direction}")
+                if biomarker_text:
+                    text_parts.append(f"Biomarkers: {', '.join(biomarker_text)}")
+        
+        # Legacy factsheet fields for backward compatibility
         if 'results' in content_item:
             results = content_item.get('results', [])
             if isinstance(results, list):

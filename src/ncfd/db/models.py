@@ -346,7 +346,7 @@ class Study(Base):
         Index("idx_studies_asset_id", "asset_id"),
         Index("idx_studies_doc_id", "doc_id"),
         Index("idx_studies_doc_type", "doc_type"),
-        Index("idx_studies_text_hash_unique", "text_hash", unique=True, postgresql_where=text("text_hash IS NOT NULL")),
+        # Index("idx_studies_text_hash_unique", "text_hash", unique=True, postgresql_where=text("text_hash IS NOT NULL")),
         Index("idx_studies_extracted_data", "extracted_data", postgresql_using="gin"),
         UniqueConstraint("object_store_key", name="uq_studies_object_store_key"),
     )
@@ -368,7 +368,7 @@ class Disclosure(Base):
 
     __table_args__ = (
         Index("idx_disclosures_trial_id", "trial_id"),
-        Index("idx_disclosures_text_hash_unique", "text_hash", unique=True, postgresql_where=Text("text_hash IS NOT NULL")),
+        # Index("idx_disclosures_text_hash_unique", "text_hash", unique=True, postgresql_where=text("text_hash IS NOT NULL")),
         UniqueConstraint("trial_id", "url", name="uq_disclosures_trial_url"),
     )
 
@@ -1228,6 +1228,14 @@ class Factsheet(Base):
     
     factsheet_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     doc_id: Mapped[int] = mapped_column(Integer, ForeignKey("documents.doc_id"), nullable=False)
+    
+    # New JSONB-based schema
+    study_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    factsheet_sections: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    provenance: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    normalized_facts: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    
+    # Legacy clinical columns (kept for backward compatibility)
     results: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     primary_endpoint_results: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     secondary_endpoint_results: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)

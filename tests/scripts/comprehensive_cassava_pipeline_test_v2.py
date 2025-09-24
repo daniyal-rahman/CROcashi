@@ -355,11 +355,14 @@ class ComprehensiveCassavaTestV2:
                     "max_span_length": 500,
                     "min_confidence": 0.6
                 },
-                "validation": {
-                    "strict_validation": False,
-                    "fail_fast_on_validation": False,
-                    "validation_error_action": "warn",
-                    "max_validation_errors": 20
+                "guardrails": {
+                    "reject_off_topic": True,
+                    "reject_high_risk": True,
+                    "high_risk_threshold": 0.8,  # Increased from 0.6 to be less strict
+                    "require_relevance": True,
+                    "require_asset_or_indication": True,
+                    "log_decisions": True,
+                    "log_rejections": True
                 },
                 "quality_gate": {
                     "min_documents_analyzed": 1,

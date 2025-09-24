@@ -1,31 +1,39 @@
 """
 LLM Factsheet Extractor
 
-Extracts Factsheet data with evidence quotes for each field.
+Extracts Factsheet data with provenance-first extraction and JSONB sections.
+Supports all study types with flexible schema.
 """
 
 import logging
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
+import json
 
-from ..models.factsheet import Factsheet
 from ..models.evidence_field import EvidenceField
 from ...llm.base_worker import BaseLLMWorker
 from ...llm.json_parser import parse_llm_json_response, validate_confidence_score
+from ..classifiers.study_type_classifier import StudyTypeClassifier
+from ..utils.json_repair import JSONRepairUtil
+from ...db.models import Factsheet
+from ..normalization.facts_normalizer import FactsNormalizer
 
 logger = logging.getLogger(__name__)
 
 
 class LLMFactsheetExtractor(BaseLLMWorker):
-    """Extracts Factsheet data directly with evidence quotes."""
+    """Extracts Factsheet data with provenance-first extraction and flexible schema."""
     
     def __init__(self, llm_config: Optional[Dict[str, Any]] = None):
-        super().__init__("LLMFactsheetExtractor", "1.0.0", llm_config)
+        super().__init__("LLMFactsheetExtractor", "2.0.0", llm_config)
+        self.study_classifier = StudyTypeClassifier()
+        self.json_repair = JSONRepairUtil()
+        self.facts_normalizer = FactsNormalizer()
     
     
     async def process(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Extract Factsheet data with evidence quotes.
+        Extract Factsheet data with provenance-first extraction.
         
         Args:
             inputs: {
@@ -58,59 +66,58 @@ class LLMFactsheetExtractor(BaseLLMWorker):
             
             self.logger.info(f"Extracting factsheet for doc_id: {doc_id}")
             
-            # Build extraction prompt
-            prompt = self._build_standard_prompt(raw_doc_text, doc_id, trial_context)
+            # Step 1: Classify study type
+            study_type = self.study_classifier.classify(raw_doc_text)
+            study_context = self.study_classifier.get_study_type_context(study_type)
             
-            # Make LLM call using BaseLLMWorker interface
+            self.logger.info(f"Classified study type: {study_type}")
+            
+            # Step 2: Build extraction prompt based on study type
+            prompt = self._build_flexible_prompt(raw_doc_text, doc_id, trial_context, study_type, study_context)
+            
+            # Step 3: Make LLM call with token limit
             response = await self.call_llm(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=2000,
+                max_tokens=8000,  # Token limit to prevent parsing issues
                 json_output=True,
-                json_schema=self._get_json_schema()
+                json_schema=self._get_flexible_json_schema()
             )
             
-            # Parse response
+            # Step 4: Parse and repair JSON response
             result = response.content
             if isinstance(result, str):
-                parsed_result = parse_llm_json_response(result, expected_fields=["factsheet_data", "field_quotes"])
-                if parsed_result:
-                    result = parsed_result
-                else:
-                    return {
-                        "factsheet": None,
-                        "field_quotes": [],
-                        "success": False,
-                        "error_message": "Failed to parse LLM JSON response"
-                    }
+                # Try direct parsing first
+                try:
+                    parsed_result = json.loads(result)
+                except json.JSONDecodeError:
+                    # Attempt repair
+                    self.logger.warning("JSON parsing failed, attempting repair")
+                    parsed_result = self.json_repair.repair_json(result, self._get_flexible_json_schema())
+                    
+                    if not parsed_result:
+                        return {
+                            "factsheet": None,
+                            "field_quotes": [],
+                            "success": False,
+                            "error_message": "Failed to parse LLM JSON response after repair attempts"
+                        }
+                
+                result = parsed_result
             
-            # Extract data and field quotes
-            factsheet_data = result.get("factsheet_data", {})
-            field_quotes = self._parse_field_quotes(result)
-            reason = result.get("reason", "")
+            # Step 5: Extract data and provenance
+            factsheet_sections = result.get("factsheet_sections", {})
+            provenance = result.get("provenance", {})
             
-            # Debug logging for extracted data
-            self.logger.info(f"🔍 EXTRACTED DATA DEBUG:")
-            self.logger.info(f"   factsheet_data keys: {list(factsheet_data.keys()) if isinstance(factsheet_data, dict) else 'Not a dict'}")
-            self.logger.info(f"   field_quotes count: {len(field_quotes)}")
-            if reason:
-                self.logger.info(f"   reason: {reason}")
+            # Step 6: Normalize facts
+            normalized_facts = self.facts_normalizer.normalize_facts(factsheet_sections)
             
-            # Check success criteria - must have meaningful content
-            has_meaningful_content = (
-                factsheet_data.get("primary_endpoint_results") or
-                factsheet_data.get("results") or
-                factsheet_data.get("safety_results") or
-                len(field_quotes) > 0
-            )
-            
-            if not has_meaningful_content:
+            # Step 7: Validate content
+            if not self._has_meaningful_content(factsheet_sections):
                 error_msg = "No meaningful content generated"
-                if reason:
-                    error_msg += f" - LLM reason: {reason}"
+                if result.get("reason"):
+                    error_msg += f" - LLM reason: {result['reason']}"
                 self.logger.warning(f"Factsheet extraction produced no meaningful content for doc_id: {doc_id}")
-                if reason:
-                    self.logger.warning(f"LLM provided reason: {reason}")
                 return {
                     "factsheet": None,
                     "field_quotes": [],
@@ -118,20 +125,24 @@ class LLMFactsheetExtractor(BaseLLMWorker):
                     "error_message": error_msg
                 }
             
-            # Create Factsheet object with proper field mapping
+            # Step 8: Create Factsheet object with new schema
             factsheet = Factsheet(
                 doc_id=doc_id,
-                results=factsheet_data.get("results", []),
-                primary_endpoint_results=factsheet_data.get("primary_endpoint_results"),
-                secondary_endpoint_results=factsheet_data.get("secondary_endpoint_results", []),
-                safety_results=factsheet_data.get("safety_results", []),
-                primary_analysis_set=factsheet_data.get("primary_analysis_set"),
-                secondary_analysis_sets=factsheet_data.get("secondary_analysis_sets", []),
-                total_enrolled=factsheet_data.get("total_enrolled"),
-                completed_primary_endpoint=factsheet_data.get("completed_primary_endpoint"),
-                dropout_rate=factsheet_data.get("dropout_rate"),
-                follow_up_completion=factsheet_data.get("follow_up_completion")
+                study_type=study_type,
+                factsheet_sections=factsheet_sections,
+                provenance=provenance,
+                normalized_facts=normalized_facts,
+                # Keep legacy fields for backward compatibility
+                results=factsheet_sections.get("results", []),
+                primary_endpoint_results=factsheet_sections.get("primary_endpoint_results"),
+                secondary_endpoint_results=factsheet_sections.get("secondary_endpoint_results", []),
+                safety_results=factsheet_sections.get("safety_results", []),
+                total_enrolled=factsheet_sections.get("total_enrolled"),
+                dropout_rate=factsheet_sections.get("dropout_rate")
             )
+            
+            # Step 9: Parse field quotes from provenance
+            field_quotes = self._parse_provenance_quotes(provenance)
             
             return {
                 "factsheet": factsheet,
@@ -149,79 +160,104 @@ class LLMFactsheetExtractor(BaseLLMWorker):
                 "error_message": str(e)
             }
     
-    def _parse_field_quotes(self, result: Dict[str, Any]) -> List[Any]:
-        """Parse field_quotes from LLM result into EvidenceField objects."""
+    def _has_meaningful_content(self, factsheet_sections: Dict[str, Any]) -> bool:
+        """Check if factsheet sections contain meaningful content."""
+        # Check if any field has non-empty content
+        for field, value in factsheet_sections.items():
+            if value and str(value).strip():
+                return True
+        
+        return False
+    
+    def _parse_provenance_quotes(self, provenance: Dict[str, Any]) -> List[Any]:
+        """Parse provenance into EvidenceField objects."""
         from ..models.evidence_field import EvidenceField
         
         field_quotes = []
-        raw_field_quotes = result.get("field_quotes", [])
         
-        self.logger.info(f"🔍 FIELD QUOTES PROCESSING:")
-        self.logger.info(f"   Raw field_quotes count: {len(raw_field_quotes) if isinstance(raw_field_quotes, list) else 'Not a list'}")
-        
-        if not isinstance(raw_field_quotes, list):
-            self.logger.warning(f"LLM returned field_quotes as {type(raw_field_quotes)} instead of list: {raw_field_quotes}")
-            raw_field_quotes = []
-        
-        processed_quotes = 0
-        skipped_quotes = 0
-        
-        for quote_data in raw_field_quotes:
-            # Validate that quote_data is a dictionary
-            if not isinstance(quote_data, dict):
-                self.logger.error(f"Quote data is not a dictionary, got {type(quote_data)}: {quote_data}")
-                skipped_quotes += 1
-                continue
-            
-            # Validate field_name is a string
-            field_name = quote_data.get("field_name", "")
-            if not isinstance(field_name, str):
-                self.logger.warning(f"Malformed field_name with non-string value '{field_name}' (type: {type(field_name)}) - skipping quote")
-                skipped_quotes += 1
-                continue
-            
-            # Validate and clean evidence_quote
-            evidence_quote = quote_data.get("evidence_quote", "")
-            if not isinstance(evidence_quote, str):
-                if evidence_quote is None:
-                    evidence_quote = ""
-                elif isinstance(evidence_quote, (int, float)):
-                    self.logger.warning(f"Malformed evidence_quote with numeric value '{evidence_quote}' for field '{quote_data.get('field_name', 'unknown')}' - skipping quote")
-                    skipped_quotes += 1
-                    continue
-                else:
-                    evidence_quote = str(evidence_quote)
-            
-            # Additional validation: ensure evidence_quote is not empty or just whitespace
-            if not evidence_quote or not evidence_quote.strip():
-                self.logger.warning(f"Empty or whitespace-only evidence_quote - skipping quote")
-                skipped_quotes += 1
-                continue
-            
-            field_quotes.append(EvidenceField(
-                field_name=quote_data.get("field_name", ""),
-                value=quote_data.get("value"),
-                evidence_quote=evidence_quote,
-                confidence=quote_data.get("confidence", 0.8)
-            ))
-            processed_quotes += 1
-        
-        self.logger.info(f"🔍 FIELD QUOTES PROCESSING SUMMARY:")
-        self.logger.info(f"   Total raw quotes: {len(raw_field_quotes)}")
-        self.logger.info(f"   Successfully processed: {processed_quotes}")
-        self.logger.info(f"   Skipped: {skipped_quotes}")
-        self.logger.info(f"   Final field_quotes count: {len(field_quotes)}")
+        for field_name, field_data in provenance.items():
+            if isinstance(field_data, dict) and 'quotes' in field_data:
+                quotes = field_data['quotes']
+                if isinstance(quotes, list):
+                    for quote in quotes:
+                        if isinstance(quote, dict) and 'text' in quote:
+                            field_quotes.append(EvidenceField(
+                                field_name=field_name,
+                                value=field_data.get('value'),
+                                evidence_quote=quote['text'],
+                                confidence=quote.get('confidence', 0.8)
+                            ))
         
         return field_quotes
     
-    def _get_json_schema(self) -> Dict[str, Any]:
-        """Return the JSON schema for this extractor's LLM calls."""
+    def _build_flexible_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any], 
+                             study_type: str, study_context: Dict[str, Any]) -> str:
+        """Build flexible prompt based on study type."""
+        focus_areas = study_context.get('focus_areas', [])
+        extraction_guidance = study_context.get('extraction_guidance', '')
+        expected_fields = study_context.get('expected_fields', [])
+        
+        return f"""
+You are a scientific literature expert. Extract important facts from this document.
+
+STUDY TYPE: {study_type.upper()}
+EXTRACTION GUIDANCE: {extraction_guidance}
+
+Document Text:
+{doc_text}
+
+Extract the following information into structured sections:
+
+1. KEY FINDINGS: Main results, conclusions, or important discoveries
+2. EFFICACY DATA: Any effectiveness measures (clinical endpoints, preclinical efficacy, etc.)
+3. SAFETY DATA: Safety information, adverse events, toxicity data
+4. MECHANISM DATA: How the treatment works, biological mechanisms
+5. DOSING DATA: Administration details, doses, schedules
+6. POPULATION DATA: Who was studied (patients, animals, cells, demographics)
+7. BIOMARKER DATA: Any biomarker information, surrogate endpoints
+8. LIMITATIONS: Study limitations, caveats, or concerns
+
+CRITICAL REQUIREMENTS:
+- Extract facts from ANY type of study (clinical, preclinical, review, etc.)
+- For each populated field, provide provenance with exact text quotes
+- Include location information (section, approximate character positions)
+- If a field is not applicable, omit it entirely
+- Be flexible with data types and formats
+- Focus on: {', '.join(focus_areas)}
+- IMPORTANT: Extract ALL available information - don't omit fields just because they don't contain specific data types
+- For preclinical studies, extract mechanism data, efficacy data, and any other relevant findings
+- For clinical studies, extract all available endpoints, safety data, and population information
+
+RESPONSE STRUCTURE:
+You must return a JSON object with these top-level keys:
+- "factsheet_sections": An object containing the extracted field values
+- "provenance": An object with field-level provenance information
+- "reason": (optional) A brief explanation if no meaningful information was found
+
+Each field in "provenance" should have:
+- "value": The extracted value
+- "quotes": Array of quote objects with "text" and "loc" (location info)
+
+The response will be automatically formatted according to the required schema.
+"""
+    
+    def _get_flexible_json_schema(self) -> Dict[str, Any]:
+        """Return the flexible JSON schema for factsheet extraction."""
         return {
             "type": "object",
             "properties": {
-                "factsheet_data": {
+                "factsheet_sections": {
                     "type": "object",
                     "properties": {
+                        "key_findings": {"type": "string"},
+                        "efficacy_data": {"type": "string"},
+                        "safety_data": {"type": "string"},
+                        "mechanism_data": {"type": "string"},
+                        "dosing_data": {"type": "string"},
+                        "population_data": {"type": "string"},
+                        "biomarker_data": {"type": "string"},
+                        "limitations": {"type": "string"},
+                        # Legacy fields for backward compatibility
                         "results": {"type": "string"},
                         "primary_endpoint_results": {"type": "string"},
                         "secondary_endpoint_results": {"type": "string"},
@@ -230,40 +266,48 @@ class LLMFactsheetExtractor(BaseLLMWorker):
                         "dropout_rate": {"type": "number"}
                     }
                 },
-                "field_quotes": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "field_name": {
-                                "type": "string",
-                                "pattern": "^[a-z][a-z0-9_]*$"
+                "provenance": {
+                    "type": "object",
+                    "patternProperties": {
+                        "^[a-z_]+$": {
+                            "type": "object",
+                            "properties": {
+                                "value": {"type": ["string", "number", "boolean"]},
+                                "quotes": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "text": {"type": "string", "minLength": 10},
+                                            "loc": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "doc_id": {"type": "string"},
+                                                    "section": {"type": "string"},
+                                                    "start": {"type": "number"},
+                                                    "end": {"type": "number"}
+                                                }
+                                            },
+                                            "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+                                        },
+                                        "required": ["text", "loc"]
+                                    }
+                                }
                             },
-                            "value": {"type": ["string", "number", "boolean"]},
-                            "evidence_quote": {
-                                "type": "string",
-                                "minLength": 10,
-                                "pattern": "^[A-Za-z].*[A-Za-z]$"
-                            },
-                            "confidence": {"type": "number", "minimum": 0, "maximum": 1}
-                        },
-                        "required": ["field_name", "value", "evidence_quote", "confidence"]
+                            "required": ["value", "quotes"]
+                        }
                     }
-                }
-            },
-            "required": ["factsheet_data", "field_quotes"],
-            "properties": {
+                },
                 "reason": {
                     "type": "string",
-                    "description": "Optional explanation if no results information was found"
+                    "description": "Optional explanation if no meaningful information was found"
                 }
-            }
+            },
+            "required": ["factsheet_sections", "provenance"]
         }
     
-    
-    
     def _build_standard_prompt(self, doc_text: str, doc_id: str, trial_context: Dict[str, Any]) -> str:
-        """Build the standard prompt for factsheet extraction."""
+        """Build the standard prompt for factsheet extraction (legacy method)."""
         return f"""
 You are a clinical trial results expert. Extract results information from this document.
 

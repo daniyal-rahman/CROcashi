@@ -76,7 +76,7 @@ class QualityGateValidationService:
         Returns:
             QualityValidationResult with validation results
         """
-        logger.info(f"Validating study card quality for trial {trial_id}")
+        logger.info(f"🔍 Starting quality validation for trial {trial_id}: {len(study_cards)} study cards, {len(factsheets)} factsheets, {len(patterns)} patterns, {len(quotes)} quotes")
         
         validation_errors = []
         validation_warnings = []
@@ -141,6 +141,8 @@ class QualityGateValidationService:
                 logger.error(f"Error persisting gate assessments: {e}")
                 validation_warnings.append(f"Gate persistence failed: {str(e)}")
             
+            logger.info(f"✅ Quality validation completed for trial {trial_id}: {'PASSED' if is_valid else 'FAILED'} (score: {quality_score:.2f})")
+            
             return QualityValidationResult(
                 is_valid=is_valid,
                 validation_errors=validation_errors,
@@ -179,14 +181,14 @@ class QualityGateValidationService:
                 continue
             
             # Check required fields
-            required_fields = ['trial_id', 'document_id', 'summary']
+            required_fields = ['trial_id', 'document_id', 'summary_text']
             for field in required_fields:
                 if field not in study_card or not study_card[field]:
                     errors.append(f"Study card {i} missing required field: {field}")
             
             # Check content quality
-            if 'summary' in study_card and study_card['summary']:
-                summary_length = len(study_card['summary'])
+            if 'summary_text' in study_card and study_card['summary_text']:
+                summary_length = len(study_card['summary_text'])
                 if summary_length < 50:
                     warnings.append(f"Study card {i} summary too short: {summary_length} characters")
                 elif summary_length > 1000:
@@ -203,7 +205,7 @@ class QualityGateValidationService:
         return {'errors': errors, 'warnings': warnings, 'score': score}
     
     def _validate_factsheets(self, factsheets: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Validate factsheet quality."""
+        """Validate factsheet quality using content-agnostic quality gates."""
         errors = []
         warnings = []
         score = 0.0
@@ -212,27 +214,42 @@ class QualityGateValidationService:
             errors.append("No factsheets found")
             return {'errors': errors, 'warnings': warnings, 'score': 0.0}
         
-        # Check factsheet structure
+        # Check factsheet structure and quality gates
         for i, factsheet in enumerate(factsheets):
             if not isinstance(factsheet, dict):
                 errors.append(f"Factsheet {i} is not a dictionary")
                 continue
             
-            # Check required fields
-            required_fields = ['trial_id', 'document_id', 'summary']
-            for field in required_fields:
-                if field not in factsheet or not factsheet[field]:
-                    errors.append(f"Factsheet {i} missing required field: {field}")
+            # Debug logging to see what we're receiving
+            logger.info(f"🔍 DEBUG: Quality validation factsheet {i}:")
+            logger.info(f"  keys: {list(factsheet.keys())}")
+            logger.info(f"  study_type: {factsheet.get('study_type')}")
+            logger.info(f"  factsheet_sections: {factsheet.get('factsheet_sections', {})}")
+            logger.info(f"  provenance: {factsheet.get('provenance', {})}")
             
-            # Check content quality
-            if 'summary' in factsheet and factsheet['summary']:
-                summary_length = len(factsheet['summary'])
-                if summary_length < 50:
-                    warnings.append(f"Factsheet {i} summary too short: {summary_length} characters")
-                elif summary_length > 1000:
-                    warnings.append(f"Factsheet {i} summary too long: {summary_length} characters")
-                else:
-                    score += 0.25  # Good summary length
+            # G1.HasContent: Check if factsheet has meaningful content
+            if not self._has_meaningful_factsheet_content(factsheet):
+                errors.append(f"Factsheet {i} has no meaningful content")
+                continue
+            
+            # G2.HasProvenance: Check if populated fields have provenance
+            if not self._has_provenance_for_content(factsheet):
+                errors.append(f"Factsheet {i} content lacks provenance")
+                continue
+            
+            # G3.No-Contradiction: Check for contradictions
+            contradiction_reason = self._check_factsheet_contradictions(factsheet)
+            if contradiction_reason:
+                errors.append(f"Factsheet {i} contradiction: {contradiction_reason}")
+                continue
+            
+            # G4.Scope-Consistent: Check study type consistency
+            scope_reason = self._check_factsheet_scope_consistency(factsheet)
+            if scope_reason:
+                warnings.append(f"Factsheet {i} scope inconsistency: {scope_reason}")
+            
+            # Calculate score based on content quality
+            score += self._calculate_factsheet_score(factsheet)
         
         # Check minimum count
         if len(factsheets) >= self.min_factsheets:
@@ -240,7 +257,112 @@ class QualityGateValidationService:
         else:
             errors.append(f"Insufficient factsheets: {len(factsheets)} < {self.min_factsheets}")
         
+        # Normalize score
+        if factsheets:
+            score = score / len(factsheets)
+        
         return {'errors': errors, 'warnings': warnings, 'score': score}
+    
+    def _has_meaningful_factsheet_content(self, factsheet: Dict[str, Any]) -> bool:
+        """Check if factsheet has meaningful content (G1.HasContent)."""
+        # Check new JSONB sections
+        factsheet_sections = factsheet.get('factsheet_sections', {})
+        meaningful_fields = [
+            'key_findings', 'efficacy_data', 'safety_data', 
+            'mechanism_data', 'biomarker_data', 'dosing_data',
+            'population_data', 'limitations'
+        ]
+        
+        # Check both lowercase and uppercase field names
+        for field in meaningful_fields:
+            # Check lowercase
+            if factsheet_sections.get(field) and str(factsheet_sections[field]).strip():
+                return True
+            # Check uppercase
+            upper_field = field.upper()
+            if factsheet_sections.get(upper_field) and str(factsheet_sections[upper_field]).strip():
+                return True
+        
+        # Check legacy fields for backward compatibility
+        legacy_fields = ['results', 'primary_endpoint_results', 'safety_results']
+        for field in legacy_fields:
+            if factsheet.get(field) and str(factsheet[field]).strip():
+                return True
+        
+        return False
+    
+    def _has_provenance_for_content(self, factsheet: Dict[str, Any]) -> bool:
+        """Check if factsheet content has provenance (G2.HasProvenance)."""
+        provenance = factsheet.get('provenance', {})
+        factsheet_sections = factsheet.get('factsheet_sections', {})
+        
+        # Check if each populated field has provenance
+        for field, value in factsheet_sections.items():
+            if value and str(value).strip():
+                # Check both exact field name and case variations
+                if (field not in provenance and 
+                    field.lower() not in provenance and 
+                    field.upper() not in provenance):
+                    return False
+                
+                # Check if provenance has quotes
+                field_provenance = provenance.get(field) or provenance.get(field.lower()) or provenance.get(field.upper())
+                if not field_provenance or not field_provenance.get('quotes'):
+                    return False
+        
+        return True
+    
+    def _check_factsheet_contradictions(self, factsheet: Dict[str, Any]) -> Optional[str]:
+        """Check for contradictions in factsheet (G3.No-Contradiction)."""
+        factsheet_sections = factsheet.get('factsheet_sections', {})
+        
+        # Check for contradiction between "no safety data" and populated safety_data
+        safety_data = factsheet_sections.get('safety_data', '')
+        if 'no safety data' in str(safety_data).lower() and safety_data.strip():
+            return "Claims 'no safety data' but safety_data is populated"
+        
+        # Check for contradiction between "no efficacy data" and populated efficacy_data
+        efficacy_data = factsheet_sections.get('efficacy_data', '')
+        if 'no efficacy data' in str(efficacy_data).lower() and efficacy_data.strip():
+            return "Claims 'no efficacy data' but efficacy_data is populated"
+        
+        return None
+    
+    def _check_factsheet_scope_consistency(self, factsheet: Dict[str, Any]) -> Optional[str]:
+        """Check study type consistency (G4.Scope-Consistent)."""
+        study_type = factsheet.get('study_type', '')
+        factsheet_sections = factsheet.get('factsheet_sections', {})
+        
+        # If preclinical study but has clinical enrollment data
+        if study_type == 'preclinical' and factsheet_sections.get('total_enrolled'):
+            return "Preclinical study has clinical enrollment data"
+        
+        # If clinical study but has preclinical-specific data
+        if study_type == 'clinical_trial' and factsheet_sections.get('dosing_data'):
+            dosing_data = str(factsheet_sections['dosing_data']).lower()
+            if 'mg/kg' in dosing_data or 'animal' in dosing_data:
+                return "Clinical study has preclinical dosing data"
+        
+        return None
+    
+    def _calculate_factsheet_score(self, factsheet: Dict[str, Any]) -> float:
+        """Calculate quality score for a factsheet."""
+        score = 0.0
+        factsheet_sections = factsheet.get('factsheet_sections', {})
+        
+        # Base score for having content
+        if self._has_meaningful_factsheet_content(factsheet):
+            score += 0.5
+        
+        # Bonus for provenance
+        if self._has_provenance_for_content(factsheet):
+            score += 0.3
+        
+        # Bonus for normalized facts
+        if factsheet.get('normalized_facts'):
+            score += 0.2
+        
+        return min(score, 1.0)
     
     def _validate_patterns(self, patterns: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Validate pattern detection quality."""

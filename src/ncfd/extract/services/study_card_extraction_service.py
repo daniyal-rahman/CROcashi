@@ -133,11 +133,13 @@ class StudyCardExtractionService:
                     successful += 1
                 else:
                     failed += 1
-                    errors.append(f"Failed to extract study card from document {doc.doc_id if hasattr(doc, 'doc_id') else doc.get('doc_id', 'unknown')}")
+                    doc_id = doc.get('doc_id', 'unknown') if isinstance(doc, dict) else (doc.doc_id if hasattr(doc, 'doc_id') else 'unknown')
+                    errors.append(f"Failed to extract study card from document {doc_id}")
                     
             except Exception as e:
                 failed += 1
-                error_msg = f"Error extracting study card from document {doc.doc_id if hasattr(doc, 'doc_id') else doc.get('doc_id', 'unknown')}: {str(e)}"
+                doc_id = doc.get('doc_id', 'unknown') if isinstance(doc, dict) else (doc.doc_id if hasattr(doc, 'doc_id') else 'unknown')
+                error_msg = f"Error extracting study card from document {doc_id}: {str(e)}"
                 errors.append(error_msg)
                 logger.error(error_msg)
         
@@ -160,13 +162,15 @@ class StudyCardExtractionService:
             document_text = self._prepare_document_text(document)
             
             if not document_text:
-                logger.warning(f"No text available for document {document.doc_id if hasattr(document, 'doc_id') else document.get('doc_id', 'unknown')}")
+                doc_id = document.get('doc_id', 'unknown') if isinstance(document, dict) else (document.doc_id if hasattr(document, 'doc_id') else 'unknown')
+                logger.warning(f"No text available for document {doc_id}")
                 return None
             
             # Extract study card using LLM
+            doc_id = document.get('doc_id', 'unknown') if isinstance(document, dict) else (document.doc_id if hasattr(document, 'doc_id') else 'unknown')
             inputs = {
                 "raw_doc_text": document_text,
-                "doc_id": document.doc_id if hasattr(document, 'doc_id') else document.get('doc_id', 'unknown'),
+                "doc_id": doc_id,
                 "trial_context": {
                     "trial_id": trial_id,
                     "entity_pack": entity_pack
@@ -212,9 +216,9 @@ class StudyCardExtractionService:
                         'endpoint_ascertainment': getattr(study_card, 'endpoint_ascertainment', None),
                         'assessment_interval': getattr(study_card, 'assessment_interval', None),
                         'adjudication_committee': getattr(study_card, 'adjudication_committee', None),
-                        'summary_text': getattr(study_card, 'summary_text', None),
-                        'risks_text': getattr(study_card, 'risks_text', None),
-                        'methods_text': getattr(study_card, 'methods_text', None),
+                        'summary_text': getattr(study_card, 'summary_text', None) or self._generate_summary_text(study_card),
+                        'risks_text': getattr(study_card, 'risks_text', None) or '',
+                        'methods_text': getattr(study_card, 'methods_text', None) or self._generate_methods_text(study_card),
                         'gates_json': getattr(study_card, 'gates_json', {}),
                         'p_fail': getattr(study_card, 'p_fail', None),
                         'model_name': getattr(study_card, 'model_name', None),
@@ -223,10 +227,17 @@ class StudyCardExtractionService:
                 else:
                     # It's already a dictionary
                     study_card_dict = study_card.copy()
+                    # Ensure required fields exist
+                    if 'summary_text' not in study_card_dict or not study_card_dict['summary_text']:
+                        study_card_dict['summary_text'] = self._generate_summary_text_from_dict(study_card_dict)
+                    if 'risks_text' not in study_card_dict:
+                        study_card_dict['risks_text'] = ''
+                    if 'methods_text' not in study_card_dict or not study_card_dict['methods_text']:
+                        study_card_dict['methods_text'] = self._generate_methods_text_from_dict(study_card_dict)
                 
                 # Add metadata
                 study_card_dict['trial_id'] = trial_id
-                study_card_dict['document_id'] = document.doc_id if hasattr(document, 'doc_id') else document.get('doc_id', 'unknown')
+                study_card_dict['document_id'] = document.get('doc_id', 'unknown')
                 study_card_dict['extraction_timestamp'] = self._get_current_timestamp()
                 
                 return study_card_dict
@@ -274,3 +285,63 @@ class StudyCardExtractionService:
         """Get current timestamp as string."""
         from datetime import datetime, timezone
         return datetime.now(timezone.utc).isoformat()
+    
+    def _generate_summary_text(self, study_card) -> str:
+        """Generate summary text from study card fields."""
+        parts = []
+        
+        if hasattr(study_card, 'population_description') and study_card.population_description:
+            parts.append(f"Population: {study_card.population_description}")
+        
+        if hasattr(study_card, 'primary_endpoint') and study_card.primary_endpoint:
+            parts.append(f"Primary Endpoint: {study_card.primary_endpoint}")
+        
+        if hasattr(study_card, 'design_archetype') and study_card.design_archetype:
+            parts.append(f"Design: {study_card.design_archetype}")
+        
+        return " | ".join(parts) if parts else "Study card extracted from document"
+    
+    def _generate_methods_text(self, study_card) -> str:
+        """Generate methods text from study card fields."""
+        parts = []
+        
+        if hasattr(study_card, 'endpoint_ascertainment') and study_card.endpoint_ascertainment:
+            parts.append(f"Endpoint Ascertainment: {study_card.endpoint_ascertainment}")
+        
+        if hasattr(study_card, 'assessment_interval') and study_card.assessment_interval:
+            parts.append(f"Assessment Interval: {study_card.assessment_interval}")
+        
+        if hasattr(study_card, 'missingness_assumption') and study_card.missingness_assumption:
+            parts.append(f"Missingness Assumption: {study_card.missingness_assumption}")
+        
+        return " | ".join(parts) if parts else "Methods extracted from document"
+    
+    def _generate_summary_text_from_dict(self, study_card_dict: Dict[str, Any]) -> str:
+        """Generate summary text from study card dictionary."""
+        parts = []
+        
+        if study_card_dict.get('population_description'):
+            parts.append(f"Population: {study_card_dict['population_description']}")
+        
+        if study_card_dict.get('primary_endpoint'):
+            parts.append(f"Primary Endpoint: {study_card_dict['primary_endpoint']}")
+        
+        if study_card_dict.get('design_archetype'):
+            parts.append(f"Design: {study_card_dict['design_archetype']}")
+        
+        return " | ".join(parts) if parts else "Study card extracted from document"
+    
+    def _generate_methods_text_from_dict(self, study_card_dict: Dict[str, Any]) -> str:
+        """Generate methods text from study card dictionary."""
+        parts = []
+        
+        if study_card_dict.get('endpoint_ascertainment'):
+            parts.append(f"Endpoint Ascertainment: {study_card_dict['endpoint_ascertainment']}")
+        
+        if study_card_dict.get('assessment_interval'):
+            parts.append(f"Assessment Interval: {study_card_dict['assessment_interval']}")
+        
+        if study_card_dict.get('missingness_assumption'):
+            parts.append(f"Missingness Assumption: {study_card_dict['missingness_assumption']}")
+        
+        return " | ".join(parts) if parts else "Methods extracted from document"

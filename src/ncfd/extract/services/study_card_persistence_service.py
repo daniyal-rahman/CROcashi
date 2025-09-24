@@ -9,6 +9,7 @@ import logging
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 import json
+from datetime import datetime, timezone
 
 from ncfd.ingest.pubmed.document_manager import DocumentManager
 from ncfd.db.session import session_scope
@@ -78,7 +79,7 @@ class StudyCardPersistenceService:
         Returns:
             PersistenceResult with persistence statistics
         """
-        logger.info(f"Persisting results for trial {trial_id}: {len(study_cards)} study cards, {len(factsheets)} factsheets, {len(patterns)} patterns, {len(quotes)} quotes")
+        logger.info(f"💾 Starting persistence for trial {trial_id}: {len(study_cards)} study cards, {len(factsheets)} factsheets, {len(patterns)} patterns, {len(quotes)} quotes")
         
         persistence_errors = []
         study_cards_saved = 0
@@ -109,7 +110,7 @@ class StudyCardPersistenceService:
             
             total_saved = study_cards_saved + factsheets_saved + patterns_saved + quotes_saved
             
-            logger.info(f"Persistence completed: {total_saved} total items saved")
+            logger.info(f"✅ Persistence completed for trial {trial_id}: {study_cards_saved} study cards, {factsheets_saved} factsheets, {patterns_saved} patterns, {quotes_saved} quotes saved")
             
             return PersistenceResult(
                 study_cards_saved=study_cards_saved,
@@ -151,7 +152,9 @@ class StudyCardPersistenceService:
                             gates_json=study_card.get('gates', {}),
                             p_fail=study_card.get('p_fail'),
                             model_name=study_card.get('model_name', 'refactored_pipeline'),
-                            authored_by=study_card.get('authored_by', 'system')
+                            authored_by=study_card.get('authored_by', 'llm'),
+                            created_at=datetime.now(timezone.utc),
+                            updated_at=datetime.now(timezone.utc)
                         )
                         
                         session.add(study_card_record)
@@ -177,9 +180,15 @@ class StudyCardPersistenceService:
             with session_scope() as session:
                 for factsheet in factsheets:
                     try:
-                        # Create factsheet record
+                        # Create factsheet record with new JSONB schema
                         factsheet_record = Factsheet(
                             doc_id=factsheet.get('document_id'),
+                            # New JSONB-based fields
+                            study_type=factsheet.get('study_type'),
+                            factsheet_sections=factsheet.get('factsheet_sections', {}),
+                            provenance=factsheet.get('provenance', {}),
+                            normalized_facts=factsheet.get('normalized_facts', {}),
+                            # Legacy fields for backward compatibility
                             results=factsheet.get('results', {}),
                             primary_endpoint_results=factsheet.get('primary_endpoint_results', {}),
                             secondary_endpoint_results=factsheet.get('secondary_endpoint_results', {}),
@@ -189,7 +198,9 @@ class StudyCardPersistenceService:
                             total_enrolled=factsheet.get('total_enrolled'),
                             completed_primary_endpoint=factsheet.get('completed_primary_endpoint'),
                             dropout_rate=factsheet.get('dropout_rate'),
-                            follow_up_completion=factsheet.get('follow_up_completion')
+                            follow_up_completion=factsheet.get('follow_up_completion'),
+                            created_at=datetime.now(timezone.utc),
+                            updated_at=datetime.now(timezone.utc)
                         )
                         
                         session.add(factsheet_record)

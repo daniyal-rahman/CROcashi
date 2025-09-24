@@ -86,7 +86,7 @@ class DocumentPrioritizationService:
         raw_doc_texts: Dict[str, str],
         trial_id: str,
         trial_context: Dict[str, Any],
-        entity_pack: Optional[Dict[str, Any]] = None
+        entity_pack: Optional[Any] = None
     ) -> DocumentPriorityResult:
         """
         Apply document prioritization and rate limiting to retrieved documents.
@@ -255,10 +255,11 @@ class DocumentPrioritizationService:
             self._log_document_rankings(selected_candidates, candidates)
             
             # Apply Pre-LLM guardrails filtering
-            logger.info("Applying Pre-LLM guardrails filtering")
+            logger.info(f"🔒 Applying Pre-LLM guardrails filtering to {len(selected_candidates)} candidates")
             guardrails_filtered_candidates = await self._apply_pre_llm_guardrails(
                 selected_candidates, trial_context, entity_pack
             )
+            logger.info(f"✅ Guardrails filtering complete: {len(guardrails_filtered_candidates)} documents passed guardrails")
             
             # Convert selected candidates back to document cards and raw texts
             prioritized_doc_cards = []
@@ -401,7 +402,7 @@ class DocumentPrioritizationService:
         self, 
         candidates: List[Dict[str, Any]], 
         trial_context: Dict[str, Any],
-        entity_pack: Optional[Dict[str, Any]] = None
+        entity_pack: Optional[Any] = None
     ) -> List[Dict[str, Any]]:
         """Apply Pre-LLM guardrails filtering to candidates."""
         filtered_candidates = []
@@ -421,10 +422,10 @@ class DocumentPrioritizationService:
                     guardrails_result = self.pre_llm_guardrails.should_process_document(document, entity_pack)
                     
                     if guardrails_result.should_process:
-                        logger.info(f"Document {candidate['doc_id']} passed guardrails (risk: {guardrails_result.risk_score:.2f})")
+                        logger.debug(f"✅ Document {candidate['doc_id']} passed guardrails (risk: {guardrails_result.risk_score:.2f})")
                         filtered_candidates.append(candidate)
                     else:
-                        logger.info(f"Document {candidate['doc_id']} rejected by guardrails: {guardrails_result.reason}")
+                        logger.warning(f"❌ Document {candidate['doc_id']} rejected by guardrails: {guardrails_result.reason}")
                         guardrails_rejections.append({
                             'doc_id': candidate['doc_id'],
                             'title': document.title,

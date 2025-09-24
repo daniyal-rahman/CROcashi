@@ -82,6 +82,8 @@ help: ## Show this help message
 	@echo "  test-cassava-clean - Run Cassava test with fresh database"
 	@echo "  test-cassava-v2    - Run Comprehensive Cassava Pipeline Test V2"
 	@echo "  test-cassava-v2-clean - Run Cassava V2 test with fresh database (nuke + rebuild)"
+	@echo "  test-cassava-extraction-focused - Run Cassava Extraction Focused Test (seeds 3 studies, skips ingestion)"
+	@echo "  test-cassava-extraction-focused-clean - Run Cassava Extraction Focused Test with fresh database (nuke + rebuild)"
 	@echo ""
 	@echo "Database Management:"
 	@echo "  db_up              - Start database with Docker Compose"
@@ -568,7 +570,7 @@ db.dump.schema: db_dump_schema_host
 db.restore: db_restore_host
 
 # --- Cassava Pipeline Test V2 ---
-.PHONY: test-cassava-v2 test-cassava-v2-clean setup-db
+.PHONY: test-cassava-v2 test-cassava-v2-clean test-cassava-extraction-focused setup-db
 test-cassava-v2: setup-db ## Run Comprehensive Cassava Pipeline Test V2
 	@echo "🧪 Running Comprehensive Cassava Pipeline Test V2..."
 	$(PYTHON) tests/scripts/run_cassava_test_v2.py
@@ -577,6 +579,15 @@ test-cassava-v2-clean: ## Run Cassava V2 test with fresh database (nuke + rebuil
 	@echo "🧹 Running Cassava V2 test with fresh database..."
 	$(MAKE) db_reset
 	$(PYTHON) tests/scripts/run_cassava_test_v2.py
+
+test-cassava-extraction-focused: ## Run Cassava Extraction Focused Test (seeds 3 studies, skips ingestion)
+	@echo "🧪 Running Cassava Extraction Focused Test..."
+	$(PYTHON) tests/scripts/run_cassava_extraction_focused_test.py
+
+test-cassava-extraction-focused-clean: ## Run Cassava Extraction Focused Test with fresh database (nuke + rebuild)
+	@echo "🧹 Running Cassava Extraction Focused Test with fresh database..."
+	$(MAKE) db_reset
+	$(PYTHON) tests/scripts/run_cassava_extraction_focused_test.py
 
 setup-db: ## Setup test database with required PostgreSQL extensions
 	@echo "🔧 Setting up test database with required extensions..."
