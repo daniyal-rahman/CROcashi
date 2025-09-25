@@ -1300,3 +1300,33 @@ class PatternDetection(Base):
         Index("idx_pattern_detections_run", "run_id"),
         Index("idx_pattern_detections_severity", "severity"),
     )
+
+
+class EvidenceSpan(Base):
+    """Evidence spans table - quotes and evidence from documents."""
+    __tablename__ = "evidence_spans"
+    
+    span_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    doc_id: Mapped[int] = mapped_column(Integer, ForeignKey("documents.doc_id", ondelete="CASCADE"), nullable=False)
+    trial_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("trials.trial_id", ondelete="CASCADE"), nullable=True)
+    field_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    field_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    quote_text: Mapped[str] = mapped_column(Text, nullable=False)
+    start_char: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    end_char: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)
+    extraction_method: Mapped[str] = mapped_column(String(50), nullable=False, default="llm")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    document: Mapped["Document"] = relationship("Document", foreign_keys=[doc_id])
+    trial: Mapped[Optional["Trial"]] = relationship("Trial", foreign_keys=[trial_id])
+    
+    __table_args__ = (
+        Index("idx_evidence_spans_doc_id", "doc_id"),
+        Index("idx_evidence_spans_trial_id", "trial_id"),
+        Index("idx_evidence_spans_field_name", "field_name"),
+        Index("idx_evidence_spans_extraction_method", "extraction_method"),
+        CheckConstraint("confidence IS NULL OR (confidence >= 0 AND confidence <= 1)", name='ck_evidence_spans_confidence_range'),
+    )

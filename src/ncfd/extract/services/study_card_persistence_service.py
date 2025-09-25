@@ -265,9 +265,46 @@ class StudyCardPersistenceService:
     
     async def _persist_quotes(self, quotes: List[Dict[str, Any]], trial_id: str) -> int:
         """Persist quotes to database."""
-        # TODO: Implement quote persistence once EvidenceSpan model is added to models.py
-        logger.warning("Quote persistence not implemented - EvidenceSpan model not available")
-        return 0
+        if not quotes:
+            return 0
+            
+        try:
+            from ncfd.db.session import session_scope
+            from ncfd.db.models import EvidenceSpan
+            
+            persisted_count = 0
+            
+            with session_scope() as session:
+                for quote in quotes:
+                    try:
+                        evidence_span = EvidenceSpan(
+                            doc_id=quote.get('doc_id'),
+                            trial_id=trial_id,
+                            field_name=quote.get('field_name', 'unknown'),
+                            field_value=quote.get('field_value'),
+                            quote_text=quote.get('quote_text', ''),
+                            start_char=quote.get('start_char'),
+                            end_char=quote.get('end_char'),
+                            page_number=quote.get('page_number'),
+                            confidence=quote.get('confidence'),
+                            extraction_method=quote.get('extraction_method', 'llm')
+                        )
+                        
+                        session.add(evidence_span)
+                        persisted_count += 1
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to persist quote: {e}")
+                        continue
+                
+                session.commit()
+                logger.info(f"Persisted {persisted_count} quotes for trial {trial_id}")
+                
+        except Exception as e:
+            logger.error(f"Error persisting quotes for trial {trial_id}: {e}")
+            return 0
+            
+        return persisted_count
     
     def _get_current_timestamp(self) -> str:
         """Get current timestamp as string."""

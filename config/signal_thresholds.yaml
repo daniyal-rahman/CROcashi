@@ -1,0 +1,32 @@
+# Signal Detection Thresholds Configuration
+# This file contains configurable thresholds for signal detection primitives
+
+signal_thresholds:
+  # S3 - Subgroup-only win detection
+  s3:
+    p_value_threshold: 0.05  # Maximum p-value for subgroup significance
+    interaction_p_threshold: 0.05  # Maximum interaction p-value
+    
+  # S2 - Underpowered pivotal trials
+  s2:
+    power_threshold: 0.80  # Minimum required power for pivotal trials
+    
+  # S8 - P-value cusp or heaping
+  s8:
+    cusp_threshold: 0.05  # P-value cusp detection threshold
+    heaping_threshold: 0.01  # Minimum difference for heaping detection
+    
+  # S6 - Multiple interim looks
+  s6:
+    max_interims_without_spending: 2  # Maximum interim looks without alpha spending
+    max_extra_peeks: 0  # Maximum extra data peeks allowed
+    
+  # S5 - Implausible vs graveyard
+  s5:
+    percentile_threshold: 0.75  # Percentile threshold for graveyard comparison
+    multiplier_threshold: 1.5  # Multiplier for high severity detection
+    
+  # General thresholds
+  general:
+    effect_size_precision: 3  # Decimal places for effect size comparisons
+    confidence_precision: 2  # Decimal places for confidence values

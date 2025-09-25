@@ -84,7 +84,19 @@ class LLMFactsheetExtractor(BaseLLMWorker):
                 json_schema=self._get_flexible_json_schema()
             )
             
-            # Step 4: Parse and repair JSON response
+            # Step 4: Extract analysis claims BEFORE JSON parsing (so it happens even if JSON fails)
+            try:
+                from ncfd.extract.generators.analysis_claim_extractor import AnalysisClaimExtractor
+                claim_extractor = AnalysisClaimExtractor()
+                analysis_claims = await claim_extractor.extract_claims(raw_doc_text, doc_id)
+                
+                self.logger.info(f"Extracted {len(analysis_claims)} analysis claims for doc_id: {doc_id}")
+                
+            except Exception as e:
+                self.logger.warning(f"Failed to extract analysis claims for doc_id {doc_id}: {e}")
+                analysis_claims = []
+            
+            # Step 5: Parse and repair JSON response
             result = response.content
             if isinstance(result, str):
                 # Try direct parsing first
@@ -96,23 +108,25 @@ class LLMFactsheetExtractor(BaseLLMWorker):
                     parsed_result = self.json_repair.repair_json(result, self._get_flexible_json_schema())
                     
                     if not parsed_result:
+                        # Even if JSON parsing fails, we can still return analysis claims
                         return {
                             "factsheet": None,
                             "field_quotes": [],
                             "success": False,
-                            "error_message": "Failed to parse LLM JSON response after repair attempts"
+                            "error_message": "Failed to parse LLM JSON response after repair attempts",
+                            "analysis_claims": analysis_claims  # Include analysis claims even on failure
                         }
                 
                 result = parsed_result
             
-            # Step 5: Extract data and provenance
+            # Step 6: Extract data and provenance
             factsheet_sections = result.get("factsheet_sections", {})
             provenance = result.get("provenance", {})
             
-            # Step 6: Normalize facts
+            # Step 7: Normalize facts
             normalized_facts = self.facts_normalizer.normalize_facts(factsheet_sections)
             
-            # Step 7: Validate content
+            # Step 8: Validate content
             if not self._has_meaningful_content(factsheet_sections):
                 error_msg = "No meaningful content generated"
                 if result.get("reason"):
@@ -122,16 +136,18 @@ class LLMFactsheetExtractor(BaseLLMWorker):
                     "factsheet": None,
                     "field_quotes": [],
                     "success": False,
-                    "error_message": error_msg
+                    "error_message": error_msg,
+                    "analysis_claims": analysis_claims  # Include analysis claims even on failure
                 }
             
-            # Step 8: Create Factsheet object with new schema
+            # Step 9: Create Factsheet object with new schema
             factsheet = Factsheet(
                 doc_id=doc_id,
                 study_type=study_type,
                 factsheet_sections=factsheet_sections,
                 provenance=provenance,
                 normalized_facts=normalized_facts,
+                analysis_claims=analysis_claims,  # Use the analysis claims extracted earlier
                 # Keep legacy fields for backward compatibility
                 results=factsheet_sections.get("results", []),
                 primary_endpoint_results=factsheet_sections.get("primary_endpoint_results"),
@@ -141,23 +157,8 @@ class LLMFactsheetExtractor(BaseLLMWorker):
                 dropout_rate=factsheet_sections.get("dropout_rate")
             )
             
-            # Step 9: Parse field quotes from provenance
+            # Step 10: Parse field quotes from provenance
             field_quotes = self._parse_provenance_quotes(provenance)
-            
-            # Step 10: Extract analysis claims for subgroup/endpoint detection
-            try:
-                from ncfd.extract.generators.analysis_claim_extractor import AnalysisClaimExtractor
-                claim_extractor = AnalysisClaimExtractor()
-                analysis_claims = await claim_extractor.extract_claims(raw_doc_text, doc_id)
-                
-                # Add analysis claims to factsheet
-                factsheet.analysis_claims = analysis_claims
-                
-                self.logger.info(f"Extracted {len(analysis_claims)} analysis claims for doc_id: {doc_id}")
-                
-            except Exception as e:
-                self.logger.warning(f"Failed to extract analysis claims for doc_id {doc_id}: {e}")
-                factsheet.analysis_claims = []
             
             return {
                 "factsheet": factsheet,

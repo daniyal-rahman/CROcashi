@@ -1,0 +1,224 @@
+[0m🧹 Running consolidated Cassava pipeline test with fresh database...[0m
+[0m/Library/Developer/CommandLineTools/usr/bin/make db_reset[0m
+[0m/Library/Developer/CommandLineTools/usr/bin/make db_nuke[0m
+[0mdocker compose -f docker-compose.yml down -v[0m
+[0mtime="[0m[36m2025-09-24T22:49:34[0m-07:00" level=[0m[33mwarning[0m msg="The \"POSTGRES_USER\" variable is not set. Defaulting to a blank string."[0m
+[0mtime="[0m[36m2025-09-24T22:49:34[0m-07:00" level=[0m[33mwarning[0m msg="The \"POSTGRES_DB\" variable is not set. Defaulting to a blank string."[0m
+[0m Container ncfd_db  Stopping[0m
+[0m Container ncfd_db  Stopped[0m
+[0m Container ncfd_db  Removing[0m
+[0m Container ncfd_db  Removed[0m
+[0m Network crocashi_default  Removing[0m
+[0m Volume crocashi_pg_data  Removing[0m
+[0m Volume crocashi_pg_data  Removed[0m
+[0m Network crocashi_default  Removed[0m
+[0m/Library/Developer/CommandLineTools/usr/bin/make db_up[0m
+[0mdocker compose -f docker-compose.yml up -d db[0m
+[0mtime="[0m[36m2025-09-24T22:49:34[0m-07:00" level=[0m[33mwarning[0m msg="The \"POSTGRES_USER\" variable is not set. Defaulting to a blank string."[0m
+[0mtime="[0m[36m2025-09-24T22:49:34[0m-07:00" level=[0m[33mwarning[0m msg="The \"POSTGRES_DB\" variable is not set. Defaulting to a blank string."[0m
+[0m Network crocashi_default  Creating[0m
+[0m Network crocashi_default  Created[0m
+[0m Volume "crocashi_pg_data"  Creating[0m
+[0m Volume "crocashi_pg_data"  Created[0m
+[0m Container ncfd_db  Creating[0m
+[0m Container ncfd_db  Created[0m
+[0m Container ncfd_db  Starting[0m
+[0m Container ncfd_db  Started[0m
+[0m/Library/Developer/CommandLineTools/usr/bin/make db_wait[0m
+[0mWaiting for Postgres to be healthy...[0m
+[0mPostgres healthy ✅[0m
+[0m/Library/Developer/CommandLineTools/usr/bin/make migrate_up[0m
+[0mPOSTGRES_DSN=postgresql+psycopg2://ncfd:ncfd@localhost:5433/ncfd DATABASE_URL=postgresql://ncfd:ncfd@localhost:5433/ncfd .venv/bin/alembic upgrade head[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Context impl PostgresqlImpl.[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Will assume transactional DDL.[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade  -> 9d2e40215ede, 0001 baseline: extensions[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 9d2e40215ede -> a30ef603d322, 0002 Company alias and securities[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade a30ef603d322 -> 8f4433c1c1aa, Assets and ownership[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 9d2e40215ede -> add_uspto_patent_extensions, Add USPTO patent extensions[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 8f4433c1c1aa -> cc44d2e61b7e, Trials and versioning[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade cc44d2e61b7e -> 34689bd20f02, Studies and Disclosures[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 34689bd20f02 -> 29546d6d96fa, Signals and Evidence[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 29546d6d96fa -> 5260f9759fe4, Gates LR Tables[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 5260f9759fe4 -> 3a0381c42074, Catalysts Labels and Markets[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 3a0381c42074 -> 583de950b814, add date tracking to trials[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 583de950b814 -> 0272ed4ed4ec, resolver_ignore_sponsor[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 0272ed4ed4ec -> 57f62acd287e, resolver det rules[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 57f62acd287e -> b27978a07448, exchanges and more[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade b27978a07448 -> 669b4722606d, update_securities_table_schema[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 669b4722606d -> fe02bb9a421d, add_cik_to_securities[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade fe02bb9a421d -> 571937b83dd7, add_security_enums[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 571937b83dd7 -> 5fa221363d83, make_exchange_nullable[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 5fa221363d83 -> b2343cc60db5, migrate_to_exchange_id_only[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade b2343cc60db5 -> 03fdbe8b0719, add_resolver_tables[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 03fdbe8b0719 -> 1c483e92fdf0, complete_resolver_schema[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 1c483e92fdf0 -> f5b03315b2de, add_reason_to_review_queue[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade f5b03315b2de -> 81c4a47ab949, add_research_government_filtering_patterns[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 81c4a47ab949 -> 91c4a47ab949, fix_match_type_column_length[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 91c4a47ab949 -> 6c4909ab66ac, add_document_staging_and_asset_aliases[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 6c4909ab66ac -> 8b2c3d4e5f6g, add_pubmed_literature_system[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 8b2c3d4e5f6g -> 9c3d4e5f6g7h, add_asset_indication_dictionaries[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade fe02bb9a421d -> add_text_original_to_base_spans, Add text_original field to base_spans table[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade add_text_original_to_base_spans, add_uspto_patent_extensions -> 420c49ebb45a, merge branches[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 420c49ebb45a, 9c3d4e5f6g7h -> 8586ac67f466, merge all branches[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 8586ac67f466 -> 2247826a03d9, add_u1_discovery_stage_constraint[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 2247826a03d9 -> afc070443f13, create tasks priority queue[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade afc070443f13 -> 92c650ab2991, add_u1_plus_schema_support[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 92c650ab2991 -> 958cc8211a48, fold_rs_scores_into_documents[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 92c650ab2991 -> 447da0629fd8, fix_document_links_primary_key_for_basic_science_papers[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 447da0629fd8 -> e78153bd3545, add_study_card_tables[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade e78153bd3545 -> 73abcc2b7bd3, add_dual_retrieval_persistence_tables[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 73abcc2b7bd3 -> 47c6ec20aeb8, add_session_id_to_retrieval_documents[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 47c6ec20aeb8 -> 3651d4b376ac, remove_dual_persistence_tables_and_add_processing_stage[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 3651d4b376ac, 958cc8211a48 -> 7d530c0cf176, merge_heads[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 7d530c0cf176 -> 727232fd50ae, remove_lr_tables_and_document_text_pages[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 727232fd50ae -> f2ba019967c2, remove_unused_alias_tables[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade f2ba019967c2 -> 6d9da568e3fd, fix_spans_and_rename_tables[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 6d9da568e3fd -> 759550104e16, recreate_company_aliases_table[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 759550104e16 -> d4161c888dbf, remove_unused_document_notes_table[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade d4161c888dbf -> dd35823d2305, simplify_asset_ownership_to_one_to_one[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade dd35823d2305 -> f44bfaf9c8f7, remove_unused_asset_indications_table[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade f44bfaf9c8f7 -> a0565a1faa0e, rename_tasks_to_processing_queue[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade f44bfaf9c8f7 -> 117fe225c48e, simplify_resolver_schema[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 117fe225c48e, a0565a1faa0e -> ed8c75a98013, merge_resolver_and_processing_queue[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade fe02bb9a421d -> clean_pattern_families_001, Clean Pattern Families Migration - Remove Legacy, Add New System[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade clean_pattern_families_001, ed8c75a98013 -> bc59812a5ceb, merge heads[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade bc59812a5ceb -> b91caffec4ba, remove_amber_severity_level[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade b91caffec4ba -> 1966243d36da, add_cascade_constraint_to_company_aliases[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 1966243d36da -> 250ab25cf2a6, add_foreign_key_constraints_to_study_cards[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 250ab25cf2a6 -> 1ad6c5341f38, standardize_phase_enum_to_ctgov_format[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 1ad6c5341f38 -> 8daa81386878, fix_naming_conventions_and_constraints[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 8daa81386878 -> ec190b7db457, rename jsonb fields to proper names[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade ec190b7db457 -> ac80aa3d9fa9, update jsonb indexes[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade ac80aa3d9fa9 -> 949dce52fffb, fix metadata to meta conflict[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 949dce52fffb -> 46e2cf011429, add_trial_association_to_documents[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 46e2cf011429 -> 752afa19e084, remove_deprecated_resolver_tables[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 752afa19e084 -> 0081229f2c27, rename raw_data to raw_jsonb in trial_versions[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 0081229f2c27 -> 5f45f25964cc, rename raw_data to raw_jsonb in trial_versions only[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 5f45f25964cc -> 0833352564ca, add_e_tier_to_documents_retrieval_tier_constraint[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 0833352564ca -> 903237fab6ce, refactor_factsheet_schema_jsonb_sections_provenance[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 903237fab6ce -> 31931857b616, add_analysis_claims_to_factsheets[0m
+[0m[32mINFO[0m  [alembic.runtime.migration] Running upgrade 31931857b616 -> 1c08e7dd3afe, add_evidence_spans_table[0m
+[0mbase_spans table does not exist, skipping migration[0m
+[0mDropping legacy tables...[0m
+[0mDropped table: signal_evidence[0m
+[0mDropped table: signals[0m
+[0mDropped table: gates[0m
+[0mDropped table: scores[0m
+[0mDropped table: lr_tables[0m
+[0mDropped foreign key constraint: fk_resolver_features_input_id from resolver_features[0m
+[0mDropped foreign key constraint: fk_resolver_decisions_input_id from resolver_decisions[0m
+[0mDropped foreign key constraint: fk_resolver_candidate_snapshots_input_id_resolver_inputs from resolver_candidate_snapshots[0m
+[0mDropped foreign key constraint: fk_resolver_llm_logs_input_id_resolver_inputs from resolver_llm_logs[0m
+[0mDropped foreign key constraint: fk_review_queue_input_id from review_queue[0m
+[0mDropped deprecated table: resolver_features[0m
+[0mDropped deprecated table: resolver_decisions[0m
+[0mDropped deprecated table: resolver_candidate_snapshots[0m
+[0mDropped deprecated table: resolver_llm_logs[0m
+[0mDropped deprecated table: resolver_overrides[0m
+[0mDropped deprecated table: resolver_rules[0m
+[0mDropped deprecated table: resolver_inputs[0m
+[0mDropped deprecated table: resolver_runs[0m
+[0m[34mTrace[0mback (most recent call last):[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context[0m
+[0m    self.dialect.do_execute([0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 951, in do_execute[0m
+[0m    cursor.execute(statement, parameters)[0m
+[0mpsycopg2.[0m[31merror[0ms.DuplicateTable: relation "pk_evidence_spans" already exists[0m
+[0m
+[0m
+[0mThe above exception was the direct cause of the following exception:[0m
+[0m
+[0m[34mTrace[0mback (most recent call last):[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/bin/alembic", line 7, in <module>[0m
+[0m    sys.exit(main())[0m
+[0m             ^^^^^^[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/alembic/config.py", line 1022, in main[0m
+[0m    CommandLine(prog=prog).main(argv=argv)[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/alembic/config.py", line 1012, in main[0m
+[0m    self.run_cmd(cfg, options)[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/alembic/config.py", line 946, in run_cmd[0m
+[0m    fn([0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/alembic/command.py", line 483, in upgrade[0m
+[0m    script.run_env()[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/alembic/script/base.py", line 549, in run_env[0m
+[0m    util.load_python_file(self.dir, "env.py")[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/alembic/util/pyfiles.py", line 116, in load_python_file[0m
+[0m    module = load_module_py(module_id, path)[0m
+[0m             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/alembic/util/pyfiles.py", line 136, in load_module_py[0m
+[0m    spec.loader.exec_module(module)  # type: ignore[0m
+[0m    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[0m  File "<frozen importlib._bootstrap_external>", line 999, in exec_module[0m
+[0m  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/alembic/env.py", line 49, in <module>[0m
+[0m    run_migrations_online()[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/alembic/env.py", line 44, in run_migrations_online[0m
+[0m    context.run_migrations()[0m
+[0m  File "<string>", line 8, in run_migrations[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/alembic/runtime/environment.py", line 946, in run_migrations[0m
+[0m    self.get_context().run_migrations(**kw)[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/alembic/runtime/migration.py", line 627, in run_migrations[0m
+[0m    step.migration_fn(**kw)[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/alembic/versions/1c08e7dd3afe_add_evidence_spans_table.py", line 25, in upgrade[0m
+[0m    op.create_table([0m
+[0m  File "<string>", line 8, in create_table[0m
+[0m  File "<string>", line 3, in create_table[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/alembic/operations/ops.py", line 1332, in create_table[0m
+[0m    return operations.invoke(op)[0m
+[0m           ^^^^^^^^^^^^^^^^^^^^^[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/alembic/operations/base.py", line 441, in invoke[0m
+[0m    return fn(self, operation)[0m
+[0m           ^^^^^^^^^^^^^^^^^^^[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/alembic/operations/toimpl.py", line 135, in create_table[0m
+[0m    operations.impl.create_table(table, **kw)[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/alembic/ddl/impl.py", line 423, in create_table[0m
+[0m    self._exec(schema.CreateTable(table, **kw))[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/alembic/ddl/impl.py", line 246, in _exec[0m
+[0m    return conn.execute(construct, params)[0m
+[0m           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1419, in execute[0m
+[0m    return meth([0m
+[0m           ^^^^^[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py", line 187, in _execute_on_connection[0m
+[0m    return connection._execute_ddl([0m
+[0m           ^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1530, in _execute_ddl[0m
+[0m    ret = self._execute_context([0m
+[0m          ^^^^^^^^^^^^^^^^^^^^^^[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context[0m
+[0m    return self._exec_single_context([0m
+[0m           ^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context[0m
+[0m    self._handle_dbapi_exception([0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2355, in _handle_dbapi_exception[0m
+[0m    raise sqlalchemy_exception.with_[0m[34mtrace[0mback(exc_[0m[32minfo[0m[2]) from e[0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context[0m
+[0m    self.dialect.do_execute([0m
+[0m  File "/Users/danirahman/Repos/CROcashi/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 951, in do_execute[0m
+[0m    cursor.execute(statement, parameters)[0m
+[0msqlalchemy.exc.Programming[0m[31mError[0m: (psycopg2.errors.DuplicateTable) relation "pk_evidence_spans" already exists[0m
+[0m
+[0m[SQL: [0m
+[0mCREATE TABLE evidence_spans ([0m
+[0m	span_id SERIAL NOT NULL, [0m
+[0m	doc_id INTEGER NOT NULL, [0m
+[0m	trial_id INTEGER, [0m
+[0m	field_name VARCHAR(100) NOT NULL, [0m
+[0m	field_value TEXT, [0m
+[0m	quote_text TEXT NOT NULL, [0m
+[0m	start_char INTEGER, [0m
+[0m	end_char INTEGER, [0m
+[0m	page_number INTEGER, [0m
+[0m	confidence NUMERIC(3, 2), [0m
+[0m	extraction_method VARCHAR(50) DEFAULT 'llm' NOT NULL, [0m
+[0m	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, [0m
+[0m	CONSTRAINT pk_evidence_spans PRIMARY KEY (span_id), [0m
+[0m	CONSTRAINT fk_evidence_spans_doc_id_documents FOREIGN KEY(doc_id) REFERENCES documents (doc_id) ON DELETE CASCADE, [0m
+[0m	CONSTRAINT fk_evidence_spans_trial_id_trials FOREIGN KEY(trial_id) REFERENCES trials (trial_id) ON DELETE CASCADE[0m
+[0m)[0m
+[0m
+[0m][0m
+[0m(Background on this [0m[31merror[0m at: https://sqlalche.me/e/20/f405)[0m
+[0mmake[2]: *** [migrate_up] [0m[31mError[0m 1[0m
+[0mmake[1]: *** [db_reset] [0m[31mError[0m 2[0m
+[0mmake: *** [test-cassava-clean] [0m[31mError[0m 2[0m

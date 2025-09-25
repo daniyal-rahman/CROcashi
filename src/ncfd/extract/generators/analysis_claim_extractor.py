@@ -155,24 +155,23 @@ RULES:
             # Step 2: Build LLM prompt
             prompt = self.build_extraction_prompt(text, hints, doc_id)
             
-            # Step 3: Call LLM (placeholder - will be implemented with actual LLM call)
-            # For now, return empty list
+            # Step 3: Call LLM for analysis claim extraction
             logger.info(f"Analysis claim extraction requested for doc_id={doc_id}")
             logger.debug(f"Regex hints found: {len(hints.p_values)} p-values, {len(hints.subgroup_cues)} subgroup cues")
             
             # Make LLM call for analysis claim extraction
-            from ncfd.llm.base_worker import LLMWorker
-            from ncfd.llm.base_provider import get_provider
+            from ncfd.llm.base_worker import BaseLLMWorker
+            from ncfd.llm.factory import LLMProviderFactory
             
             # Create LLM worker for analysis claim extraction
-            provider = get_provider()
-            worker = LLMWorker(provider=provider)
+            worker = BaseLLMWorker(name="AnalysisClaimExtractor", version="1.0.0")
             
             response = await worker.call_llm(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=4000,
-                json_output=True
+                json_output=True,
+                json_schema=self._get_analysis_claim_schema()
             )
             
             # Parse LLM response
@@ -248,3 +247,61 @@ RULES:
                 continue
         
         return normalized
+    
+    def _get_analysis_claim_schema(self) -> Dict[str, Any]:
+        """Get the JSON schema for analysis claims."""
+        return {
+            "type": "object",
+            "properties": {
+                "analysis_claims": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "subgroup": {
+                                "type": "object",
+                                "properties": {
+                                    "label": {"type": "string"},
+                                    "prespecified": {"type": "boolean"},
+                                    "definition": {"type": "string"}
+                                }
+                            },
+                            "overall_result": {
+                                "type": "object",
+                                "properties": {
+                                    "effect": {"type": "string"},
+                                    "p_value": {"type": "number"},
+                                    "confidence_interval": {"type": "string"}
+                                }
+                            },
+                            "subgroup_result": {
+                                "type": "object",
+                                "properties": {
+                                    "effect": {"type": "string"},
+                                    "p_value": {"type": "number"},
+                                    "adjusted": {"type": "boolean"},
+                                    "is_nominal": {"type": "boolean"},
+                                    "interaction_p": {"type": "number"}
+                                }
+                            },
+                            "analysis_set": {"type": "string"},
+                            "evidence_strength": {"type": "string"},
+                            "source_id": {"type": "string"},
+                            "quote_spans": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "text": {"type": "string"},
+                                        "start": {"type": "integer"},
+                                        "end": {"type": "integer"}
+                                    }
+                                }
+                            }
+                        },
+                        "required": ["subgroup", "overall_result", "subgroup_result"]
+                    }
+                }
+            },
+            "required": ["analysis_claims"]
+        }

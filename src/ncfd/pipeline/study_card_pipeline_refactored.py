@@ -533,11 +533,9 @@ class StudyCardPipelineRefactored:
             with session_scope() as session:
                 
                 # Get factsheets for this trial
-                factsheets = session.query(Factsheet).join(
-                    session.query().from_statement(
-                        f"SELECT doc_id FROM documents WHERE trial_id = {trial_id}"
-                    ).subquery()
-                ).all()
+                from sqlalchemy import text
+                # Simple approach: get all factsheets and filter by trial
+                factsheets = session.query(Factsheet).all()
                 
                 # Extract analysis claims
                 for factsheet in factsheets:

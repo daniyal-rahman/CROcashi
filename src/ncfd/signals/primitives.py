@@ -105,15 +105,22 @@ def S2_underpowered_pivotal(card: Dict[str, Any]) -> SignalResult:
         return SignalResult(False, "L", f"Unsupported primary type: {primary_type}")
 
 
-def S3_subgroup_only_no_multiplicity(card: Dict[str, Any]) -> SignalResult:
+def S3_subgroup_only_no_multiplicity(card: Dict[str, Any], thresholds: Optional[Dict[str, Any]] = None) -> SignalResult:
     """
     S3 - Subgroup-only win without multiplicity adjustment
     
     Detects subgroup-only wins where:
     - Overall result is NS/no-control AND
     - Subgroup shows positive effect AND
-    - (Not prespecified OR unadjusted/nominal OR interaction_p≥0.05 OR biased analysis set)
+    - (Not prespecified OR unadjusted/nominal OR interaction_p≥threshold OR biased analysis set)
     """
+    # Get thresholds with defaults
+    if thresholds is None:
+        thresholds = {}
+    s3_thresholds = thresholds.get('s3', {})
+    p_value_threshold = s3_thresholds.get('p_value_threshold', 0.05)
+    interaction_p_threshold = s3_thresholds.get('interaction_p_threshold', 0.05)
+    
     analysis_claims = card.get('analysis_claims', [])
     
     flagged_claims = []
@@ -125,19 +132,19 @@ def S3_subgroup_only_no_multiplicity(card: Dict[str, Any]) -> SignalResult:
         subgroup_result = claim.get('subgroup_result', {})
         
         # S3 Rule: overall NS/no-control AND subgroup p<α AND 
-        # (not prespecified OR unadjusted/nominal OR interaction_p≥0.05 OR analysis_set ∈ {PP,Completers,OL})
+        # (not prespecified OR unadjusted/nominal OR interaction_p≥threshold OR analysis_set ∈ {PP,Completers,OL})
         overall_ns = (overall.get('effect') == 'NS' or 
                      overall.get('effect') == 'N/A' or 
-                     overall.get('p_value', 1.0) >= 0.05)
+                     overall.get('p_value', 1.0) >= p_value_threshold)
         
-        subgroup_sig = subgroup_result.get('p_value', 1.0) < 0.05
+        subgroup_sig = subgroup_result.get('p_value', 1.0) < p_value_threshold
         subgroup_positive = subgroup_result.get('effect') in ['FavoursTx', 'FavoursTreatment']
         
         if overall_ns and subgroup_sig and subgroup_positive:
             not_prespecified = not subgroup.get('prespecified', True)
             unadjusted = (not subgroup_result.get('adjusted', True) or 
-                         subgroup_result.get('is_nominal', False))
-            failed_interaction = subgroup_result.get('interaction_p', 0.0) >= 0.05
+                        subgroup_result.get('is_nominal', False))
+            failed_interaction = subgroup_result.get('interaction_p', 0.0) >= interaction_p_threshold
             biased_analysis = claim.get('analysis_set', '').upper() in {'PP', 'COMPLETERS', 'OPEN-LABEL'}
             
             if not_prespecified or unadjusted or failed_interaction or biased_analysis:

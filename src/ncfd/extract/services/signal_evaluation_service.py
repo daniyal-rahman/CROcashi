@@ -9,6 +9,8 @@ import logging
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
+import yaml
 
 from ncfd.signals.primitives import (
     S1_endpoint_changed, S2_underpowered_pivotal, S3_subgroup_only_no_multiplicity,
@@ -69,7 +71,11 @@ class SignalEvaluationService:
         self.enable_gates = self.signal_config.get('enable_gates', True)
         self.enable_scoring = self.signal_config.get('enable_scoring', True)
         
+        # Load signal thresholds
+        self.thresholds = self._load_signal_thresholds()
+        
         logger.info(f"Initialized signal evaluation service with config: {self.signal_config}")
+        logger.info(f"Loaded signal thresholds: {self.thresholds}")
     
     async def evaluate_signals_and_gates(
         self,
@@ -98,25 +104,46 @@ class SignalEvaluationService:
         try:
             # Step 1: Convert patterns to signals
             logger.info(f"Converting patterns to signals for trial {trial_id}")
-            signals = await self._convert_patterns_to_signals(
-                trial_id, study_cards, factsheets, patterns, trial_versions
-            )
+            try:
+                signals = await self._convert_patterns_to_signals(
+                    trial_id, study_cards, factsheets, patterns, trial_versions
+                )
+                logger.info(f"Successfully converted patterns to {len(signals)} signals")
+            except Exception as e:
+                error_msg = f"Failed to convert patterns to signals: {e}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+                signals = {}
             
             # Step 2: Evaluate gates
             logger.info(f"Evaluating gates for trial {trial_id}")
             gates = {}
             if self.enable_gates:
-                gates = evaluate_all_gates(signals)
+                try:
+                    gates = evaluate_all_gates(signals)
+                    logger.info(f"Successfully evaluated {len(gates)} gates")
+                except Exception as e:
+                    error_msg = f"Failed to evaluate gates: {e}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+                    gates = {}
             
             # Step 3: Calculate score
             logger.info(f"Calculating score for trial {trial_id}")
             score = None
             if self.enable_scoring:
-                score = score_trial(
-                    trial_id=trial_id,
-                    run_id=f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                    gates=gates
-                )
+                try:
+                    score = score_trial(
+                        trial_id=trial_id,
+                        run_id=f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                        gates=gates
+                    )
+                    logger.info(f"Successfully calculated score: P_fail={score.p_fail:.3f}")
+                except Exception as e:
+                    error_msg = f"Failed to calculate score: {e}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+                    score = None
             
             # Extract fired signals and gates
             fired_signals = [sid for sid, signal in signals.items() if signal.fired]
@@ -128,6 +155,9 @@ class SignalEvaluationService:
                        f"{len(fired_signals)} signals fired, {len(fired_gates)} gates fired, "
                        f"P_fail={p_fail:.3f}")
             
+            # Determine overall success
+            success = len(errors) == 0
+            
             return SignalEvaluationResult(
                 trial_id=trial_id,
                 signals=signals,
@@ -136,7 +166,7 @@ class SignalEvaluationService:
                 fired_signals=fired_signals,
                 fired_gates=fired_gates,
                 p_fail=p_fail,
-                success=True,
+                success=success,
                 errors=errors,
                 warnings=warnings
             )
@@ -174,28 +204,56 @@ class SignalEvaluationService:
         
         try:
             # Build study card data for signal evaluation
-            study_card_data = self._build_study_card_data(study_cards, factsheets)
+            try:
+                study_card_data = self._build_study_card_data(study_cards, factsheets)
+                logger.debug(f"Built study card data with keys: {list(study_card_data.keys())}")
+            except Exception as e:
+                logger.error(f"Failed to build study card data: {e}")
+                return {}
             
             # Run signal detection primitives
+            signals = {}
             if self.enable_signals:
-                signals = {
-                    "S1": S1_endpoint_changed(trial_versions or []),
-                    "S2": S2_underpowered_pivotal(study_card_data),
-                    "S3": S3_subgroup_only_no_multiplicity(study_card_data),
-                    "S4": S4_itt_vs_pp_dropout(study_card_data),
-                    "S5": S5_implausible_vs_graveyard(study_card_data, {}),  # Empty graveyard data
-                    "S6": S6_many_interims_no_spending(study_card_data),
-                    "S7": S7_single_arm_where_rct_standard(study_card_data, {}),  # Empty RCT data
-                    "S8": S8_pvalue_cusp_or_heaping(study_card_data),
-                    "S9": S9_os_pfs_contradiction(study_card_data),
-                }
+                try:
+                    # Get class metadata for S5 (graveyard data)
+                    class_meta = self._get_class_metadata(study_card_data)
+                    
+                    # Evaluate each signal individually with error handling
+                    signal_functions = {
+                        "S1": lambda: S1_endpoint_changed(trial_versions or []),
+                        "S2": lambda: S2_underpowered_pivotal(study_card_data),
+                        "S3": lambda: S3_subgroup_only_no_multiplicity(study_card_data, self.thresholds),
+                        "S4": lambda: S4_itt_vs_pp_dropout(study_card_data),
+                        "S5": lambda: S5_implausible_vs_graveyard(study_card_data, class_meta),
+                        "S6": lambda: S6_many_interims_no_spending(study_card_data),
+                        "S7": lambda: S7_single_arm_where_rct_standard(study_card_data, rct_required=True),
+                        "S8": lambda: S8_pvalue_cusp_or_heaping(study_card_data),
+                        "S9": lambda: S9_os_pfs_contradiction(study_card_data),
+                    }
+                    
+                    for signal_id, signal_func in signal_functions.items():
+                        try:
+                            signals[signal_id] = signal_func()
+                            logger.debug(f"Successfully evaluated {signal_id}: {signals[signal_id].fired}")
+                        except Exception as e:
+                            logger.error(f"Failed to evaluate {signal_id}: {e}")
+                            # Create a default failed signal result
+                            from ncfd.signals.primitives import SignalResult
+                            signals[signal_id] = SignalResult(False, "L", f"Evaluation failed: {e}")
+                    
+                    # Override with pattern-based signals if patterns are detected
+                    try:
+                        pattern_signals = self._convert_patterns_to_signal_results(patterns)
+                        for signal_id, signal_result in pattern_signals.items():
+                            if signal_id in signals:
+                                signals[signal_id] = signal_result
+                                logger.info(f"Overrode {signal_id} with pattern-based signal: {signal_result.fired}")
+                    except Exception as e:
+                        logger.error(f"Failed to convert patterns to signals: {e}")
                 
-                # Override with pattern-based signals if patterns are detected
-                pattern_signals = self._convert_patterns_to_signal_results(patterns)
-                for signal_id, signal_result in pattern_signals.items():
-                    if signal_id in signals:
-                        signals[signal_id] = signal_result
-                        logger.info(f"Overrode {signal_id} with pattern-based signal: {signal_result.fired}")
+                except Exception as e:
+                    logger.error(f"Failed to evaluate signals: {e}")
+                    return {}
             
             logger.info(f"Generated {len(signals)} signals for trial {trial_id}")
             return signals
@@ -289,6 +347,77 @@ class SignalEvaluationService:
         study_card_data['analysis_claims'] = analysis_claims
         
         return study_card_data
+    
+    def _load_signal_thresholds(self) -> Dict[str, Any]:
+        """
+        Load signal thresholds from configuration file.
+        
+        Returns:
+            Dictionary of signal thresholds
+        """
+        try:
+            config_path = Path("config/signal_thresholds.yaml")
+            if not config_path.exists():
+                logger.warning(f"Signal thresholds config not found at {config_path}, using defaults")
+                return self._get_default_thresholds()
+            
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            thresholds = config.get('signal_thresholds', {})
+            logger.info(f"Loaded signal thresholds from {config_path}")
+            return thresholds
+            
+        except Exception as e:
+            logger.error(f"Failed to load signal thresholds: {e}")
+            return self._get_default_thresholds()
+    
+    def _get_default_thresholds(self) -> Dict[str, Any]:
+        """Get default signal thresholds."""
+        return {
+            's3': {
+                'p_value_threshold': 0.05,
+                'interaction_p_threshold': 0.05
+            },
+            's2': {
+                'power_threshold': 0.80
+            },
+            's8': {
+                'cusp_threshold': 0.05,
+                'heaping_threshold': 0.01
+            },
+            's6': {
+                'max_interims_without_spending': 2,
+                'max_extra_peeks': 0
+            },
+            's5': {
+                'percentile_threshold': 0.75,
+                'multiplier_threshold': 1.5
+            },
+            'general': {
+                'effect_size_precision': 3,
+                'confidence_precision': 2
+            }
+        }
+    
+    def _get_class_metadata(self, study_card_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get class metadata for S5 signal evaluation.
+        
+        For now, return a default structure. In a real implementation,
+        this would query a database of class graveyard data.
+        """
+        # Default class metadata - in production this would come from a database
+        return {
+            "graveyard": False,  # Set to True for classes known to be graveyards
+            "winners_pctl": {
+                "p75": 0.5,  # 75th percentile effect size for this class
+                "p90": 0.8,  # 90th percentile effect size for this class
+            },
+            "class_name": study_card_data.get("indication", "Unknown"),
+            "total_trials": 0,
+            "success_rate": 0.0
+        }
     
     def _convert_patterns_to_signal_results(self, patterns: List[Dict[str, Any]]) -> Dict[str, SignalResult]:
         """

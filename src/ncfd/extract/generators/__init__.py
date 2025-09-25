@@ -11,9 +11,11 @@ Contains LLM-based extractors for study card content:
 from .study_card_generator import LLMStudyCardExtractor
 from .factsheet_extractor import LLMFactsheetExtractor
 from .pattern_detector import PatternFamilyDetector
+from .analysis_claim_extractor import AnalysisClaimExtractor
 
 __all__ = [
     "LLMStudyCardExtractor",
     "LLMFactsheetExtractor",
-    "PatternFamilyDetector"
+    "PatternFamilyDetector",
+    "AnalysisClaimExtractor"
 ]
