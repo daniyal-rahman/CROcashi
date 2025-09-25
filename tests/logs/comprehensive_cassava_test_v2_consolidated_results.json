@@ -1,0 +1,130 @@
+{
+  "test_info": {
+    "start_time": "2025-09-24T20:13:31.940465+00:00",
+    "test_name": "Comprehensive Cassava Pipeline Test V2 - Consolidated",
+    "version": "2.2",
+    "end_time": "2025-09-24T20:19:56.062751+00:00",
+    "duration_seconds": 384.122286
+  },
+  "database_setup": {
+    "status": "success",
+    "tables_created": true,
+    "data_cleared": true,
+    "extensions_created": true,
+    "company_seeded": true,
+    "trial_seeded": true,
+    "pattern_families_seeded": true,
+    "studies_seeded": true
+  },
+  "study_card_generation": {
+    "status": "success",
+    "success": true,
+    "study_cards_created": 3,
+    "factsheets_created": 3,
+    "patterns_detected": 6,
+    "quotes_extracted": 0,
+    "errors": [],
+    "warnings": [
+      "S",
+      "e",
+      "l",
+      "e",
+      "c",
+      "t",
+      "e",
+      "d",
+      " ",
+      "3",
+      " ",
+      "d",
+      "o",
+      "c",
+      "u",
+      "m",
+      "e",
+      "n",
+      "t",
+      "s",
+      " ",
+      "f",
+      "r",
+      "o",
+      "m",
+      " ",
+      "3",
+      " ",
+      "c",
+      "a",
+      "n",
+      "d",
+      "i",
+      "d",
+      "a",
+      "t",
+      "e",
+      "s",
+      " ",
+      "u",
+      "s",
+      "i",
+      "n",
+      "g",
+      " ",
+      "R",
+      "/",
+      "S",
+      " ",
+      "s",
+      "c",
+      "o",
+      "r",
+      "e",
+      " ",
+      "r",
+      "a",
+      "n",
+      "k",
+      "i",
+      "n",
+      "g"
+    ]
+  },
+  "validation_results": {
+    "status": "failed",
+    "entity_counts": {
+      "companies": 1,
+      "trials": 1,
+      "documents": 3,
+      "study_cards": 3,
+      "factsheets": 3,
+      "patterns": 13,
+      "gates": 1
+    },
+    "errors": [
+      "No trials linked to documents - document linking failed"
+    ],
+    "relationships": {
+      "trials_with_company": 1,
+      "trials_with_documents": 0
+    },
+    "data_integrity": {
+      "all_trials_have_company": true,
+      "some_trials_have_documents": false
+    }
+  },
+  "errors": [],
+  "warnings": [],
+  "ctgov_integration": {
+    "auto_inclusion": {
+      "documents_found": 0,
+      "documents": []
+    },
+    "pubmed_retrieval": {
+      "publications_found": 0,
+      "publications_with_full_text": 0,
+      "retrieval_success": false,
+      "error_message": "No publications found for NCT ID",
+      "content_length": 932
+    }
+  }
+}

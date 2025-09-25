@@ -459,7 +459,7 @@ class PubMedClient:
         for key, value in kwargs.items():
             log_params[key] = _make_logging_safe(value)
         
-        logger.info(f"🔍 PubMed Search: '{query[:50]}{'...' if len(query) > 50 else ''}' (max: {retmax})")
+        logger.info(f"🔍 PubMed Search: '{query[:50]}{'...' if len(query) > 50 else ''}' (max: {params['retmax']})")
         
         start_time = time.time()
         result = await self._make_request(self.ESEARCH_URL, params)

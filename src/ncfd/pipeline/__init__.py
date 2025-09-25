@@ -25,7 +25,6 @@ from .lit_queue import (
 
 from .ctgov_pipeline import CtgovPipeline, CtgovPipelineOutput
 from .sec_pipeline import SecPipeline, SecPipelineOutput
-from .study_card_pipeline import StudyCardPipeline, StudyCardPipelineOutput
 from .pubmed_pipeline import PubMedPipeline, PubMedPipelineOutput
 from .asset_resolver import AssetResolver
 
@@ -49,8 +48,6 @@ __all__ = [
     "CtgovPipelineOutput",
     "SecPipeline", 
     "SecPipelineOutput",
-    "StudyCardPipeline",
-    "StudyCardPipelineOutput",
     "PubMedPipeline",
     "PubMedPipelineOutput",
     "AssetResolver",

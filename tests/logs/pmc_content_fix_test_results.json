@@ -1,0 +1,225 @@
+{
+  "test_name": "PMC Content Retrieval Fix Test",
+  "start_time": "2025-09-24T23:44:26.552157+00:00",
+  "end_time": null,
+  "duration_seconds": null,
+  "test_config": {
+    "user_agent": "NCFD-Research-Tool/1.0",
+    "contact_email": "ncfd-ingest@example.com",
+    "http_timeout_s": 30,
+    "rate_limit_per_sec": 1.0,
+    "validation": {
+      "min_cassava_score": 0.3,
+      "min_paper_structure_score": 0.2,
+      "max_generic_score": 0.1,
+      "require_title_match": true
+    }
+  },
+  "test_papers": [
+    {
+      "pmcid": "PMC10339288",
+      "pmid": "37457922",
+      "title": "Simufilam suppresses overactive mTOR and restores its sensitivity to insulin in Alzheimer's disease patient lymphocytes.",
+      "journal": "Frontiers in Aging Neuroscience",
+      "year": "2023",
+      "expected_cassava_terms": [
+        "simufilam",
+        "mtor",
+        "alzheimer",
+        "lymphocytes",
+        "insulin"
+      ],
+      "expected_structure": [
+        "abstract",
+        "methods",
+        "results",
+        "discussion"
+      ]
+    },
+    {
+      "pmcid": "PMC10531384",
+      "pmid": "37762230",
+      "title": "Simufilam Reverses Aberrant Receptor Interactions of Filamin A in Alzheimer's Disease.",
+      "journal": "International Journal of Molecular Sciences",
+      "year": "2023",
+      "doi": "10.3390/ijms241813927",
+      "expected_cassava_terms": [
+        "simufilam",
+        "filamin",
+        "alzheimer",
+        "receptor",
+        "flna"
+      ],
+      "expected_structure": [
+        "abstract",
+        "methods",
+        "results",
+        "discussion"
+      ]
+    },
+    {
+      "pmcid": null,
+      "pmid": "32920628",
+      "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients.",
+      "journal": "Journal of Prevention of Alzheimer's Disease",
+      "year": "2020",
+      "doi": "10.14283/jpad.2020.6",
+      "expected_cassava_terms": [
+        "pti-125",
+        "biomarkers",
+        "alzheimer",
+        "patients"
+      ],
+      "expected_structure": [
+        "abstract",
+        "methods",
+        "results",
+        "discussion"
+      ]
+    }
+  ],
+  "results": {
+    "fixed_pmc_service": {
+      "PMC10339288": {
+        "success": false,
+        "content_length": 0,
+        "abstract_length": 0,
+        "error": "No content retrieved from PMC",
+        "validation_passed": false,
+        "validation_confidence": 0.0,
+        "validation_reasons": [],
+        "has_expected_terms": false,
+        "has_expected_structure": false,
+        "content_preview": null
+      },
+      "PMC10531384": {
+        "success": false,
+        "content_length": 0,
+        "abstract_length": 0,
+        "error": "No content retrieved from PMC",
+        "validation_passed": false,
+        "validation_confidence": 0.0,
+        "validation_reasons": [],
+        "has_expected_terms": false,
+        "has_expected_structure": false,
+        "content_preview": null
+      },
+      "32920628": {
+        "success": false,
+        "content_length": 26,
+        "abstract_length": 25,
+        "error": "No PMCID available - testing PubMed fallback",
+        "validation_passed": false,
+        "validation_confidence": 0.0,
+        "validation_reasons": [],
+        "has_expected_terms": false,
+        "has_expected_structure": false,
+        "content_preview": "Mock full text for testing"
+      }
+    },
+    "content_validation": {
+      "good_content": {
+        "is_valid": false,
+        "confidence": 0.517719298245614,
+        "cassava_score": 0.29,
+        "structure_score": 0.2631578947368421,
+        "generic_score": 0.0,
+        "reasons": [
+          "low_cassava_relevance_0.29"
+        ]
+      },
+      "bad_content": {
+        "is_valid": false,
+        "confidence": 0.1920707070707071,
+        "cassava_score": 0.12166666666666666,
+        "structure_score": 0.0,
+        "generic_score": 0.5454545454545454,
+        "reasons": [
+          "low_cassava_relevance_0.12",
+          "low_paper_structure_0.00",
+          "high_generic_content_0.55",
+          "title_not_matching_asset",
+          "generic_content_patterns"
+        ]
+      },
+      "numeric_evidence": {
+        "treatment_duration_26 weeks": {
+          "is_valid": false,
+          "expected": false,
+          "reason": "no_numeric_evidence",
+          "passed": true
+        },
+        "sample_size_100": {
+          "is_valid": false,
+          "expected": false,
+          "reason": "no_numeric_evidence",
+          "passed": true
+        }
+      }
+    },
+    "pubmed_fallback": {
+      "37457922": {
+        "success": true,
+        "abstract_length": 1791,
+        "validation_passed": true,
+        "validation_confidence": 0.6185087719298246,
+        "validation_reasons": [],
+        "has_expected_terms": true,
+        "abstract_preview": "Introduction: Implicated in both aging and Alzheimer's disease (AD), mammalian target of rapamycin (mTOR) is overactive in AD brain and lymphocytes. Stimulated by growth factors such as insulin, mTOR "
+      },
+      "37762230": {
+        "success": true,
+        "abstract_length": 1578,
+        "validation_passed": false,
+        "validation_confidence": 0.5172222222222222,
+        "validation_reasons": [
+          "low_paper_structure_0.00"
+        ],
+        "has_expected_terms": true,
+        "abstract_preview": "Simufilam is a novel oral drug candidate in Phase 3 clinical trials for Alzheimer's disease (AD) dementia. This small molecule binds an altered form of filamin A (FLNA) that occurs in AD. This drug ac"
+      },
+      "32920628": {
+        "success": true,
+        "abstract_length": 5808,
+        "validation_passed": true,
+        "validation_confidence": 0.5873976608187134,
+        "validation_reasons": [],
+        "has_expected_terms": true,
+        "abstract_preview": "BACKGROUND: The most common dementia worldwide, Alzheimer's disease is often diagnosed via biomarkers in cerebrospinal fluid, including reduced levels of A\u03b21-42, and increases in total tau and phospho"
+      }
+    },
+    "session_management": {
+      "multiple_clients": {
+        "service1_client_exists": true,
+        "service2_client_exists": true,
+        "same_session": true
+      },
+      "session_persistence": {
+        "test_passed": true,
+        "note": "Session should be shared across multiple service instances"
+      }
+    },
+    "summary": {
+      "total_papers_tested": 3,
+      "pmc_success_rate": 0.0,
+      "pubmed_success_rate": 1.0,
+      "validation_success_rate": 0.0,
+      "session_management_success": true,
+      "content_quality_analysis": {
+        "32920628": {
+          "content_length": 26,
+          "validation_passed": false,
+          "validation_confidence": 0.0,
+          "has_expected_terms": false,
+          "has_expected_structure": false
+        }
+      },
+      "recommendations": [
+        "PMC content retrieval still failing - investigate further",
+        "PubMed fallback is working - use as primary fallback",
+        "Content validation needs fixes",
+        "Session management is working - no more 'Client session not initialized' errors"
+      ]
+    }
+  }
+}

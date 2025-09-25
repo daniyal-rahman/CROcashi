@@ -381,7 +381,7 @@ class QualityGateValidationService:
                 continue
             
             # Check required fields
-            required_fields = ['trial_id', 'document_id', 'pattern_type']
+            required_fields = ['trial_id', 'document_id', 'family_id', 'pattern_id']
             for field in required_fields:
                 if field not in pattern or not pattern[field]:
                     errors.append(f"Pattern {i} missing required field: {field}")
@@ -450,28 +450,54 @@ class QualityGateValidationService:
                 )
                 session.add(gate_record)
                 
-                # Create gate assessment record
-                gate_assessment = GateAssessment(
-                    gate_id=f"G1_{trial_id}",
-                    status='PASS' if is_valid else 'FAIL',
-                    p_gate=quality_score,
-                    rationale={
+                # Create gate assessment record (handle duplicates)
+                gate_id = f"G1_{trial_id}"
+                
+                # Check if assessment already exists
+                existing_assessment = session.query(GateAssessment).filter(
+                    GateAssessment.gate_id == gate_id
+                ).first()
+                
+                if existing_assessment:
+                    # Update existing assessment
+                    existing_assessment.status = 'PASS' if is_valid else 'FAIL'
+                    existing_assessment.p_gate = quality_score
+                    existing_assessment.rationale = {
                         'overall_score': quality_score,
                         'is_valid': is_valid,
                         'validation_details': validation_details
-                    },
-                    assessment_method='refactored_pipeline',
-                    confidence_in_assessment=quality_score,
-                    assessment_notes={
+                    }
+                    existing_assessment.confidence_in_assessment = quality_score
+                    existing_assessment.assessment_notes = {
                         'study_cards_count': validation_details.get('study_cards', {}).get('count', 0),
                         'factsheets_count': validation_details.get('factsheets', {}).get('count', 0),
                         'patterns_count': validation_details.get('patterns', {}).get('count', 0),
                         'quotes_count': validation_details.get('quotes', {}).get('count', 0)
-                    },
-                    created_at=datetime.now(timezone.utc),
-                    updated_at=datetime.now(timezone.utc)
-                )
-                session.add(gate_assessment)
+                    }
+                    existing_assessment.updated_at = datetime.now(timezone.utc)
+                else:
+                    # Create new assessment
+                    gate_assessment = GateAssessment(
+                        gate_id=gate_id,
+                        status='PASS' if is_valid else 'FAIL',
+                        p_gate=quality_score,
+                        rationale={
+                            'overall_score': quality_score,
+                            'is_valid': is_valid,
+                            'validation_details': validation_details
+                        },
+                        assessment_method='refactored_pipeline',
+                        confidence_in_assessment=quality_score,
+                        assessment_notes={
+                            'study_cards_count': validation_details.get('study_cards', {}).get('count', 0),
+                            'factsheets_count': validation_details.get('factsheets', {}).get('count', 0),
+                            'patterns_count': validation_details.get('patterns', {}).get('count', 0),
+                            'quotes_count': validation_details.get('quotes', {}).get('count', 0)
+                        },
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc)
+                    )
+                    session.add(gate_assessment)
                 
                 session.commit()
                 logger.info(f"Persisted gate assessment for trial {trial_id}: G1={'PASS' if is_valid else 'FAIL'}")

@@ -194,13 +194,24 @@ class PatternDetectionService:
             )
             
             if patterns:
-                # Add metadata to each pattern
+                # Convert SQLAlchemy objects to dictionaries and add metadata
+                pattern_dicts = []
                 for pattern in patterns:
-                    pattern['trial_id'] = trial_id
-                    pattern['document_id'] = content_item.get('document_id')
-                    pattern['detection_timestamp'] = self._get_current_timestamp()
+                    # Convert SQLAlchemy object to dictionary
+                    pattern_dict = {
+                        'family_id': pattern.family_id,
+                        'pattern_id': pattern.pattern_id,
+                        'severity': pattern.severity,
+                        'confidence': pattern.confidence,
+                        'rationale': pattern.rationale,
+                        'evidence_spans': pattern.evidence_spans,
+                        'trial_id': trial_id,
+                        'document_id': content_item.get('document_id'),
+                        'detection_timestamp': self._get_current_timestamp()
+                    }
+                    pattern_dicts.append(pattern_dict)
                 
-                return patterns
+                return pattern_dicts
             
             return []
             

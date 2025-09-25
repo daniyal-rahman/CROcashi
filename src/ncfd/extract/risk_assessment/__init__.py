@@ -6,12 +6,9 @@ Contains Pattern Families risk assessment system:
 - Pattern Models: Data models for pattern detection
 """
 
-from .pattern_scorer import PatternFamilyScorer
-from .models import PatternDetection, PatternScore, SeverityLevel
+from .pattern_scorer import PatternFamilyScorer, PatternScore
 
 __all__ = [
     "PatternFamilyScorer",
-    "PatternDetection",
-    "PatternScore", 
-    "SeverityLevel"
+    "PatternScore"
 ]

@@ -78,12 +78,11 @@ help: ## Show this help message
 	@echo "  lint               - Check code style with ruff and black"
 	@echo "  type               - Run type checking with mypy"
 	@echo "  test               - Run tests"
-	@echo "  test-cassava       - Run comprehensive Cassava pipeline test"
+	@echo "  test-cassava       - Run consolidated Cassava pipeline test"
 	@echo "  test-cassava-clean - Run Cassava test with fresh database"
-	@echo "  test-cassava-v2    - Run Comprehensive Cassava Pipeline Test V2"
-	@echo "  test-cassava-v2-clean - Run Cassava V2 test with fresh database (nuke + rebuild)"
-	@echo "  test-cassava-extraction-focused - Run Cassava Extraction Focused Test (seeds 3 studies, skips ingestion)"
-	@echo "  test-cassava-extraction-focused-clean - Run Cassava Extraction Focused Test with fresh database (nuke + rebuild)"
+	@echo "  test-content-retrieval - Run content retrieval fallback chain test"
+	@echo "  test-enhanced-content-retrieval - Run enhanced content retrieval test"
+	@echo "  test-pmc-fix - Run PMC content retrieval fix test"
 	@echo ""
 	@echo "Database Management:"
 	@echo "  db_up              - Start database with Docker Compose"
@@ -155,12 +154,26 @@ type: ## Run type checking with mypy
 test: ## Run tests
 	CONFIG_PROFILE=local $(VENV)/bin/pytest -q
 
-test-cassava: ## Run comprehensive Cassava pipeline test
-	$(PYTHON) tests/scripts/run_comprehensive_cassava_test.py
+test-cassava: ## Run consolidated Cassava pipeline test
+	$(PYTHON) tests/scripts/run_cassava_pipeline_test.py
 
-test-cassava-clean: ## Run Cassava test with fresh database
+test-cassava-clean: ## Run consolidated Cassava pipeline test with fresh database
+	@echo "🧹 Running consolidated Cassava pipeline test with fresh database..."
 	$(MAKE) db_reset
-	$(PYTHON) tests/scripts/run_comprehensive_cassava_test.py
+	$(MAKE) db_nuke
+	$(MAKE) db_up
+	$(MAKE) db_wait
+	$(MAKE) migrate_up
+	$(PYTHON) tests/scripts/run_cassava_pipeline_test.py
+
+test-content-retrieval: ## Run content retrieval fallback chain test
+	$(PYTHON) tests/scripts/run_content_retrieval_fallback_test.py
+
+test-enhanced-content-retrieval: ## Run enhanced content retrieval fallback chain test
+	$(PYTHON) tests/scripts/run_enhanced_content_retrieval_test.py
+
+test-pmc-fix: ## Run PMC content retrieval fix test
+	$(PYTHON) tests/scripts/run_pmc_content_fix_test.py
 
 # --- Database Management ---
 
@@ -569,25 +582,6 @@ db.dump: db_dump_host
 db.dump.schema: db_dump_schema_host
 db.restore: db_restore_host
 
-# --- Cassava Pipeline Test V2 ---
-.PHONY: test-cassava-v2 test-cassava-v2-clean test-cassava-extraction-focused setup-db
-test-cassava-v2: setup-db ## Run Comprehensive Cassava Pipeline Test V2
-	@echo "🧪 Running Comprehensive Cassava Pipeline Test V2..."
-	$(PYTHON) tests/scripts/run_cassava_test_v2.py
-
-test-cassava-v2-clean: ## Run Cassava V2 test with fresh database (nuke + rebuild)
-	@echo "🧹 Running Cassava V2 test with fresh database..."
-	$(MAKE) db_reset
-	$(PYTHON) tests/scripts/run_cassava_test_v2.py
-
-test-cassava-extraction-focused: ## Run Cassava Extraction Focused Test (seeds 3 studies, skips ingestion)
-	@echo "🧪 Running Cassava Extraction Focused Test..."
-	$(PYTHON) tests/scripts/run_cassava_extraction_focused_test.py
-
-test-cassava-extraction-focused-clean: ## Run Cassava Extraction Focused Test with fresh database (nuke + rebuild)
-	@echo "🧹 Running Cassava Extraction Focused Test with fresh database..."
-	$(MAKE) db_reset
-	$(PYTHON) tests/scripts/run_cassava_extraction_focused_test.py
 
 setup-db: ## Setup test database with required PostgreSQL extensions
 	@echo "🔧 Setting up test database with required extensions..."

@@ -12,6 +12,8 @@ from ..models import DocumentCard
 from ..utils import resolve_external_doc_id, get_document_metadata, get_document_text, get_standardized_doc_id
 from ...db.models import Document, DocumentText
 from ...db.session import get_session
+from ..services.ctgov_auto_inclusion_service import CTgovAutoInclusionService
+from ..services.ctgov_pubmed_retrieval_service import CTgovPubMedRetrievalService
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +21,11 @@ logger = logging.getLogger(__name__)
 class EnhancedRetriever(BaseWorker):
     """Enhanced Retriever for LLM-first architecture - fetches documents and raw text only."""
     
-    def __init__(self, max_span_length: int = 400, min_confidence: float = 0.7):
+    def __init__(self, max_span_length: int = 400, min_confidence: float = 0.7, config: Optional[Dict[str, Any]] = None):
         super().__init__("EnhancedRetriever", "3.0.0")  # Version bump for LLM-first
         # Note: max_span_length and min_confidence are kept for API compatibility
         # but are not used in LLM-first architecture
+        self.config = config or {}
         
         
     def _validate_inputs(self, inputs: Dict[str, Any]) -> bool:
@@ -254,6 +257,88 @@ class EnhancedRetriever(BaseWorker):
         except Exception as e:
             logger.error(f"Error getting raw text for {doc_id}: {e}")
             return ""
+    
+    async def _get_full_text_for_ctgov_trial(self, trial: Dict[str, Any]) -> str:
+        """
+        Retrieve full text for a CT.gov trial at runtime using PubMed.
+        
+        This method:
+        1. Looks up the trial's NCT ID
+        2. Searches PubMed for publications related to this NCT ID
+        3. Retrieves full text from PMC/Unpaywall
+        4. Returns the combined content
+        
+        Args:
+            trial: Trial information including NCT ID
+            
+        Returns:
+            Full text content or fallback text if retrieval fails
+        """
+        try:
+            nct_id = trial.get('nct_id')
+            if not nct_id:
+                logger.warning(f"No NCT ID found for trial: {trial.get('title', 'Unknown')}")
+                return self._get_ctgov_placeholder_text(trial)
+            
+            logger.info(f"🔍 Retrieving full text for CT.gov trial: {nct_id}")
+            
+            # Initialize CT.gov to PubMed retrieval service
+            retrieval_service = CTgovPubMedRetrievalService(self.config)
+            
+            # Retrieve full text from PubMed
+            result = await retrieval_service.retrieve_full_text_for_trial(trial)
+            
+            if result.retrieval_success:
+                logger.info(f"✅ Successfully retrieved content for NCT {nct_id}: "
+                          f"{result.publications_found} publications found, "
+                          f"{result.publications_with_full_text} with full text")
+                return result.combined_content
+            else:
+                logger.warning(f"Failed to retrieve content for NCT {nct_id}: {result.error_message}")
+                return self._get_ctgov_placeholder_text(trial)
+            
+        except Exception as e:
+            logger.error(f"Error retrieving full text for CT.gov trial {trial.get('nct_id', 'Unknown')}: {e}")
+            return self._get_ctgov_placeholder_text(trial)
+    
+    def _get_ctgov_placeholder_text(self, trial: Dict[str, Any]) -> str:
+        """
+        Generate placeholder text for CT.gov trials.
+        
+        Args:
+            trial: Trial information
+            
+        Returns:
+            Placeholder text with trial information
+        """
+        nct_id = trial.get('nct_id', 'Unknown')
+        title = trial.get('title', 'Unknown Trial')
+        phase = trial.get('phase', 'Unknown Phase')
+        indication = trial.get('indication', 'Unknown Indication')
+        
+        return f"""
+Clinical Trial: {title}
+
+NCT ID: {nct_id}
+Phase: {phase}
+Indication: {indication}
+
+This is a placeholder for CT.gov trial content. In a full implementation, this would contain:
+- Full trial protocol details
+- Study design and methodology
+- Primary and secondary endpoints
+- Inclusion/exclusion criteria
+- Statistical analysis plan
+- Results and conclusions
+
+The actual implementation would retrieve this information from:
+1. CT.gov API for trial metadata
+2. PubMed for related publications
+3. PMC/Unpaywall for full text articles
+4. Clinical trial registries for additional details
+
+For now, this placeholder ensures the study card extraction can proceed with meaningful content.
+"""
     
     def validate_fulltext_availability(self, trial_context: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """

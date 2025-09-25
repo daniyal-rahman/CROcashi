@@ -125,6 +125,13 @@ class BaseLLMClient(ABC):
         
         # Generic logging
         self.logger.info(f"🚀 LLM Request - Client: {self.name}, Provider: {self.llm_provider.provider_name}, Model: {self.model}")
+        self.logger.info(f"🔍 LLM REQUEST DEBUG:")
+        self.logger.info(f"   Messages count: {len(message_list)}")
+        for i, msg in enumerate(message_list):
+            self.logger.info(f"   Message {i+1} ({msg.role}): {msg.content[:200]}...")
+        self.logger.info(f"   Temperature: {generation_config.temperature}")
+        self.logger.info(f"   Max tokens: {generation_config.max_tokens}")
+        self.logger.info(f"   JSON output: {generation_config.json_output}")
         
         # Make call with retries and timeout
         policy = self.retry_policy

@@ -1,0 +1,22 @@
+{
+  "test_name": "Consolidated Cassava Pipeline Test",
+  "start_time": "2025-09-24T17:55:49.743360",
+  "end_time": "2025-09-24T18:05:30.666208",
+  "duration_seconds": 580.922848,
+  "results": {
+    "pipeline_extraction": {
+      "study_cards": 0,
+      "factsheets": 0,
+      "patterns": 0,
+      "quotes": 0,
+      "success": false,
+      "trials_processed": 1
+    },
+    "final_counts": {
+      "study_cards": 0,
+      "factsheets": 0,
+      "patterns": 0,
+      "gates": 1
+    }
+  }
+}

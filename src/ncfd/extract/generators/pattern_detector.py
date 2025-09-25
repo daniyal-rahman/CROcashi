@@ -12,7 +12,7 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..risk_assessment.models import PatternDetection, SeverityLevel
+from ...db.models import PatternDetection
 from ...llm.base_worker import BaseLLMWorker
 
 logger = logging.getLogger(__name__)
@@ -225,7 +225,8 @@ class PatternFamilyDetector(BaseLLMWorker):
             # Parse the response using robust JSON parsing
             result = response.content
             self.logger.debug(f"LLM raw response type: {type(result)}")
-            self.logger.debug(f"LLM raw response content: {str(result)[:500]}...")
+            self.logger.debug(f"LLM raw response FULL CONTENT:")
+            self.logger.debug(f"{str(result)}")
             
             if isinstance(result, str):
                 # Use robust JSON parsing like other generators
@@ -389,11 +390,16 @@ Severity Rules: {pattern['severity_rules']}
                     detection_data['family_id'] = family_id
                     detection_data['pattern_id'] = pattern_id
                     
-                    # Validate severity value (allow 0-3 as per SeverityLevel enum)
+                    # Validate severity value (allow 0-2 as per database constraint)
                     severity_value = detection_data['severity']
                     if not isinstance(severity_value, int) or severity_value < 0 or severity_value > 3:
                         self.logger.warning(f"Invalid severity value {severity_value} for detection {i}")
                         continue
+                    
+                    # Convert severity=3 to severity=2 to match database constraint
+                    if severity_value == 3:
+                        severity_value = 2
+                        self.logger.debug(f"Converted severity 3 to 2 for detection {i}")
                     
                     # Validate confidence value
                     confidence_value = detection_data['confidence']
@@ -404,7 +410,7 @@ Severity Rules: {pattern['severity_rules']}
                     detection = PatternDetection(
                         family_id=detection_data['family_id'],
                         pattern_id=detection_data['pattern_id'],
-                        severity=SeverityLevel(severity_value),
+                        severity=severity_value,  # Use integer directly
                         confidence=float(confidence_value),
                         rationale=detection_data['rationale'],
                         evidence_spans=detection_data.get('evidence_spans', [])
@@ -434,11 +440,11 @@ Severity Rules: {pattern['severity_rules']}
                 for detection in detections:
                     if detection.pattern_id == 'F2P1':
                         if power < 0.5:
-                            detection.severity = SeverityLevel.RED
+                            detection.severity = 2  # RED (changed from 3 to 2)
                         elif power < 0.8:
-                            detection.severity = SeverityLevel.YELLOW
+                            detection.severity = 1  # YELLOW
                         else:
-                            detection.severity = SeverityLevel.GREY
+                            detection.severity = 0  # GREY
         
         return detections
     

@@ -107,8 +107,10 @@ class StudyCardPipelineRefactored:
                 logger.info(f"Processing trial {i+1}/{len(trial_list)}: {trial_id}")
                 
                 try:
-                    # Get entity pack for this trial
-                    entity_pack = entity_packs[i] if entity_packs and i < len(entity_packs) else None
+                    # Get entity pack from trial object or from entity_packs parameter
+                    entity_pack = trial.get('entity_pack')
+                    if not entity_pack and entity_packs and i < len(entity_packs):
+                        entity_pack = entity_packs[i]
                     
                     # Process trial with enhanced services
                     trial_result = await self._process_single_trial_enhanced(trial, entity_pack)

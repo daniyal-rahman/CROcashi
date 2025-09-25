@@ -128,6 +128,13 @@ class BaseLLMWorker:
         
         # Log the request  
         self.logger.info(f"🚀 Starting LLM call - Worker: {self.__class__.__name__}, Provider: {self.llm_provider.provider_name}, Model: {self.model}")
+        self.logger.info(f"🔍 LLM REQUEST DEBUG:")
+        self.logger.info(f"   Messages count: {len(message_list)}")
+        for i, msg in enumerate(message_list):
+            self.logger.info(f"   Message {i+1} ({msg.role}): {msg.content[:200]}...")
+        self.logger.info(f"   Temperature: {generation_config.temperature}")
+        self.logger.info(f"   Max tokens: {generation_config.max_tokens}")
+        self.logger.info(f"   JSON output: {generation_config.json_output}")
         
         # Make the call with retries
         max_retries = getattr(self, 'max_retries', 3)
@@ -293,6 +300,8 @@ class BaseLLMExtractor(BaseLLMClient, ABC):
         self.logger.info(f"🔍 LLM RAW RESPONSE DEBUG:")
         self.logger.info(f"   Type: {type(result)}")
         self.logger.info(f"   Content length: {len(str(result))}")
+        self.logger.info(f"   FULL CONTENT:")
+        self.logger.info(f"   {str(result)}")
         
         if isinstance(result, str):
             from ..llm.json_parser import parse_llm_json_response

@@ -8,7 +8,7 @@ import logging
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 
-from ..models.study_card import StudyCard
+from ...db.models import StudyCard
 from ..models.evidence_field import EvidenceField
 from ...llm.base_worker import BaseLLMWorker
 from ...llm.json_parser import parse_llm_json_response, validate_confidence_score
@@ -78,7 +78,8 @@ class LLMStudyCardExtractor(BaseLLMWorker):
             self.logger.info(f"🔍 LLM RAW RESPONSE DEBUG:")
             self.logger.info(f"   Type: {type(result)}")
             self.logger.info(f"   Content length: {len(str(result))}")
-            self.logger.info(f"   Content preview: {str(result)[:500]}...")
+            self.logger.info(f"   FULL CONTENT:")
+            self.logger.info(f"   {str(result)}")
             
             if isinstance(result, str):
                 parsed_result = parse_llm_json_response(result, expected_fields=["study_card_data", "field_quotes"])

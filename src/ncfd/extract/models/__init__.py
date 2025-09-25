@@ -8,8 +8,6 @@ from .base import BaseModel, ProvenanceMixin
 from .document_card import DocumentCard
 from .evidence_span import Span
 from .evidence_field import EvidenceField
-from .study_card import StudyCard
-from .factsheet import Factsheet
 from .decision_record import DecisionRecord
 
 __all__ = [
@@ -18,7 +16,5 @@ __all__ = [
     "DocumentCard",
     "Span",
     "EvidenceField",
-    "StudyCard",
-    "Factsheet",
     "DecisionRecord",
 ]

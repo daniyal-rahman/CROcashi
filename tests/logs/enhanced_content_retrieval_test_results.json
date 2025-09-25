@@ -1,0 +1,246 @@
+{
+  "test_name": "Enhanced Content Retrieval Fallback Chain Test",
+  "start_time": "2025-09-24T23:21:45.743391+00:00",
+  "end_time": null,
+  "duration_seconds": null,
+  "test_config": {
+    "client_config": {
+      "rate_limit_requests_per_minute": 60,
+      "timeout_seconds": 30,
+      "max_retries": 3,
+      "api_key": null,
+      "email": "test@example.com",
+      "tool": "NCFD-Test"
+    },
+    "apis": {
+      "pubmed": {
+        "rate_limit_per_minute": 60,
+        "timeout_seconds": 30
+      },
+      "pmc": {
+        "rate_limit_per_minute": 30,
+        "timeout_seconds": 45
+      },
+      "unpaywall": {
+        "rate_limit_per_minute": 30,
+        "timeout_seconds": 30
+      }
+    },
+    "fallback_order": [
+      "pmc",
+      "pubmed",
+      "unpaywall"
+    ],
+    "quality": {
+      "min_content_length": 100
+    }
+  },
+  "test_papers": [
+    {
+      "pmcid": "PMC10531384",
+      "title": "Simufilam Reverses Aberrant Receptor Interactions",
+      "description": "Mechanism paper (2023): FLNA\u2013\u03b17nAChR receptor interactions (Cell Mol Neurobiol)",
+      "expected_source": "pmc",
+      "should_have_content": true
+    },
+    {
+      "pmcid": "PMC10339288",
+      "title": "Simufilam suppresses overactive mTOR and restores its",
+      "description": "Mechanism paper (2023): mTOR/lymphocytes (Frontiers in Aging)",
+      "expected_source": "pmc",
+      "should_have_content": true
+    },
+    {
+      "pmcid": null,
+      "pmid": "12345678",
+      "title": "PTI-125 Reduces Biomarkers of Alzheimer's Disease in Patients",
+      "description": "JPAD 2020 Phase 2a trial paper (PTI-125 reduces AD biomarkers)",
+      "expected_source": "pubmed_or_unpaywall",
+      "should_have_content": false
+    }
+  ],
+  "results": {
+    "fixed_pmc_service": {
+      "PMC10531384": {
+        "success": false,
+        "content_length": 0,
+        "method": "plain_text_failed",
+        "has_content": false,
+        "content_preview": null
+      },
+      "PMC10339288": {
+        "success": false,
+        "content_length": 0,
+        "method": "plain_text_failed",
+        "has_content": false,
+        "content_preview": null
+      }
+    },
+    "enhanced_api_clients": {
+      "pmc": {
+        "PMC10531384": {
+          "success": false,
+          "content_length": 0,
+          "source": "pmc",
+          "error": "Failed to fetch from PMC",
+          "has_content": false,
+          "metadata": null
+        },
+        "PMC10339288": {
+          "success": false,
+          "content_length": 0,
+          "source": "pmc",
+          "error": "Failed to fetch from PMC",
+          "has_content": false,
+          "metadata": null
+        }
+      },
+      "pubmed": {
+        "12345678": {
+          "success": true,
+          "content_length": 1436,
+          "source": "pubmed",
+          "error": null,
+          "has_content": true,
+          "metadata": {
+            "pmid": "12345678",
+            "type": "abstract"
+          }
+        }
+      }
+    },
+    "runtime_generator": {
+      "PMC10531384": {
+        "success": true,
+        "content_length": 1120,
+        "has_content": true,
+        "content_preview": "US President Bill Clinton as the keynote speaker of a two-day forum addressing population challenges noted how there was less discord among representatives of the 174 countries to the 1994 Internation",
+        "content_analysis": {
+          "length": 1120,
+          "quality": "low",
+          "type": "generic_content",
+          "has_abstract": false,
+          "has_methods": false,
+          "has_results": false,
+          "has_references": false,
+          "cassava_mentions": 0,
+          "simufilam_mentions": 0,
+          "alzheimer_mentions": 0
+        }
+      },
+      "PMC10339288": {
+        "success": true,
+        "content_length": 1660,
+        "has_content": true,
+        "content_preview": "The Prime Minister of Norway discusses issues of population growth and sustainable development. Months before the 1994 International Conference on Population and Development, she establishes the basis",
+        "content_analysis": {
+          "length": 1660,
+          "quality": "low",
+          "type": "generic_content",
+          "has_abstract": false,
+          "has_methods": false,
+          "has_results": false,
+          "has_references": false,
+          "cassava_mentions": 0,
+          "simufilam_mentions": 0,
+          "alzheimer_mentions": 0
+        }
+      }
+    },
+    "direct_pubmed_client": {
+      "PMC10531384": {
+        "jats": {
+          "success": false,
+          "length": 0
+        },
+        "plain_text": {
+          "success": false,
+          "length": 0
+        }
+      },
+      "PMC10339288": {
+        "jats": {
+          "success": false,
+          "length": 0
+        },
+        "plain_text": {
+          "success": false,
+          "length": 0
+        }
+      }
+    },
+    "unpaywall_fixes": {
+      "10.1007/s11064-023-04020-9": {
+        "success": false,
+        "content_length": 0,
+        "source": "unpaywall",
+        "error": "Failed to fetch from Unpaywall",
+        "has_content": false,
+        "metadata": null,
+        "is_oa": null,
+        "pdf_url": null
+      },
+      "10.1038/s41586-023-06221-2": {
+        "success": false,
+        "content_length": 0,
+        "source": "unpaywall",
+        "error": "Failed to fetch from Unpaywall",
+        "has_content": false,
+        "metadata": null,
+        "is_oa": null,
+        "pdf_url": null
+      },
+      "10.1016/j.cell.2023.05.012": {
+        "success": false,
+        "content_length": 0,
+        "source": "unpaywall",
+        "error": "Failed to fetch from Unpaywall",
+        "has_content": false,
+        "metadata": null,
+        "is_oa": null,
+        "pdf_url": null
+      }
+    },
+    "enhanced_summary": {
+      "total_papers_tested": 2,
+      "total_dois_tested": 3,
+      "pmc_success_rate": 0.0,
+      "pubmed_success_rate": 1.0,
+      "unpaywall_success_rate": 0.0,
+      "runtime_generator_success_rate": 1.0,
+      "direct_client_success_rate": 0.0,
+      "overall_success": true,
+      "content_quality_analysis": {
+        "PMC10531384": {
+          "length": 1120,
+          "quality": "low",
+          "type": "generic_content",
+          "has_abstract": false,
+          "has_methods": false,
+          "has_results": false,
+          "has_references": false,
+          "cassava_mentions": 0,
+          "simufilam_mentions": 0,
+          "alzheimer_mentions": 0
+        },
+        "PMC10339288": {
+          "length": 1660,
+          "quality": "low",
+          "type": "generic_content",
+          "has_abstract": false,
+          "has_methods": false,
+          "has_results": false,
+          "has_references": false,
+          "cassava_mentions": 0,
+          "simufilam_mentions": 0,
+          "alzheimer_mentions": 0
+        }
+      },
+      "recommendations": [
+        "PMC access is failing - consider using PubMed fallback",
+        "PubMed fallback is working - use this as primary method",
+        "Runtime generator fallback chain is working - use in production"
+      ]
+    }
+  }
+}

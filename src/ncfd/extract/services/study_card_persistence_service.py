@@ -172,6 +172,21 @@ class StudyCardPersistenceService:
         
         return saved_count
     
+    def _safe_numeric_value(self, value: Any) -> Optional[float]:
+        """Convert value to numeric, returning None for non-numeric strings."""
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            # Check if it's a numeric string
+            try:
+                return float(value)
+            except ValueError:
+                # Non-numeric string like "Not reported in document"
+                return None
+        return None
+    
     async def _persist_factsheets(self, factsheets: List[Dict[str, Any]], trial_id: str) -> int:
         """Persist factsheets to database."""
         saved_count = 0
@@ -195,10 +210,10 @@ class StudyCardPersistenceService:
                             safety_results=factsheet.get('safety_results', {}),
                             primary_analysis_set=factsheet.get('primary_analysis_set'),
                             secondary_analysis_sets=factsheet.get('secondary_analysis_sets', {}),
-                            total_enrolled=factsheet.get('total_enrolled'),
-                            completed_primary_endpoint=factsheet.get('completed_primary_endpoint'),
-                            dropout_rate=factsheet.get('dropout_rate'),
-                            follow_up_completion=factsheet.get('follow_up_completion'),
+                            total_enrolled=self._safe_numeric_value(factsheet.get('total_enrolled')),
+                            completed_primary_endpoint=self._safe_numeric_value(factsheet.get('completed_primary_endpoint')),
+                            dropout_rate=self._safe_numeric_value(factsheet.get('dropout_rate')),
+                            follow_up_completion=self._safe_numeric_value(factsheet.get('follow_up_completion')),
                             created_at=datetime.now(timezone.utc),
                             updated_at=datetime.now(timezone.utc)
                         )

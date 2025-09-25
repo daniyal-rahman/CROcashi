@@ -15,9 +15,7 @@ from .generators import (
 )
 from .risk_assessment import (
     PatternFamilyScorer,
-    PatternDetection,
-    PatternScore,
-    SeverityLevel
+    PatternScore
 )
 from .retrieval import (
     EnhancedRetriever,
@@ -31,9 +29,7 @@ __all__ = [
     'PatternFamilyDetector',
     # Risk Assessment
     'PatternFamilyScorer',
-    'PatternDetection',
     'PatternScore',
-    'SeverityLevel',
     # Retrieval
     'EnhancedRetriever',
     'build_retriever'

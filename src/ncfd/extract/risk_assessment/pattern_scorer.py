@@ -9,7 +9,18 @@ import math
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
-from .models import PatternDetection, PatternScore, SeverityLevel
+from ...db.models import PatternDetection
+
+@dataclass
+class PatternScore:
+    """Pattern scoring result."""
+    trial_id: str
+    p_fail_llm: float
+    score_0_100: float
+    uncertainty: float
+    family_contributions: Dict[str, float]
+    over_index: float
+    top_patterns: List[str]
 
 @dataclass
 class FamilyAggregation:
