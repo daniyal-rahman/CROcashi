@@ -9,6 +9,7 @@ from .factsheet_extraction_service import FactsheetExtractionService
 from .pattern_detection_service import PatternDetectionService
 from .quality_gate_validation_service import QualityGateValidationService
 from .study_card_persistence_service import StudyCardPersistenceService
+from .signal_evaluation_service import SignalEvaluationService, SignalEvaluationResult
 
 __all__ = [
     'DocumentPrioritizationService',
@@ -19,4 +20,6 @@ __all__ = [
     'PatternDetectionService',
     'QualityGateValidationService',
     'StudyCardPersistenceService',
+    'SignalEvaluationService',
+    'SignalEvaluationResult',
 ]

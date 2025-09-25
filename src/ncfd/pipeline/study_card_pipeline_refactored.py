@@ -20,7 +20,8 @@ from ncfd.extract.services import (
     FactsheetExtractionService,
     PatternDetectionService,
     StudyCardPersistenceService,
-    QualityGateValidationService
+    QualityGateValidationService,
+    SignalEvaluationService
 )
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ class StudyCardPipelineRefactored:
         self.pattern_detection = PatternDetectionService(config)
         self.persistence = StudyCardPersistenceService(config)
         self.quality_validation = QualityGateValidationService(config)
+        self.signal_evaluation = SignalEvaluationService(config)
         
         # Initialize retriever
         study_card_config = self.config_manager.get_section('study_card', config)
@@ -136,6 +138,9 @@ class StudyCardPipelineRefactored:
             success = len(errors) == 0
             
             logger.info(f"Study card pipeline completed: {study_cards_generated} study cards, {factsheets_generated} factsheets, {patterns_detected} patterns")
+            
+            # Generate audit report
+            self._generate_audit_report(trial_id, study_cards_generated, factsheets_generated, patterns_detected)
             
             return StudyCardPipelineOutput(
                 success=success,
@@ -268,7 +273,25 @@ class StudyCardPipelineRefactored:
                 else:
                     logger.warning(f"Trial {trial_id} has quality gate violations but continuing")
             
-            # Step 7: Persist results
+            # Step 7: Evaluate signals and gates
+            logger.info(f"Evaluating signals and gates for trial {trial_id}")
+            signal_result = await self.signal_evaluation.evaluate_signals_and_gates(
+                trial_id=trial_id,
+                study_cards=study_card_result.study_cards,
+                factsheets=factsheet_result.factsheets,
+                patterns=pattern_result.detected_patterns,
+                trial_versions=[]  # Would be populated from trial tracking
+            )
+            
+            if signal_result.success:
+                logger.info(f"Signal evaluation completed for trial {trial_id}: "
+                           f"{len(signal_result.fired_signals)} signals fired, "
+                           f"{len(signal_result.fired_gates)} gates fired, "
+                           f"P_fail={signal_result.p_fail:.3f}")
+            else:
+                logger.warning(f"Signal evaluation failed for trial {trial_id}: {signal_result.errors}")
+            
+            # Step 8: Persist results
             logger.info(f"Persisting results for trial {trial_id}")
             persistence_result = await self.persistence.persist_results(
                 study_card_result.study_cards,
@@ -484,3 +507,66 @@ class StudyCardPipelineRefactored:
         
         logger.info(f"Extracted {len(extracted_quotes)} quotes from {len(factsheets)} factsheets")
         return extracted_quotes
+    
+    def _generate_audit_report(self, trial_id: str, study_cards_count: int, factsheets_count: int, patterns_count: int):
+        """Generate audit report for subgroup/endpoint analysis."""
+        try:
+            import json
+            
+            audit = {
+                "trial_id": trial_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "summary": {
+                    "study_cards": study_cards_count,
+                    "factsheets": factsheets_count,
+                    "patterns": patterns_count
+                },
+                "endpoint_changes": [],
+                "subgroup_claims": [],
+                "signal_summary": {}
+            }
+            
+            # Query database for analysis claims
+            from ncfd.db.session import session_scope
+            from ncfd.db.models import Factsheet
+            
+            with session_scope() as session:
+                
+                # Get factsheets for this trial
+                factsheets = session.query(Factsheet).join(
+                    session.query().from_statement(
+                        f"SELECT doc_id FROM documents WHERE trial_id = {trial_id}"
+                    ).subquery()
+                ).all()
+                
+                # Extract analysis claims
+                for factsheet in factsheets:
+                    claims = factsheet.analysis_claims or []
+                    for claim in claims:
+                        audit["subgroup_claims"].append({
+                            "subgroup": claim.get('subgroup', {}).get('label', 'Unknown'),
+                            "p_value": claim.get('subgroup_result', {}).get('p_value'),
+                            "adjusted": claim.get('subgroup_result', {}).get('adjusted', True),
+                            "nominal": claim.get('subgroup_result', {}).get('is_nominal', False),
+                            "prespecified": claim.get('subgroup', {}).get('prespecified', True),
+                            "analysis_set": claim.get('analysis_set', 'Unknown'),
+                            "evidence_tier": claim.get('evidence_strength', 'unknown'),
+                            "quote": claim.get('quote_spans', [{}])[0].get('text', '')[:200] if claim.get('quote_spans') else ''
+                        })
+            
+            # Log audit summary
+            logger.info("🔍 SUBGROUP/ENDPOINT AUDIT:")
+            logger.info(f"  Endpoint Changes: {len(audit['endpoint_changes'])}")
+            logger.info(f"  Subgroup Claims: {len(audit['subgroup_claims'])}")
+            
+            for claim in audit['subgroup_claims']:
+                logger.info(f"    • {claim['subgroup']}: p={claim['p_value']}, adjusted={claim['adjusted']}, nominal={claim['nominal']}")
+            
+            # Save to file
+            import os
+            os.makedirs("tests/logs", exist_ok=True)
+            with open(f"tests/logs/subgroup_audit_{trial_id}.json", "w") as f:
+                json.dump(audit, f, indent=2)
+                
+        except Exception as e:
+            logger.warning(f"Failed to generate audit report: {e}")

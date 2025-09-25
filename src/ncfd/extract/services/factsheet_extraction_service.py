@@ -205,7 +205,8 @@ class FactsheetExtractionService:
                         'total_enrolled': getattr(factsheet, 'total_enrolled', None),
                         'completed_primary_endpoint': getattr(factsheet, 'completed_primary_endpoint', None),
                         'dropout_rate': getattr(factsheet, 'dropout_rate', None),
-                        'follow_up_completion': getattr(factsheet, 'follow_up_completion', None)
+                        'follow_up_completion': getattr(factsheet, 'follow_up_completion', None),
+                        'analysis_claims': getattr(factsheet, 'analysis_claims', [])
                     }
                 else:
                     # It's already a dictionary

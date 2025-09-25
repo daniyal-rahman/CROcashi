@@ -296,6 +296,11 @@ class CassavaPipelineTest:
                 },
                 "database": {
                     "url": "postgresql+psycopg2://ncfd:ncfd@localhost:5433/ncfd"
+                },
+                "signals": {
+                    "enable_signals": True,
+                    "enable_gates": True,
+                    "enable_scoring": True
                 }
                 # TODO: Fix broken guardrails system - currently rejects legitimate research
                 # The risk scoring system incorrectly flags "mechanism", "biomarker", etc. as risky

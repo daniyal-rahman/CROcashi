@@ -108,30 +108,49 @@ def S2_underpowered_pivotal(card: Dict[str, Any]) -> SignalResult:
 def S3_subgroup_only_no_multiplicity(card: Dict[str, Any]) -> SignalResult:
     """
     S3 - Subgroup-only win without multiplicity adjustment
+    
+    Detects subgroup-only wins where:
+    - Overall result is NS/no-control AND
+    - Subgroup shows positive effect AND
+    - (Not prespecified OR unadjusted/nominal OR interaction_p≥0.05 OR biased analysis set)
     """
-    primary_result = card.get("primary_result", {})
-    itt_result = primary_result.get("ITT", {})
+    analysis_claims = card.get('analysis_claims', [])
     
-    # If overall ITT is significant, no issue
-    if itt_result.get("p", 1.0) < 0.05:
-        return SignalResult(False, "L", "Overall ITT result is significant")
+    flagged_claims = []
+    evidence_ids = []
     
-    subgroups = card.get("subgroups", [])
-    flagged_subgroups = []
+    for claim in analysis_claims:
+        overall = claim.get('overall_result', {})
+        subgroup = claim.get('subgroup', {})
+        subgroup_result = claim.get('subgroup_result', {})
+        
+        # S3 Rule: overall NS/no-control AND subgroup p<α AND 
+        # (not prespecified OR unadjusted/nominal OR interaction_p≥0.05 OR analysis_set ∈ {PP,Completers,OL})
+        overall_ns = (overall.get('effect') == 'NS' or 
+                     overall.get('effect') == 'N/A' or 
+                     overall.get('p_value', 1.0) >= 0.05)
+        
+        subgroup_sig = subgroup_result.get('p_value', 1.0) < 0.05
+        subgroup_positive = subgroup_result.get('effect') in ['FavoursTx', 'FavoursTreatment']
+        
+        if overall_ns and subgroup_sig and subgroup_positive:
+            not_prespecified = not subgroup.get('prespecified', True)
+            unadjusted = (not subgroup_result.get('adjusted', True) or 
+                         subgroup_result.get('is_nominal', False))
+            failed_interaction = subgroup_result.get('interaction_p', 0.0) >= 0.05
+            biased_analysis = claim.get('analysis_set', '').upper() in {'PP', 'COMPLETERS', 'OPEN-LABEL'}
+            
+            if not_prespecified or unadjusted or failed_interaction or biased_analysis:
+                flagged_claims.append(claim)
+                evidence_ids.append(claim.get('source_id', ''))
     
-    for subgroup in subgroups:
-        # Check for unadjusted significant subgroups
-        if (subgroup.get("p", 1.0) < 0.05 and 
-            not subgroup.get("adjusted", False) and
-            not subgroup.get("pre_specified_interaction", False)):
-            flagged_subgroups.append(subgroup.get("name", "Unknown"))
+    if flagged_claims:
+        severity = "H" if len(flagged_claims) > 1 else "M"
+        subgroup_labels = [claim.get('subgroup', {}).get('label', 'Unknown') for claim in flagged_claims]
+        reason = f"Subgroup-only wins detected: {', '.join(subgroup_labels)}"
+        return SignalResult(True, severity, reason, evidence_ids=evidence_ids)
     
-    if flagged_subgroups:
-        severity = "H" if len(flagged_subgroups) > 1 else "M"
-        reason = f"Subgroup-only wins without multiplicity adjustment: {', '.join(flagged_subgroups)}"
-        return SignalResult(True, severity, reason, evidence_ids=[card.get("study_id", "")])
-    
-    return SignalResult(False, "L", "No unadjusted subgroup-only wins detected")
+    return SignalResult(False, "L", "No subgroup-only wins detected")
 
 
 def S4_itt_vs_pp_dropout(card: Dict[str, Any]) -> SignalResult:

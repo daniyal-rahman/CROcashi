@@ -1234,6 +1234,7 @@ class Factsheet(Base):
     factsheet_sections: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     provenance: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     normalized_facts: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    analysis_claims: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(JSONB, nullable=True, default=list)
     
     # Legacy clinical columns (kept for backward compatibility)
     results: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)

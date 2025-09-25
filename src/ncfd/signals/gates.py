@@ -98,29 +98,42 @@ def _evaluate_g1(fired_signals: Dict[str, Any]) -> GateResult:
 
 
 def _evaluate_g2(fired_signals: Dict[str, Any]) -> GateResult:
-    """G2: Analysis-Gaming = S3 & S4"""
+    """G2: Analysis-Gaming = S3 & (S4 OR nominal/unadjusted OR failed interaction)"""
     s3_fired = "S3" in fired_signals
     s4_fired = "S4" in fired_signals
     
-    fired = s3_fired and s4_fired
+    # G2 fires if S3 is true AND (S4 OR nominal/unadjusted patterns in S3 evidence)
+    fired = False
     supporting_signals = []
     supporting_evidence = []
     
-    if fired:
-        supporting_signals = ["S3", "S4"]
-        if s3_fired:
-            supporting_evidence.extend(fired_signals["S3"].evidence_ids or [])
+    if s3_fired:
+        # Check if S3 evidence contains nominal/unadjusted patterns
+        s3_evidence = fired_signals["S3"].evidence_ids or []
+        has_nominal_unadjusted = any(
+            "nominal" in str(eid).lower() or 
+            "unadjusted" in str(eid).lower() or
+            "post-hoc" in str(eid).lower()
+            for eid in s3_evidence
+        )
+        
+        fired = s4_fired or has_nominal_unadjusted
+        supporting_signals = ["S3"]
+        if s4_fired:
+            supporting_signals.append("S4")
+        
+        supporting_evidence.extend(s3_evidence)
         if s4_fired:
             supporting_evidence.extend(fired_signals["S4"].evidence_ids or [])
-        rationale = "S3 & S4 present - Analysis gaming detected"
+    
+    if fired:
+        rationale = "Analysis gaming detected: S3 + (S4 OR nominal/unadjusted patterns)"
         lr_used = 6.0  # From config
     else:
-        missing = []
         if not s3_fired:
-            missing.append("S3")
-        if not s4_fired:
-            missing.append("S4")
-        rationale = f"Missing {', '.join(missing)} - No analysis gaming"
+            rationale = "Missing S3 - No analysis gaming"
+        else:
+            rationale = "S3 present but no S4 or nominal/unadjusted patterns - No analysis gaming"
         lr_used = 1.0
     
     return GateResult(

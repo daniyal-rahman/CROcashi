@@ -296,21 +296,29 @@ class QualityGateValidationService:
         provenance = factsheet.get('provenance', {})
         factsheet_sections = factsheet.get('factsheet_sections', {})
         
+        # Count fields with content and fields with provenance
+        total_content_fields = 0
+        fields_with_provenance = 0
+        
         # Check if each populated field has provenance
         for field, value in factsheet_sections.items():
             if value and str(value).strip():
-                # Check both exact field name and case variations
-                if (field not in provenance and 
-                    field.lower() not in provenance and 
-                    field.upper() not in provenance):
-                    return False
+                total_content_fields += 1
                 
-                # Check if provenance has quotes
+                # Check both exact field name and case variations
                 field_provenance = provenance.get(field) or provenance.get(field.lower()) or provenance.get(field.upper())
-                if not field_provenance or not field_provenance.get('quotes'):
-                    return False
+                
+                if field_provenance and field_provenance.get('quotes'):
+                    fields_with_provenance += 1
         
-        return True
+        # Require 80% traceback threshold as requested
+        if total_content_fields == 0:
+            return True  # No content to trace back
+        
+        traceback_percentage = fields_with_provenance / total_content_fields
+        logger.info(f"Provenance traceback: {fields_with_provenance}/{total_content_fields} = {traceback_percentage:.1%}")
+        
+        return traceback_percentage >= 0.8
     
     def _check_factsheet_contradictions(self, factsheet: Dict[str, Any]) -> Optional[str]:
         """Check for contradictions in factsheet (G3.No-Contradiction)."""
@@ -421,7 +429,7 @@ class QualityGateValidationService:
                 text_length = len(quote['text'])
                 if text_length < 10:
                     warnings.append(f"Quote {i} text too short: {text_length} characters")
-                elif text_length > 500:
+                elif text_length > 1000:  # Increased from 500 to 1000 as requested
                     warnings.append(f"Quote {i} text too long: {text_length} characters")
                 else:
                     score += 0.1  # Good quote length
@@ -438,17 +446,29 @@ class QualityGateValidationService:
         """Persist gate assessments to database."""
         try:
             with session_scope() as session:
-                # Create a gate record for the overall quality gate
-                gate_record = Gate(
-                    trial_id=int(trial_id),
-                    run_id='refactored_pipeline',
-                    g_id='G1',  # Overall quality gate
-                    fired_bool=is_valid,
-                    supporting_s_ids=[],  # No specific signal IDs for overall gate
-                    lr_used=None,
-                    rationale_text=f"Overall quality validation: score={quality_score:.2f}, valid={is_valid}"
-                )
-                session.add(gate_record)
+                # Check if gate record already exists
+                existing_gate = session.query(Gate).filter(
+                    Gate.trial_id == int(trial_id),
+                    Gate.g_id == 'G1',
+                    Gate.run_id == 'refactored_pipeline'
+                ).first()
+                
+                if existing_gate:
+                    # Update existing gate record
+                    existing_gate.fired_bool = is_valid
+                    existing_gate.rationale_text = f"Overall quality validation: score={quality_score:.2f}, valid={is_valid}"
+                else:
+                    # Create new gate record
+                    gate_record = Gate(
+                        trial_id=int(trial_id),
+                        run_id='refactored_pipeline',
+                        g_id='G1',  # Overall quality gate
+                        fired_bool=is_valid,
+                        supporting_s_ids=[],  # No specific signal IDs for overall gate
+                        lr_used=None,
+                        rationale_text=f"Overall quality validation: score={quality_score:.2f}, valid={is_valid}"
+                    )
+                    session.add(gate_record)
                 
                 # Create gate assessment record (handle duplicates)
                 gate_id = f"G1_{trial_id}"

@@ -79,7 +79,7 @@ class LLMFactsheetExtractor(BaseLLMWorker):
             response = await self.call_llm(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=8000,  # Token limit to prevent parsing issues
+                max_tokens=20000,  # Increased token limit to prevent truncation (was 15000)
                 json_output=True,
                 json_schema=self._get_flexible_json_schema()
             )
@@ -143,6 +143,21 @@ class LLMFactsheetExtractor(BaseLLMWorker):
             
             # Step 9: Parse field quotes from provenance
             field_quotes = self._parse_provenance_quotes(provenance)
+            
+            # Step 10: Extract analysis claims for subgroup/endpoint detection
+            try:
+                from ncfd.extract.generators.analysis_claim_extractor import AnalysisClaimExtractor
+                claim_extractor = AnalysisClaimExtractor()
+                analysis_claims = await claim_extractor.extract_claims(raw_doc_text, doc_id)
+                
+                # Add analysis claims to factsheet
+                factsheet.analysis_claims = analysis_claims
+                
+                self.logger.info(f"Extracted {len(analysis_claims)} analysis claims for doc_id: {doc_id}")
+                
+            except Exception as e:
+                self.logger.warning(f"Failed to extract analysis claims for doc_id {doc_id}: {e}")
+                factsheet.analysis_claims = []
             
             return {
                 "factsheet": factsheet,
@@ -227,6 +242,12 @@ CRITICAL REQUIREMENTS:
 - IMPORTANT: Extract ALL available information - don't omit fields just because they don't contain specific data types
 - For preclinical studies, extract mechanism data, efficacy data, and any other relevant findings
 - For clinical studies, extract all available endpoints, safety data, and population information
+
+QUOTE REQUIREMENTS:
+- Keep quotes under 500 characters when possible
+- If information spans a longer section (e.g., 1.2k chars), quote the START of the relevant section
+- Prioritize the most relevant sentence/phrase that contains the key information
+- Don't include entire paragraphs - extract the essential quote that supports the fact
 
 RESPONSE STRUCTURE:
 You must return a JSON object with these top-level keys:
