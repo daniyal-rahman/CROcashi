@@ -3,12 +3,18 @@ from typing import Any, Dict, Optional
 
 from ingestion.utils.files import ensure_dir, write_text
 from ingestion.utils.http import HttpClient
+from ingestion.utils.staging_loader import StagingLoader, openfda_id_extractor
 
 
 API_BASE = "https://api.fda.gov"
 
 
-def search_drugs(query: str = "*", limit: int = 50, save_dir: Optional[Path] = None) -> Dict[str, Any]:
+def search_drugs(
+    query: str = "*",
+    limit: int = 50,
+    save_dir: Optional[Path] = None,
+    load_to_staging: bool = True
+) -> Dict[str, Any]:
     """Search OpenFDA drug endpoint."""
     client = HttpClient(requests_per_second=2.0)
     params = {"search": query, "limit": limit}
@@ -18,6 +24,16 @@ def search_drugs(query: str = "*", limit: int = 50, save_dir: Optional[Path] = N
     if save_dir is not None:
         ensure_dir(save_dir)
         write_text(Path(save_dir) / "openfda_drugs.json", resp.text)
+
+    # Load to staging if requested
+    if load_to_staging and isinstance(data, dict) and 'results' in data:
+        loader = StagingLoader('openfda')
+        stats = loader.load_records(
+            data['results'],
+            id_extractor=openfda_id_extractor,
+            skip_duplicates=True
+        )
+        print(f"Staging: {stats['inserted']} inserted, {stats['skipped']} skipped, {stats['errors']} errors")
 
     return data  # type: ignore[return-value]
 

@@ -20,6 +20,7 @@ class EntityType(str, Enum):
     PUBLICATION = "publication"
     PATENT = "patent"
     REGULATORY_EVENT = "regulatory_event"
+    SEC_FILING = "sec_filing"
 
 
 class MatchMethod(str, Enum):

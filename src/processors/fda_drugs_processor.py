@@ -85,7 +85,8 @@ class FDADrugsProcessor(BaseProcessor):
     def extract_relationships(
         self,
         raw_data: Dict[str, Any],
-        resolved_entities: Dict[str, UUID]
+        resolved_entities: Dict[str, UUID],
+        id_to_entity: Dict[UUID, ExtractedEntity]
     ) -> List[RelationshipExtraction]:
         """Extract relationships after entities are resolved."""
         relationships = []
@@ -96,57 +97,69 @@ class FDADrugsProcessor(BaseProcessor):
         
         # Company-drug relationship (ownership via NDA/BLA holder)
         if drug_id and company_id:
-            relationships.append(RelationshipExtraction(
-                relationship_type='company_drug',
-                source_entity=self._make_company_entity(raw_data),
-                target_entity=self._make_drug_entity(raw_data),
-                attributes={
-                    'relationship_type': 'originator',
-                    'development_stage': 'approved'
-                },
-                temporal={
-                    'start_date': self.extract_date_from_raw(raw_data, 'approval_date')
-                }
-            ))
+            drug_entity = id_to_entity.get(drug_id)
+            company_entity = id_to_entity.get(company_id)
+            if drug_entity and company_entity:
+                relationships.append(RelationshipExtraction(
+                    relationship_type='company_drug',
+                    source_entity=company_entity,
+                    target_entity=drug_entity,
+                    attributes={
+                        'relationship_type': 'originator',
+                        'development_stage': 'approved'
+                    },
+                    temporal={
+                        'start_date': self.extract_date_from_raw(raw_data, 'approval_date')
+                    }
+                ))
         
         # Regulatory event - drug relationship
         if event_id and drug_id:
-            disease_ids = resolved_entities.get('diseases', [])
-            disease_id = disease_ids[0] if disease_ids else None
-            
-            relationships.append(RelationshipExtraction(
-                relationship_type='regulatory_drug_event',
-                source_entity=self._make_regulatory_event_entity(raw_data),
-                target_entity=self._make_drug_entity(raw_data),
-                attributes={
-                    'disease_id': disease_id
-                },
-                temporal={}
-            ))
-        
-        # Regulatory event - company relationship
-        if event_id and company_id:
-            relationships.append(RelationshipExtraction(
-                relationship_type='regulatory_company_event',
-                source_entity=self._make_regulatory_event_entity(raw_data),
-                target_entity=self._make_company_entity(raw_data),
-                attributes={},
-                temporal={}
-            ))
-        
-        # Drug indications
-        for i, disease_id in enumerate(resolved_entities.get('diseases', [])):
-            if drug_id:
+            event_entity = id_to_entity.get(event_id)
+            drug_entity = id_to_entity.get(drug_id)
+            if event_entity and drug_entity:
+                disease_ids = resolved_entities.get('diseases', [])
+                disease_id = disease_ids[0] if disease_ids else None
+                
                 relationships.append(RelationshipExtraction(
-                    relationship_type='drug_indication',
-                    source_entity=self._make_drug_entity(raw_data),
-                    target_entity=self._make_indication_entity(raw_data, i),
+                    relationship_type='regulatory_drug_event',
+                    source_entity=event_entity,
+                    target_entity=drug_entity,
                     attributes={
-                        'approved': True,
-                        'approval_date': self.extract_date_from_raw(raw_data, 'approval_date')
+                        'disease_id': disease_id
                     },
                     temporal={}
                 ))
+        
+        # Regulatory event - company relationship
+        if event_id and company_id:
+            event_entity = id_to_entity.get(event_id)
+            company_entity = id_to_entity.get(company_id)
+            if event_entity and company_entity:
+                relationships.append(RelationshipExtraction(
+                    relationship_type='regulatory_company_event',
+                    source_entity=event_entity,
+                    target_entity=company_entity,
+                    attributes={},
+                    temporal={}
+                ))
+        
+        # Drug indications
+        drug_entity = id_to_entity.get(drug_id) if drug_id else None
+        if drug_entity:
+            for disease_id in resolved_entities.get('diseases', []):
+                disease_entity = id_to_entity.get(disease_id)
+                if disease_entity:
+                    relationships.append(RelationshipExtraction(
+                        relationship_type='drug_indication',
+                        source_entity=drug_entity,
+                        target_entity=disease_entity,
+                        attributes={
+                            'approved': True,
+                            'approval_date': self.extract_date_from_raw(raw_data, 'approval_date')
+                        },
+                        temporal={}
+                    ))
         
         return relationships
     
@@ -290,6 +303,9 @@ class FDADrugsProcessor(BaseProcessor):
     def _make_drug_entity(self, raw_data: Dict[str, Any]) -> ExtractedEntity:
         """Helper to create drug entity stub."""
         brand_name = raw_data.get('brand_name', raw_data.get('TradeName', ''))
+        # CRITICAL: Normalize to match original extraction (for stub key matching)
+        if brand_name:
+            brand_name = self.normalize_drug_name(brand_name)
         return ExtractedEntity(
             entity_type=EntityType.DRUG,
             name=brand_name,
@@ -302,6 +318,9 @@ class FDADrugsProcessor(BaseProcessor):
     def _make_company_entity(self, raw_data: Dict[str, Any]) -> ExtractedEntity:
         """Helper to create company entity stub."""
         company_name = raw_data.get('sponsor_name', raw_data.get('SponsorName', ''))
+        # CRITICAL: Normalize to match original extraction (for stub key matching)
+        if company_name:
+            company_name = self.normalize_company_name(company_name)
         return ExtractedEntity(
             entity_type=EntityType.COMPANY,
             name=company_name,
@@ -329,6 +348,9 @@ class FDADrugsProcessor(BaseProcessor):
             indications = [indications]
         
         indication_name = indications[index] if index < len(indications) else ''
+        # Note: Disease names typically don't need normalization, but keep for consistency
+        if indication_name:
+            indication_name = indication_name.strip()
         
         return ExtractedEntity(
             entity_type=EntityType.DISEASE,

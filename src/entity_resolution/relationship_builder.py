@@ -88,7 +88,7 @@ class RelationshipBuilder:
             return False
         
         try:
-            # Check if relationship already exists
+            # Check if relationship already exists in database
             existing = self._find_existing_relationship(
                 model,
                 source_entity_id,
@@ -104,21 +104,27 @@ class RelationshipBuilder:
                 else:
                     self.skipped_count += 1
                 return True
-            else:
-                # Create new relationship
-                new_rel = self._create_new_relationship(
-                    model,
-                    source_entity_id,
-                    target_entity_id,
-                    relationship.attributes,
-                    relationship.temporal,
-                    source_name
-                )
-                
-                self.session.add(new_rel)
-                self.created_count += 1
-                logger.debug(f"Created {relationship.relationship_type} relationship")
+            
+            # Check if relationship already exists in current session (not yet committed)
+            if self._check_session_for_relationship(model, source_entity_id, target_entity_id):
+                self.skipped_count += 1
+                logger.debug(f"Skipped duplicate {relationship.relationship_type} in session")
                 return True
+            
+            # Create new relationship
+            new_rel = self._create_new_relationship(
+                model,
+                source_entity_id,
+                target_entity_id,
+                relationship.attributes,
+                relationship.temporal,
+                source_name
+            )
+            
+            self.session.add(new_rel)
+            self.created_count += 1
+            logger.debug(f"Created {relationship.relationship_type} relationship")
+            return True
                 
         except Exception as e:
             logger.error(f"Error creating relationship: {e}")
@@ -154,6 +160,32 @@ class RelationshipBuilder:
         
         return query.first()
     
+    def _check_session_for_relationship(
+        self,
+        model,
+        source_id: UUID,
+        target_id: UUID
+    ) -> bool:
+        """
+        Check if relationship already exists in current session (not yet committed).
+        
+        This prevents duplicate relationship errors when multiple relationships
+        are created in the same transaction.
+        """
+        source_field, target_field = self._get_id_fields(model)
+        
+        if not source_field or not target_field:
+            return False
+        
+        # Check new objects in session that haven't been committed yet
+        for obj in self.session.new:
+            if isinstance(obj, model):
+                if (getattr(obj, source_field, None) == source_id and 
+                    getattr(obj, target_field, None) == target_id):
+                    return True
+        
+        return False
+    
     def _create_new_relationship(
         self,
         model,
@@ -173,9 +205,15 @@ class RelationshipBuilder:
             target_field: target_id,
         }
         
-        # Add attributes
+        # Add attributes with constraint validation
         for key, value in attributes.items():
             if hasattr(model, key):
+                # Validate constraint values before inserting
+                if not self._validate_constraint_value(model, key, value):
+                    logger.warning(
+                        f"Invalid constraint value for {model.__name__}.{key}: {value}. Skipping."
+                    )
+                    continue
                 rel_data[key] = value
         
         # Add temporal data
@@ -193,6 +231,41 @@ class RelationshipBuilder:
             }
         
         return model(**rel_data)
+    
+    def _validate_constraint_value(self, model, key: str, value: Any) -> bool:
+        """
+        Validate that a value meets any database constraints for the field.
+        
+        Args:
+            model: SQLAlchemy model class
+            key: Field name
+            value: Value to validate
+            
+        Returns:
+            True if value is valid, False otherwise
+        """
+        # For now, just check basic type constraints
+        # More complex constraint validation can be added as needed
+        
+        # Check if value is None and field is nullable
+        if value is None:
+            # Check if column is nullable (simplified check)
+            # In practice, we'd need to inspect the column
+            return True  # Let database handle NULL constraint violations
+        
+        # Check string length constraints (common constraint)
+        if isinstance(value, str):
+            # Check for common max length constraints
+            max_lengths = {
+                'arm_name': 100,  # TrialDrug.arm_name
+                'sponsor_role': 50,  # TrialSponsor.sponsor_role
+            }
+            if key in max_lengths and len(value) > max_lengths[key]:
+                logger.warning(f"Value too long for {model.__name__}.{key}: {len(value)} > {max_lengths[key]}")
+                return False
+        
+        # Add more constraint validation as needed
+        return True
     
     def _update_data_sources(self, relationship, source_name: str) -> bool:
         """Update data_sources field on existing relationship."""

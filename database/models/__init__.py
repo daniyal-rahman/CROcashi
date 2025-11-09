@@ -10,7 +10,7 @@ from database.models.entities import (
 )
 
 # Clinical models
-from database.models.clinical import ClinicalTrial, RegulatoryEvent
+from database.models.clinical import ClinicalTrial, TrialStatusHistory, RegulatoryEvent
 
 # Publication models
 from database.models.publications import (
@@ -36,6 +36,12 @@ from database.models.resolution import (
     EntityMatchingRule, SourceProcessingLog, DataQualityMetric
 )
 
+# Source and lineage models
+from database.models.sources import Source
+from database.models.lineage import DataLineage
+from database.models.merges import EntityMerge
+from database.models.events import Event
+
 # Staging models
 from database.models.staging import StagingRawData
 
@@ -57,6 +63,7 @@ __all__ = [
     
     # Clinical
     'ClinicalTrial',
+    'TrialStatusHistory',
     'RegulatoryEvent',
     
     # Publications
@@ -100,6 +107,12 @@ __all__ = [
     'EntityMatchingRule',
     'SourceProcessingLog',
     'DataQualityMetric',
+    
+    # Source and lineage
+    'Source',
+    'DataLineage',
+    'EntityMerge',
+    'Event',
     
     # Staging
     'StagingRawData',

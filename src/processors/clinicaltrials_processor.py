@@ -42,6 +42,81 @@ class ClinicalTrialsProcessor(BaseProcessor):
         """Initialize ClinicalTrials.gov processor."""
         super().__init__(session)
     
+    def _normalize_api_response(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize ClinicalTrials.gov API response to flat structure.
+        
+        Handles both:
+        - Legacy flat format (test data, backwards compatibility)
+        - Current nested protocolSection format (real API)
+        
+        Args:
+            raw_data: Raw API response
+            
+        Returns:
+            Normalized flat structure
+        """
+        # If already flat (test data), return as-is
+        if 'nct_id' in raw_data or 'NCTId' in raw_data:
+            return raw_data
+        
+        # Check if this is nested protocolSection format
+        if 'protocolSection' not in raw_data:
+            logger.warning("Unexpected data format - no 'nct_id' or 'protocolSection'")
+            return raw_data
+        
+        # Extract from nested protocolSection structure
+        protocol = raw_data.get('protocolSection', {})
+        id_module = protocol.get('identificationModule', {})
+        status_module = protocol.get('statusModule', {})
+        sponsor_module = protocol.get('sponsorCollaboratorsModule', {})
+        design_module = protocol.get('designModule', {})
+        arms_module = protocol.get('armsInterventionsModule', {})
+        conditions_module = protocol.get('conditionsModule', {})
+        
+        # Map to flat structure expected by extraction methods
+        normalized = {
+            'nct_id': id_module.get('nctId', ''),
+            'brief_title': id_module.get('briefTitle', ''),
+            'title': id_module.get('briefTitle', ''),  # Alias
+            'official_title': id_module.get('officialTitle', ''),
+            'overall_status': status_module.get('overallStatus', ''),
+            'start_date': status_module.get('startDateStruct', {}).get('date'),
+            'completion_date': status_module.get('completionDateStruct', {}).get('date'),
+            'primary_completion_date': status_module.get('primaryCompletionDateStruct', {}).get('date'),
+            'phase': design_module.get('phases', [''])[0] if design_module.get('phases') else '',
+            'study_type': design_module.get('studyType', ''),
+            'enrollment': {
+                'value': status_module.get('enrollmentInfo', {}).get('count')
+            },
+            'why_stopped': status_module.get('whyStopped', ''),
+            'sponsor': {
+                'lead_sponsor': {
+                    'agency': sponsor_module.get('leadSponsor', {}).get('name', ''),
+                    'agency_class': sponsor_module.get('leadSponsor', {}).get('class', '')
+                },
+                'collaborators': [
+                    {
+                        'agency': c.get('name', ''),
+                        'agency_class': c.get('class', '')
+                    }
+                    for c in sponsor_module.get('collaborators', [])
+                ]
+            },
+            'interventions': [
+                {
+                    'intervention_type': interv.get('type', '').lower(),
+                    'intervention_name': interv.get('name', ''),
+                    'other_names': interv.get('otherNames', []),
+                    'description': interv.get('description', '')
+                }
+                for interv in arms_module.get('interventions', [])
+            ],
+            'conditions': conditions_module.get('conditions', [])
+        }
+        
+        return normalized
+    
     def get_source_identifier(self, raw_data: Dict[str, Any]) -> str:
         """
         Get NCT ID from trial data.
@@ -52,6 +127,13 @@ class ClinicalTrialsProcessor(BaseProcessor):
         Returns:
             NCT ID (e.g., "NCT12345678")
         """
+        # Handle nested protocolSection format
+        if 'protocolSection' in raw_data:
+            protocol = raw_data.get('protocolSection', {})
+            id_module = protocol.get('identificationModule', {})
+            return id_module.get('nctId', '')
+        
+        # Handle flat format (backwards compatibility)
         return raw_data.get('nct_id', raw_data.get('NCTId', ''))
     
     def extract_entities(self, raw_data: Dict[str, Any]) -> Dict[str, List[ExtractedEntity]]:
@@ -66,6 +148,9 @@ class ClinicalTrialsProcessor(BaseProcessor):
         """
         self.metrics.start_time = datetime.now()
         
+        # Normalize API response format
+        data = self._normalize_api_response(raw_data)
+        
         entities = {
             'trials': [],
             'companies': [],
@@ -77,14 +162,14 @@ class ClinicalTrialsProcessor(BaseProcessor):
         nct_id = self.get_source_identifier(raw_data)
         
         try:
-            # Extract trial entity
-            trial = self._extract_trial(raw_data)
+            # Extract trial entity (use normalized data)
+            trial = self._extract_trial(data)
             if trial:
                 entities['trials'].append(trial)
                 self.metrics.entities_extracted += 1
             
-            # Extract sponsor (lead sponsor)
-            sponsor = self._extract_sponsor(raw_data)
+            # Extract sponsor (lead sponsor) (use normalized data)
+            sponsor = self._extract_sponsor(data)
             if sponsor:
                 if sponsor.entity_type == EntityType.COMPANY:
                     entities['companies'].append(sponsor)
@@ -92,8 +177,8 @@ class ClinicalTrialsProcessor(BaseProcessor):
                     entities['institutions'].append(sponsor)
                 self.metrics.entities_extracted += 1
             
-            # Extract collaborators
-            collaborators = self._extract_collaborators(raw_data)
+            # Extract collaborators (use normalized data)
+            collaborators = self._extract_collaborators(data)
             for collab in collaborators:
                 if collab.entity_type == EntityType.COMPANY:
                     entities['companies'].append(collab)
@@ -101,13 +186,13 @@ class ClinicalTrialsProcessor(BaseProcessor):
                     entities['institutions'].append(collab)
                 self.metrics.entities_extracted += 1
             
-            # Extract interventions (drugs)
-            drugs = self._extract_interventions(raw_data)
+            # Extract interventions (drugs) (use normalized data)
+            drugs = self._extract_interventions(data)
             entities['drugs'].extend(drugs)
             self.metrics.entities_extracted += len(drugs)
             
-            # Extract conditions (diseases)
-            diseases = self._extract_conditions(raw_data)
+            # Extract conditions (diseases) (use normalized data)
+            diseases = self._extract_conditions(data)
             entities['diseases'].extend(diseases)
             self.metrics.entities_extracted += len(diseases)
             
@@ -121,7 +206,8 @@ class ClinicalTrialsProcessor(BaseProcessor):
     def extract_relationships(
         self,
         raw_data: Dict[str, Any],
-        resolved_entities: Dict[str, UUID]
+        resolved_entities: Dict[str, UUID],
+        id_to_entity: Dict[UUID, ExtractedEntity]
     ) -> List[RelationshipExtraction]:
         """
         Extract relationships after entities are resolved.
@@ -129,6 +215,7 @@ class ClinicalTrialsProcessor(BaseProcessor):
         Args:
             raw_data: Raw trial data
             resolved_entities: Map of entity keys to resolved UUIDs
+            id_to_entity: Map of resolved UUIDs to their extracted entities
             
         Returns:
             List of relationships to create
@@ -140,43 +227,60 @@ class ClinicalTrialsProcessor(BaseProcessor):
             logger.warning("No trial ID found in resolved entities")
             return relationships
         
+        # Get trial entity for relationship stubs
+        trial_entity = id_to_entity.get(trial_id)
+        if not trial_entity:
+            # Fallback: create from raw data
+            trial_entity = self._make_trial_entity(raw_data)
+        
         # Create trial sponsor relationships
         if 'sponsor' in resolved_entities:
-            relationships.append(self._create_sponsor_relationship(
-                raw_data,
-                trial_id,
-                resolved_entities['sponsor'],
-                'lead_sponsor'
-            ))
+            sponsor_id = resolved_entities['sponsor']
+            sponsor_entity = id_to_entity.get(sponsor_id)
+            if sponsor_entity:
+                relationships.append(self._create_sponsor_relationship_from_entity(
+                    trial_entity,
+                    sponsor_entity,
+                    'lead_sponsor'
+                ))
         
         # Create collaborator relationships
-        for i, collab_id in enumerate(resolved_entities.get('collaborators', [])):
-            relationships.append(self._create_sponsor_relationship(
-                raw_data,
-                trial_id,
-                collab_id,
-                'collaborator'
-            ))
+        for collab_id in resolved_entities.get('collaborators', []):
+            collab_entity = id_to_entity.get(collab_id)
+            if collab_entity:
+                relationships.append(self._create_sponsor_relationship_from_entity(
+                    trial_entity,
+                    collab_entity,
+                    'collaborator'
+                ))
         
-        # Create trial-drug relationships
-        for i, drug_id in enumerate(resolved_entities.get('drugs', [])):
-            relationships.append(RelationshipExtraction(
-                relationship_type='trial_drug',
-                source_entity=self._make_trial_entity(raw_data),
-                target_entity=self._make_drug_entity(raw_data, i),
-                attributes={
-                    'arm_name': raw_data.get('interventions', [{}])[i].get('arm_group_label', 'experimental')
-                }
-            ))
+        # Create trial-drug relationships using actual extracted entities
+        for drug_id in resolved_entities.get('drugs', []):
+            drug_entity = id_to_entity.get(drug_id)
+            if drug_entity:
+                # Get arm_name from drug entity's context if available
+                arm_groups = drug_entity.context.get('arm_groups', [])
+                arm_name = arm_groups[0] if arm_groups else 'experimental'
+                
+                relationships.append(RelationshipExtraction(
+                    relationship_type='trial_drug',
+                    source_entity=trial_entity,
+                    target_entity=drug_entity,
+                    attributes={
+                        'arm_name': arm_name
+                    }
+                ))
         
-        # Create trial-disease relationships
-        for i, disease_id in enumerate(resolved_entities.get('diseases', [])):
-            relationships.append(RelationshipExtraction(
-                relationship_type='trial_disease',
-                source_entity=self._make_trial_entity(raw_data),
-                target_entity=self._make_disease_entity(raw_data, i),
-                attributes={}
-            ))
+        # Create trial-disease relationships using actual extracted entities
+        for disease_id in resolved_entities.get('diseases', []):
+            disease_entity = id_to_entity.get(disease_id)
+            if disease_entity:
+                relationships.append(RelationshipExtraction(
+                    relationship_type='trial_disease',
+                    source_entity=trial_entity,
+                    target_entity=disease_entity,
+                    attributes={}
+                ))
         
         return relationships
     
@@ -378,34 +482,22 @@ class ClinicalTrialsProcessor(BaseProcessor):
         
         return diseases
     
-    def _create_sponsor_relationship(
+    def _create_sponsor_relationship_from_entity(
         self,
-        raw_data: Dict[str, Any],
-        trial_id: UUID,
-        sponsor_id: UUID,
+        trial_entity: ExtractedEntity,
+        sponsor_entity: ExtractedEntity,
         role: str
     ) -> RelationshipExtraction:
-        """Create a trial sponsor relationship."""
-        # Determine entity type from context
-        sponsor_data = raw_data.get('sponsor', {})
-        lead_sponsor = sponsor_data.get('lead_sponsor', {})
-        sponsor_class = lead_sponsor.get('agency_class', '').lower()
-        
-        is_industry = sponsor_class in ['industry', 'company']
+        """Create a trial sponsor relationship from extracted entities."""
+        # Determine entity type from the sponsor entity
+        is_company = sponsor_entity.entity_type == EntityType.COMPANY
         
         return RelationshipExtraction(
             relationship_type='trial_sponsor',
-            source_entity=self._make_trial_entity(raw_data),
-            target_entity=ExtractedEntity(
-                entity_type=EntityType.COMPANY if is_industry else EntityType.INSTITUTION,
-                name=lead_sponsor.get('agency', ''),
-                identifiers={},
-                context={},
-                source_name=self.SOURCE_NAME,
-                source_identifier=self.get_source_identifier(raw_data)
-            ),
+            source_entity=trial_entity,
+            target_entity=sponsor_entity,
             attributes={
-                'entity_type': 'company' if is_industry else 'institution',
+                'entity_type': 'company' if is_company else 'institution',
                 'sponsor_role': role,
                 'is_regulatory_sponsor': True,
                 'is_financial_sponsor': True
@@ -415,9 +507,11 @@ class ClinicalTrialsProcessor(BaseProcessor):
     
     def _make_trial_entity(self, raw_data: Dict[str, Any]) -> ExtractedEntity:
         """Helper to create trial entity stub for relationships."""
+        # Use normalized data format (same as extraction)
+        data = self._normalize_api_response(raw_data)
         return ExtractedEntity(
             entity_type=EntityType.TRIAL,
-            name=raw_data.get('title', ''),
+            name=data.get('title', data.get('brief_title', '')),
             identifiers={'nct_id': self.get_source_identifier(raw_data)},
             context={},
             source_name=self.SOURCE_NAME,
@@ -426,9 +520,14 @@ class ClinicalTrialsProcessor(BaseProcessor):
     
     def _make_drug_entity(self, raw_data: Dict[str, Any], index: int) -> ExtractedEntity:
         """Helper to create drug entity stub for relationships."""
-        interventions = raw_data.get('interventions', [])
+        # Use normalized data format (same as extraction)
+        data = self._normalize_api_response(raw_data)
+        interventions = data.get('interventions', [])
+        
         if index < len(interventions):
-            drug_name = interventions[index].get('intervention_name', '')
+            drug_name = interventions[index].get('intervention_name', interventions[index].get('name', ''))
+            # Normalize drug name (same as in _extract_interventions)
+            drug_name = self.normalize_drug_name(drug_name)
         else:
             drug_name = ''
         
@@ -443,12 +542,16 @@ class ClinicalTrialsProcessor(BaseProcessor):
     
     def _make_disease_entity(self, raw_data: Dict[str, Any], index: int) -> ExtractedEntity:
         """Helper to create disease entity stub for relationships."""
-        conditions = raw_data.get('conditions', [])
+        # Use normalized data format (same as extraction)
+        data = self._normalize_api_response(raw_data)
+        conditions = data.get('conditions', [])
         if isinstance(conditions, str):
             conditions = [conditions]
         
         if index < len(conditions):
             disease_name = conditions[index]
+            # Clean up condition name (same as in _extract_conditions)
+            disease_name = disease_name.strip()
         else:
             disease_name = ''
         

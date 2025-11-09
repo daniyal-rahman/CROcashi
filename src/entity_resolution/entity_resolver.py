@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from database.models import (
     Company, Drug, Disease, Target, ClinicalTrial, Publication,
-    Institution, EntityAlias, EntityMatchCandidate
+    Institution, EntityAlias, EntityMatchCandidate, Patent, RegulatoryEvent, SECFiling
 )
 from src.entity_resolution.types import (
     EntityType, ExtractedEntity, MatchCandidate, MatchMethod,
@@ -51,6 +51,9 @@ class EntityResolver:
         EntityType.TARGET: Target,
         EntityType.TRIAL: ClinicalTrial,
         EntityType.PUBLICATION: Publication,
+        EntityType.PATENT: Patent,
+        EntityType.REGULATORY_EVENT: RegulatoryEvent,
+        EntityType.SEC_FILING: SECFiling,
     }
     
     # Identifier fields for each entity type
@@ -62,6 +65,9 @@ class EntityResolver:
         EntityType.TRIAL: ['nct_id', 'eudract_number'],
         EntityType.PUBLICATION: ['pmid', 'doi', 'pmcid'],
         EntityType.INSTITUTION: ['name'],  # Institutions don't have many unique identifiers
+        EntityType.PATENT: ['patent_number'],
+        EntityType.REGULATORY_EVENT: ['application_number'],
+        EntityType.SEC_FILING: ['accession_number'],
     }
     
     def __init__(self, session: Session):
@@ -284,21 +290,26 @@ class EntityResolver:
         if not name_field:
             return ResolutionResult(status=ResolutionStatus.NO_MATCH)
         
-        # Use PostgreSQL similarity search
-        # Get top candidates by trigram similarity
+        # Use PostgreSQL similarity search with case-insensitive matching
+        # Normalize the search name first
+        normalized_search = self.scorer._normalize_text(entity.name)
         similarity_threshold = 0.3  # Minimum base similarity to consider
         
+        # Get ID field name for explicit selection
+        id_field = self._get_id_field_name(model)
+        
+        # Use explicit column selection instead of SELECT * to avoid indexing issues
         query_text = text(f"""
-            SELECT *, similarity({name_field}, :search_name) as sim_score
+            SELECT {id_field}, {name_field}, similarity(LOWER({name_field}), :search_name) as sim_score
             FROM {model.__tablename__}
-            WHERE similarity({name_field}, :search_name) > :threshold
+            WHERE similarity(LOWER({name_field}), :search_name) > :threshold
             ORDER BY sim_score DESC
             LIMIT 10
         """)
         
         results = self.session.execute(
             query_text,
-            {"search_name": entity.name, "threshold": similarity_threshold}
+            {"search_name": normalized_search, "threshold": similarity_threshold}
         ).fetchall()
         
         if not results:
@@ -310,14 +321,16 @@ class EntityResolver:
         # Score each candidate with context
         candidates = []
         for row in results:
-            # Get entity ID (first column varies by model)
-            entity_id = row[0]
+            # Explicit column order: [id_field, name_field, sim_score]
+            entity_id = UUID(str(row[0]))  # First column is ID
+            entity_name = str(row[1])  # Second column is name
+            sim_score = float(row[2])  # Third column is similarity score
             
             # Calculate score with context
             candidate_context = self._get_entity_context(model, entity_id)
             score, reasons = self.scorer.calculate_score(
                 entity.name,
-                str(row[self._get_name_field_index(model)]),
+                entity_name,
                 entity.context,
                 candidate_context
             )
@@ -325,8 +338,8 @@ class EntityResolver:
             if score >= 0.70:  # Only include if above fuzzy threshold
                 candidates.append(
                     MatchCandidate(
-                        entity_id=UUID(str(entity_id)),
-                        entity_name=str(row[self._get_name_field_index(model)]),
+                        entity_id=entity_id,
+                        entity_name=entity_name,
                         confidence_score=score,
                         match_reasons=reasons
                     )
@@ -376,20 +389,26 @@ class EntityResolver:
         if not name_field:
             return ResolutionResult(status=ResolutionStatus.NO_MATCH)
         
-        # Use PostgreSQL similarity search with higher threshold
+        # Use PostgreSQL similarity search with case-insensitive matching
+        # Normalize the search name first
+        normalized_search = self.scorer._normalize_text(entity.name)
         similarity_threshold = 0.70  # Higher threshold for fuzzy alone
         
+        # Get ID field name for explicit selection
+        id_field = self._get_id_field_name(model)
+        
+        # Use explicit column selection instead of SELECT * to avoid indexing issues
         query_text = text(f"""
-            SELECT *, similarity({name_field}, :search_name) as sim_score
+            SELECT {id_field}, {name_field}, similarity(LOWER({name_field}), :search_name) as sim_score
             FROM {model.__tablename__}
-            WHERE similarity({name_field}, :search_name) > :threshold
+            WHERE similarity(LOWER({name_field}), :search_name) > :threshold
             ORDER BY sim_score DESC
             LIMIT 5
         """)
         
         results = self.session.execute(
             query_text,
-            {"search_name": entity.name, "threshold": similarity_threshold}
+            {"search_name": normalized_search, "threshold": similarity_threshold}
         ).fetchall()
         
         if not results:
@@ -399,11 +418,12 @@ class EntityResolver:
             )
         
         # Convert to candidates
+        # Explicit column order: [id_field, name_field, sim_score]
         candidates = []
         for row in results:
-            entity_id = UUID(str(row[0]))
-            entity_name = str(row[self._get_name_field_index(model)])
-            sim_score = float(row[-1])  # Last column is sim_score
+            entity_id = UUID(str(row[0]))  # First column is ID
+            entity_name = str(row[1])  # Second column is name
+            sim_score = float(row[2])  # Third column is similarity score
             
             candidates.append(
                 MatchCandidate(
@@ -429,7 +449,7 @@ class EntityResolver:
         """Get the entity ID from a model object."""
         id_fields = [
             'company_id', 'institution_id', 'drug_id', 'disease_id',
-            'target_id', 'trial_id', 'pub_id', 'patent_id'
+            'target_id', 'trial_id', 'pub_id', 'patent_id', 'filing_id'
         ]
         
         for field in id_fields:
@@ -449,19 +469,185 @@ class EntityResolver:
             'Target': 'target_name',
             'ClinicalTrial': 'trial_title',
             'Publication': 'title',
+            'Patent': 'title',
+            'RegulatoryEvent': 'description',  # Or could use application_number for matching
+            'SECFiling': 'accession_number',  # Use accession_number as primary identifier
         }
         return name_fields.get(model.__name__)
     
-    @staticmethod
-    def _get_name_field_index(model) -> int:
-        """Get the index of the name field in SELECT * query."""
-        # This is a simplification - in production you'd want a more robust approach
-        # For now, assume name is in the first few columns after ID
-        return 1
+    # Removed _get_name_field_index - now using explicit column selection
     
     def _get_entity_context(self, model, entity_id: UUID) -> Dict:
-        """Get context information for an entity to boost matching."""
-        # This would query relationship tables to get associated entities
-        # For now, return empty dict - full implementation would join relationship tables
-        return {}
+        """
+        Get context information for an entity to boost matching.
+        
+        Queries relationship tables to find associated entities that can
+        help boost matching confidence.
+        
+        Args:
+            model: Entity model class (Company, Drug, etc.)
+            entity_id: UUID of the entity
+            
+        Returns:
+            Dict with context keys: company_ids, disease_ids, target_ids, 
+            mechanism_ids, drug_ids, trial_ids, date
+        """
+        from database.models import (
+            CompanyDrug, DrugIndication, DrugTarget, DrugMechanism,
+            TrialSponsor, TrialDrug, TrialDisease,
+            Company, Drug, Disease, ClinicalTrial
+        )
+        
+        context = {
+            'company_ids': [],
+            'disease_ids': [],
+            'target_ids': [],
+            'mechanism_ids': [],
+            'drug_ids': [],
+            'trial_ids': [],
+            'date': None
+        }
+        
+        try:
+            model_name = model.__name__
+            
+            # Get entity to extract creation date
+            entity = self.session.query(model).filter(
+                getattr(model, self._get_id_field_name(model)) == entity_id
+            ).first()
+            
+            if entity and hasattr(entity, 'created_at'):
+                context['date'] = entity.created_at
+            
+            # Company context
+            if model_name == 'Company':
+                # Get drugs associated with this company
+                drug_rels = self.session.query(CompanyDrug.drug_id).filter(
+                    CompanyDrug.company_id == entity_id
+                ).limit(20).all()
+                context['drug_ids'] = [rel.drug_id for rel in drug_rels]
+                
+                # Get trials sponsored by this company
+                trial_rels = self.session.query(TrialSponsor.trial_id).filter(
+                    and_(
+                        TrialSponsor.entity_id == entity_id,
+                        TrialSponsor.entity_type == 'company'
+                    )
+                ).limit(20).all()
+                context['trial_ids'] = [rel.trial_id for rel in trial_rels]
+            
+            # Drug context
+            elif model_name == 'Drug':
+                # Get companies associated with this drug
+                company_rels = self.session.query(CompanyDrug.company_id).filter(
+                    CompanyDrug.drug_id == entity_id
+                ).limit(10).all()
+                context['company_ids'] = [rel.company_id for rel in company_rels]
+                
+                # Get diseases/indications for this drug
+                disease_rels = self.session.query(DrugIndication.disease_id).filter(
+                    DrugIndication.drug_id == entity_id
+                ).limit(10).all()
+                context['disease_ids'] = [rel.disease_id for rel in disease_rels]
+                
+                # Get targets for this drug
+                target_rels = self.session.query(DrugTarget.target_id).filter(
+                    DrugTarget.drug_id == entity_id
+                ).limit(10).all()
+                context['target_ids'] = [rel.target_id for rel in target_rels]
+                
+                # Get mechanisms for this drug
+                mechanism_rels = self.session.query(DrugMechanism.mechanism_id).filter(
+                    DrugMechanism.drug_id == entity_id
+                ).limit(10).all()
+                context['mechanism_ids'] = [rel.mechanism_id for rel in mechanism_rels]
+                
+                # Get trials testing this drug
+                trial_rels = self.session.query(TrialDrug.trial_id).filter(
+                    TrialDrug.drug_id == entity_id
+                ).limit(20).all()
+                context['trial_ids'] = [rel.trial_id for rel in trial_rels]
+            
+            # Disease context
+            elif model_name == 'Disease':
+                # Get drugs indicated for this disease
+                drug_rels = self.session.query(DrugIndication.drug_id).filter(
+                    DrugIndication.disease_id == entity_id
+                ).limit(20).all()
+                context['drug_ids'] = [rel.drug_id for rel in drug_rels]
+                
+                # Get trials studying this disease
+                trial_rels = self.session.query(TrialDisease.trial_id).filter(
+                    TrialDisease.disease_id == entity_id
+                ).limit(20).all()
+                context['trial_ids'] = [rel.trial_id for rel in trial_rels]
+            
+            # Clinical Trial context
+            elif model_name == 'ClinicalTrial':
+                # Get sponsors for this trial
+                sponsor_rels = self.session.query(
+                    TrialSponsor.entity_id,
+                    TrialSponsor.entity_type
+                ).filter(
+                    TrialSponsor.trial_id == entity_id
+                ).limit(10).all()
+                
+                for rel in sponsor_rels:
+                    if rel.entity_type == 'company':
+                        context['company_ids'].append(rel.entity_id)
+                
+                # Get drugs tested in this trial
+                drug_rels = self.session.query(TrialDrug.drug_id).filter(
+                    TrialDrug.trial_id == entity_id
+                ).limit(10).all()
+                context['drug_ids'] = [rel.drug_id for rel in drug_rels]
+                
+                # Get diseases studied in this trial
+                disease_rels = self.session.query(TrialDisease.disease_id).filter(
+                    TrialDisease.disease_id == entity_id
+                ).limit(10).all()
+                context['disease_ids'] = [rel.disease_id for rel in disease_rels]
+            
+            # Target context
+            elif model_name == 'Target':
+                # Get drugs targeting this target
+                drug_rels = self.session.query(DrugTarget.drug_id).filter(
+                    DrugTarget.target_id == entity_id
+                ).limit(20).all()
+                context['drug_ids'] = [rel.drug_id for rel in drug_rels]
+            
+            # Institution context (similar to company)
+            elif model_name == 'Institution':
+                # Get trials sponsored by this institution
+                trial_rels = self.session.query(TrialSponsor.trial_id).filter(
+                    and_(
+                        TrialSponsor.entity_id == entity_id,
+                        TrialSponsor.entity_type == 'institution'
+                    )
+                ).limit(20).all()
+                context['trial_ids'] = [rel.trial_id for rel in trial_rels]
+            
+        except Exception as e:
+            # If context extraction fails, log but don't fail matching
+            logger.warning(f"Error extracting context for {model_name} {entity_id}: {e}")
+        
+        return context
+    
+    @staticmethod
+    def _get_id_field_name(model) -> str:
+        """Get the ID field name for a model."""
+        id_fields = {
+            'Company': 'company_id',
+            'Institution': 'institution_id',
+            'Drug': 'drug_id',
+            'Disease': 'disease_id',
+            'Target': 'target_id',
+            'ClinicalTrial': 'trial_id',
+            'Publication': 'pub_id',
+            'Patent': 'patent_id',
+            'RegulatoryEvent': 'event_id',
+            'SECFiling': 'filing_id',
+            'Mechanism': 'mechanism_id',
+        }
+        return id_fields.get(model.__name__, 'id')
 

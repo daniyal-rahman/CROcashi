@@ -61,7 +61,8 @@ class BaseProcessor(ABC):
     def extract_relationships(
         self,
         raw_data: Dict[str, Any],
-        resolved_entities: Dict[str, UUID]
+        resolved_entities: Dict[str, UUID],
+        id_to_entity: Dict[UUID, ExtractedEntity]
     ) -> List[RelationshipExtraction]:
         """
         Extract relationships between entities.
@@ -69,6 +70,7 @@ class BaseProcessor(ABC):
         Args:
             raw_data: Raw source data
             resolved_entities: Dict mapping entity keys to resolved UUIDs
+            id_to_entity: Dict mapping resolved UUIDs to their extracted entities
             
         Returns:
             List of relationship extractions
@@ -142,6 +144,11 @@ class BaseProcessor(ABC):
             return None
     
     def normalize_company_name(self, name: str) -> str:
+        """Normalize company name for better matching (instance method wrapper)."""
+        return BaseProcessor.normalize_company_name_static(name)
+    
+    @staticmethod
+    def normalize_company_name_static(name: str) -> str:
         """
         Normalize company name for better matching.
         
@@ -169,6 +176,11 @@ class BaseProcessor(ABC):
         return name
     
     def normalize_drug_name(self, name: str) -> str:
+        """Normalize drug name for better matching (instance method wrapper)."""
+        return BaseProcessor.normalize_drug_name_static(name)
+    
+    @staticmethod
+    def normalize_drug_name_static(name: str) -> str:
         """
         Normalize drug name for better matching.
         

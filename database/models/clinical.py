@@ -100,12 +100,58 @@ class ClinicalTrial(BaseModel):
             name='check_study_type'
         ),
         CheckConstraint(
-            "status IN ('recruiting', 'active', 'completed', 'terminated', 'suspended', 'withdrawn') OR status IS NULL",
+            "status IN ('recruiting', 'active', 'completed', 'terminated', 'suspended', 'withdrawn', 'unknown', 'enrolling_by_invitation', 'active_not_recruiting', 'not_yet_recruiting') OR status IS NULL",
             name='check_trial_status'
         ),
         CheckConstraint(
             "sponsor_type IN ('industry', 'academic', 'government', 'mixed') OR sponsor_type IS NULL",
             name='check_sponsor_type'
+        ),
+    )
+
+
+class TrialStatusHistory(BaseModel):
+    """Temporal tracking of clinical trial status changes."""
+    
+    __tablename__ = 'trial_status_history'
+    
+    history_id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        index=True
+    )
+    trial_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey('clinical_trials.trial_id', ondelete='CASCADE'),
+        nullable=False,
+        index=True
+    )
+    status = Column(
+        String(50),
+        nullable=False,
+        index=True,
+        comment='recruiting, active, completed, terminated, suspended, withdrawn, etc.'
+    )
+    status_date = Column(
+        Date,
+        nullable=False,
+        index=True,
+        comment='Date when this status was recorded'
+    )
+    source = Column(
+        String(200),
+        nullable=True,
+        comment='Source of the status change (e.g., clinicaltrials_gov)'
+    )
+    notes = Column(Text, nullable=True, comment='Additional notes about the status change')
+    
+    trial = relationship('ClinicalTrial', backref='status_history')
+    
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('recruiting', 'active', 'completed', 'terminated', 'suspended', 'withdrawn', 'unknown', 'enrolling_by_invitation', 'active_not_recruiting', 'not_yet_recruiting') OR status IS NOT NULL",
+            name='check_status_history_status'
         ),
     )
 

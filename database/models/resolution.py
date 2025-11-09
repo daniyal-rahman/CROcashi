@@ -6,7 +6,7 @@ from datetime import date
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean, CheckConstraint, Column, Date, Numeric,
+    ARRAY, Boolean, CheckConstraint, Column, Date, Numeric,
     ForeignKey, Integer, String, Text
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -55,14 +55,26 @@ class EntityAlias(BaseModel):
         nullable=True,
         comment='0-1 confidence score'
     )
+    valid_from = Column(
+        Date,
+        nullable=True,
+        index=True,
+        comment='When this alias became valid'
+    )
+    valid_to = Column(
+        Date,
+        nullable=True,
+        index=True,
+        comment='When this alias stopped being valid (NULL = still valid)'
+    )
     
     __table_args__ = (
         CheckConstraint(
-            "entity_type IN ('company', 'drug', 'disease', 'target', 'institution')",
+            "entity_type IN ('company', 'drug', 'disease', 'target', 'institution', 'trial', 'publication', 'patent')",
             name='check_entity_type_alias'
         ),
         CheckConstraint(
-            "alias_type IN ('former_name', 'code_name', 'brand_name', 'abbreviation', 'misspelling') OR alias_type IS NULL",
+            "alias_type IN ('former_name', 'code_name', 'brand_name', 'abbreviation', 'misspelling', 'original_name', 'manual_review') OR alias_type IS NULL",
             name='check_alias_type'
         ),
         CheckConstraint(

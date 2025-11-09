@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Column, DateTime, func
+from sqlalchemy import Column, DateTime, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -29,6 +29,17 @@ class BaseModel(Base):
         onupdate=func.now(),
         nullable=False,
         comment='Last update timestamp'
+    )
+    deleted_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment='Soft delete timestamp. NULL = not deleted'
+    )
+    deletion_reason = Column(
+        Text,
+        nullable=True,
+        comment='Reason for deletion (if soft deleted)'
     )
     
     def __repr__(self) -> str:
