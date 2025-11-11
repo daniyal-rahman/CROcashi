@@ -13,7 +13,8 @@ from database.models import (
     CompanyDrug, CompanyOwnershipHistory, DrugIndication, DrugTarget, DrugMechanism,
     TrialSponsor, TrialDrug, TrialDisease, PublicationDrug, PublicationTrial,
     PublicationCompany, RegulatoryDrugEvent, RegulatoryCompanyEvent,
-    FilingCompany, FilingDrug, PatentDrug, PatentCompany
+    FilingCompany, FilingDrug, PatentDrug, PatentCompany,
+    PresentationDrug, PresentationCompany, PresentationTrial
 )
 from src.entity_resolution.types import RelationshipExtraction
 
@@ -49,6 +50,9 @@ class RelationshipBuilder:
         'filing_drug': FilingDrug,
         'patent_drug': PatentDrug,
         'patent_company': PatentCompany,
+        'presentation_drug': PresentationDrug,
+        'presentation_company': PresentationCompany,
+        'presentation_trial': PresentationTrial,
     }
     
     def __init__(self, session: Session):
@@ -205,8 +209,40 @@ class RelationshipBuilder:
             target_field: target_id,
         }
         
+        # Special handling for CompanyDrug: map 'role' to 'relationship_type' or set default
+        if model.__name__ == 'CompanyDrug':
+            if 'relationship_type' in attributes:
+                # Use provided relationship_type
+                rel_data['relationship_type'] = attributes['relationship_type']
+            elif 'role' in attributes:
+                # Map common role values to relationship_type
+                role_mapping = {
+                    'developer': 'developer',
+                    'manufacturer': 'developer',
+                    'sponsor': 'developer',
+                    'originator': 'originator',
+                    'licensee': 'licensee',
+                    'acquirer': 'acquirer',
+                    'co_developer': 'co_developer'
+                }
+                role_value = attributes.get('role')
+                if role_value in role_mapping:
+                    rel_data['relationship_type'] = role_mapping[role_value]
+                else:
+                    # Default to 'developer' if role not recognized
+                    rel_data['relationship_type'] = 'developer'
+                    logger.warning(f"Unknown role '{role_value}' for CompanyDrug, defaulting to 'developer'")
+            else:
+                # No relationship_type or role provided, default to 'developer'
+                rel_data['relationship_type'] = 'developer'
+                logger.warning("No relationship_type or role provided for CompanyDrug, defaulting to 'developer'")
+        
         # Add attributes with constraint validation
         for key, value in attributes.items():
+            # Skip 'role' if we already mapped it to 'relationship_type'
+            if model.__name__ == 'CompanyDrug' and key == 'role':
+                continue
+                
             if hasattr(model, key):
                 # Validate constraint values before inserting
                 if not self._validate_constraint_value(model, key, value):
@@ -310,6 +346,9 @@ class RelationshipBuilder:
             'FilingDrug': ('filing_id', 'drug_id'),
             'PatentDrug': ('patent_id', 'drug_id'),
             'PatentCompany': ('patent_id', 'company_id'),
+            'PresentationDrug': ('presentation_id', 'drug_id'),
+            'PresentationCompany': ('presentation_id', 'company_id'),
+            'PresentationTrial': ('presentation_id', 'trial_id'),
         }
         
         return id_field_map.get(model.__name__, (None, None))

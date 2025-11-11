@@ -48,7 +48,7 @@ def search_figis(query: str = "MRNA", save_dir: Optional[Path] = None) -> Dict[s
                 "figis_found": len(data) if isinstance(data, list) else 0,
                 "response": data,
             }
-        except:
+        except Exception as e:
             return {
                 "error": str(e),
             }

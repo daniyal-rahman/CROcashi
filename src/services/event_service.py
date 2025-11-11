@@ -42,6 +42,7 @@ class EventService:
         'corporate_funded': 'corporate.funded',
         'corporate_acquired': 'corporate.acquired',
         'corporate_dissolved': 'corporate.dissolved',
+        'corporate_layoff': 'corporate.layoff',
         
         # Regulatory events
         'regulatory_ind_filed': 'regulatory.ind_filed',
@@ -81,6 +82,7 @@ class EventService:
             'program.milestone.nda_filed',
             'corporate.founded',
             'corporate.funded',
+            'corporate.layoff',  # Layoffs are major financial distress signals
             'regulatory.ind_filed',
             'regulatory.clinical_hold',
             'regulatory.breakthrough',

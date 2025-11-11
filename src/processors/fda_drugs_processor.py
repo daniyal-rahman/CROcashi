@@ -69,11 +69,16 @@ class FDADrugsProcessor(BaseProcessor):
             entities['diseases'].extend(diseases)
             self.metrics.entities_extracted += len(diseases)
             
-            # Extract regulatory event
+            # Extract regulatory event (approval)
             event = self._extract_regulatory_event(raw_data)
             if event:
                 entities['regulatory_events'].append(event)
                 self.metrics.entities_extracted += 1
+            
+            # Extract CRLs (Complete Response Letters) from approval history
+            crls = self._extract_crls_from_approval_history(raw_data)
+            entities['regulatory_events'].extend(crls)
+            self.metrics.entities_extracted += len(crls)
             
         except Exception as e:
             logger.error(f"Error extracting FDA drug data: {e}")
@@ -93,7 +98,15 @@ class FDADrugsProcessor(BaseProcessor):
         
         drug_id = resolved_entities.get('drug')
         company_id = resolved_entities.get('company')
-        event_id = resolved_entities.get('regulatory_event')
+        # Handle both single event and multiple events (approvals + CRLs)
+        event_ids = resolved_entities.get('regulatory_events', [])
+        if not isinstance(event_ids, list):
+            # If single event, convert to list
+            event_id = resolved_entities.get('regulatory_event')
+            if event_id:
+                event_ids = [event_id]
+            else:
+                event_ids = []
         
         # Company-drug relationship (ownership via NDA/BLA holder)
         if drug_id and company_id:
@@ -113,11 +126,14 @@ class FDADrugsProcessor(BaseProcessor):
                     }
                 ))
         
-        # Regulatory event - drug relationship
-        if event_id and drug_id:
+        # Regulatory event - drug relationships (for all events: approvals + CRLs)
+        for event_id in event_ids:
             event_entity = id_to_entity.get(event_id)
+            if not event_entity or not drug_id:
+                continue
+            
             drug_entity = id_to_entity.get(drug_id)
-            if event_entity and drug_entity:
+            if drug_entity:
                 disease_ids = resolved_entities.get('diseases', [])
                 disease_id = disease_ids[0] if disease_ids else None
                 
@@ -131,11 +147,14 @@ class FDADrugsProcessor(BaseProcessor):
                     temporal={}
                 ))
         
-        # Regulatory event - company relationship
-        if event_id and company_id:
+        # Regulatory event - company relationships (for all events: approvals + CRLs)
+        for event_id in event_ids:
             event_entity = id_to_entity.get(event_id)
+            if not event_entity or not company_id:
+                continue
+            
             company_entity = id_to_entity.get(company_id)
-            if event_entity and company_entity:
+            if company_entity:
                 relationships.append(RelationshipExtraction(
                     relationship_type='regulatory_company_event',
                     source_entity=event_entity,
@@ -299,6 +318,123 @@ class FDADrugsProcessor(BaseProcessor):
         )
         
         return event
+    
+    def _extract_crls_from_approval_history(self, raw_data: Dict[str, Any]) -> List[ExtractedEntity]:
+        """
+        Extract Complete Response Letters (CRLs) from FDA approval history.
+        
+        CRLs are regulatory failures where FDA requests additional information
+        before approval can be granted. They appear in the ApprovalHistory section
+        with ActionType containing "CRL" or "Complete Response".
+        
+        Returns:
+            List of RegulatoryEvent entities for CRLs
+        """
+        crls = []
+        
+        # Get approval history - can be in various formats
+        approval_history = raw_data.get('ApprovalHistory', 
+                                        raw_data.get('approval_history',
+                                                     raw_data.get('approvalHistory', [])))
+        
+        if not approval_history:
+            return crls
+        
+        # Handle different data formats
+        if isinstance(approval_history, str):
+            # If it's a string, try to parse it
+            try:
+                import json
+                approval_history = json.loads(approval_history)
+            except (json.JSONDecodeError, TypeError):
+                return crls
+        
+        if not isinstance(approval_history, list):
+            # If it's a dict, try to extract a list
+            if isinstance(approval_history, dict):
+                # Look for common keys that might contain the list
+                approval_history = approval_history.get('history', 
+                                                       approval_history.get('submissions', []))
+                if not isinstance(approval_history, list):
+                    return crls
+        
+        # Process each entry in approval history
+        for entry in approval_history:
+            if not isinstance(entry, dict):
+                continue
+            
+            # Check for CRL indicators
+            action_type = entry.get('ActionType', 
+                                   entry.get('action_type',
+                                            entry.get('actionType', ''))).upper()
+            
+            # Look for CRL indicators
+            is_crl = (
+                'CRL' in action_type or
+                'COMPLETE RESPONSE' in action_type or
+                'COMPLETE RESPONSE LETTER' in action_type
+            )
+            
+            if not is_crl:
+                continue
+            
+            # Extract CRL details
+            action_date_str = entry.get('ActionDate',
+                                       entry.get('action_date',
+                                                entry.get('actionDate', '')))
+            
+            action_date = None
+            if action_date_str:
+                action_date = self.extract_date_from_raw({'date': action_date_str}, 'date')
+                if isinstance(action_date, datetime):
+                    action_date = action_date.date()
+            
+            # If no date, skip this CRL
+            if not action_date:
+                continue
+            
+            # Get application number
+            application_number = entry.get('SubmissionNumber',
+                                          entry.get('submission_number',
+                                                   entry.get('submissionNumber',
+                                                            self.get_source_identifier(raw_data))))
+            
+            # Get submission type (NDA, BLA, etc.)
+            submission_type = entry.get('SubmissionType',
+                                       entry.get('submission_type',
+                                                entry.get('submissionType', '')))
+            
+            # Extract reason codes or description
+            reason = entry.get('Reason', 
+                              entry.get('reason',
+                                       entry.get('Description',
+                                                entry.get('description', ''))))
+            
+            # Create CRL regulatory event
+            crl_event = ExtractedEntity(
+                entity_type=EntityType.REGULATORY_EVENT,
+                name=f"FDA Complete Response Letter: {application_number}",
+                identifiers={
+                    'application_number': application_number
+                },
+                context={
+                    'event_type': 'rejection',  # CRL is a form of rejection
+                    'event_date': action_date,
+                    'regulatory_body': 'FDA',
+                    'country': 'US',
+                    'application_number': application_number,
+                    'description': reason or f"Complete Response Letter for {submission_type} {application_number}",
+                    'submission_type': submission_type,
+                    'crl_reason': reason
+                },
+                source_name=self.SOURCE_NAME,
+                source_identifier=application_number or self.get_source_identifier(raw_data),
+                raw_data=entry
+            )
+            
+            crls.append(crl_event)
+        
+        return crls
     
     def _make_drug_entity(self, raw_data: Dict[str, Any]) -> ExtractedEntity:
         """Helper to create drug entity stub."""

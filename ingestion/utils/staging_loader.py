@@ -163,6 +163,29 @@ class StagingLoader:
 
 # Convenience ID extractors for common data sources
 
+def fda_drugs_id_extractor(record: Dict[str, Any]) -> Optional[str]:
+    """Extract application number from FDA drug record."""
+    return record.get('application_number') or record.get('applno') or record.get('ApplNo') or ''
+
+
+def fda_clinical_hold_id_extractor(record: Dict[str, Any]) -> Optional[str]:
+    """Extract identifier from FDA clinical hold record."""
+    return record.get('url') or record.get('raw_text', '')[:100] or ''
+
+
+def fda_orange_book_id_extractor(record: Dict[str, Any]) -> Optional[str]:
+    """Extract identifier from FDA Orange Book record."""
+    app_no = record.get('application_number') or record.get('applno', '')
+    patent_no = record.get('patent_number', '')
+    
+    if app_no and patent_no:
+        return f"{app_no}-{patent_no}"
+    elif app_no:
+        return app_no
+    else:
+        return record.get('raw_text', '')[:100] or ''
+
+
 def clinicaltrials_id_extractor(record: Dict[str, Any]) -> Optional[str]:
     """Extract NCT ID from ClinicalTrials.gov record."""
     # Handle nested protocolSection format
@@ -235,6 +258,60 @@ def openfda_id_extractor(record: Dict[str, Any]) -> Optional[str]:
     record_id = record.get('id')
     if record_id:
         return str(record_id)
+    
+    return None
+
+
+def fda_warning_letter_id_extractor(record: Dict[str, Any]) -> Optional[str]:
+    """Extract unique identifier from FDA Warning Letter record."""
+    letter_id = record.get('letter_id')
+    if letter_id:
+        return str(letter_id)
+    
+    # Fallback: use URL as identifier
+    letter_url = record.get('letter_url')
+    if letter_url:
+        # Extract last part of URL as ID
+        url_parts = letter_url.rstrip('/').split('/')
+        if url_parts:
+            return url_parts[-1]
+    
+    return None
+
+
+def warn_notice_id_extractor(record: Dict[str, Any]) -> Optional[str]:
+    """Extract unique identifier from WARN notice record."""
+    notice_id = record.get('notice_id')
+    if notice_id:
+        return str(notice_id)
+    
+    # Fallback: create ID from date + company + location
+    from src.utils.id_generation import generate_hash_id
+    
+    company_name = record.get('company_name', '')
+    notice_date = record.get('notice_date', '')
+    location = record.get('location', '')
+    
+    if company_name and notice_date:
+        # Create composite ID
+        return generate_hash_id(notice_date, company_name, location)
+    
+    return None
+
+
+def asco_abstract_id_extractor(record: Dict[str, Any]) -> Optional[str]:
+    """Extract unique identifier from ASCO abstract record."""
+    abstract_id = record.get('abstract_id')
+    if abstract_id:
+        return str(abstract_id)
+    
+    # Fallback: use conference + title hash
+    from src.utils.id_generation import generate_abstract_id
+    
+    conference = record.get('conference', '')
+    title = record.get('title', '')
+    if conference and title:
+        return generate_abstract_id(conference, title)
     
     return None
 

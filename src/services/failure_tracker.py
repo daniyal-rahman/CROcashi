@@ -183,6 +183,24 @@ class FailureTracker:
                         'nct_id': trial.nct_id,
                         'title': trial.trial_title,
                     }
+                    # Also try to find company through trial sponsor if not already found
+                    if 'company' not in entities:
+                        from database.models.relationships import TrialSponsor
+                        sponsor = self.session.query(TrialSponsor).filter(
+                            TrialSponsor.trial_id == trial.trial_id,
+                            TrialSponsor.entity_type == 'company',
+                            TrialSponsor.deleted_at.is_(None)
+                        ).first()
+                        if sponsor:
+                            company = self.session.query(Company).filter(
+                                Company.company_id == sponsor.entity_id,
+                                Company.deleted_at.is_(None)
+                            ).first()
+                            if company:
+                                entities['company'] = {
+                                    'id': str(company.company_id),
+                                    'name': company.name,
+                                }
                     continue
                 
                 # Disease

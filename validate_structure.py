@@ -135,7 +135,7 @@ for pattern in ['src/**/*.py', 'database/models/*.py', 'database/migrations/vers
                 lines = len(f.readlines())
             total_files += 1
             total_lines += lines
-        except:
+        except (IOError, OSError):
             pass
 
 print(f"Python files: {total_files}")

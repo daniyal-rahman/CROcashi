@@ -15,6 +15,7 @@ def fetch_studies_sample(
     save_dir: Optional[Path] = None,
     requests_per_second: float = 3.0,
     load_to_staging: bool = True,
+    days_back: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Fetch clinical trials from ClinicalTrials.gov.
@@ -25,16 +26,27 @@ def fetch_studies_sample(
         save_dir: Optional directory to save raw JSON
         requests_per_second: Rate limit
         load_to_staging: Whether to load data into staging table (default: True)
+        days_back: Optional number of days to look back (filters by last updated date)
         
     Returns:
         Dict with fetched data
     """
+    from datetime import date, timedelta
+    
     client = HttpClient(requests_per_second=requests_per_second)
     params: Dict[str, Any] = {
         "query.term": query_term,
         "pageSize": page_size,
         "countTotal": "true",
     }
+    
+    # Add date filter if specified
+    if days_back:
+        cutoff_date = (date.today() - timedelta(days=days_back)).isoformat()
+        # ClinicalTrials.gov API supports filtering by last update date
+        # Format: query.cond=AREA[LastUpdatePostDate]RANGE[2024-01-01,MAX]
+        params["query.cond"] = f"AREA[LastUpdatePostDate]RANGE[{cutoff_date},MAX]"
+    
     resp = client.get(API_BASE, params=params)
     data = client.json_or_text(resp)
 

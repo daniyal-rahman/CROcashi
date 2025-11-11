@@ -266,7 +266,7 @@ class EntityMatchCandidate(BaseModel):
         String(50),
         nullable=False,
         index=True,
-        comment='company, drug, disease, target, trial, publication'
+        comment='company, drug, disease, target, trial, publication, institution, mechanism, patent, regulatory_event, sec_filing, conference_presentation'
     )
     source_identifier = Column(
         String(500),
@@ -336,7 +336,7 @@ class EntityMatchCandidate(BaseModel):
     
     __table_args__ = (
         CheckConstraint(
-            "entity_type IN ('company', 'drug', 'disease', 'target', 'trial', 'publication', 'institution')",
+            "entity_type IN ('company', 'drug', 'disease', 'target', 'trial', 'publication', 'institution', 'mechanism', 'patent', 'regulatory_event', 'sec_filing', 'conference_presentation')",
             name='check_candidate_entity_type'
         ),
         CheckConstraint(
@@ -393,7 +393,7 @@ class EntityMatchingRule(BaseModel):
     
     __table_args__ = (
         CheckConstraint(
-            "entity_type IN ('company', 'drug', 'disease', 'target', 'trial', 'publication', 'institution')",
+            "entity_type IN ('company', 'drug', 'disease', 'target', 'trial', 'publication', 'institution', 'mechanism', 'patent', 'regulatory_event', 'sec_filing', 'conference_presentation')",
             name='check_rule_entity_type'
         ),
         CheckConstraint(

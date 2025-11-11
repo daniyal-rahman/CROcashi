@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 
 from sqlalchemy import and_, or_, text
+from sqlalchemy.exc import ProgrammingError, OperationalError
 from sqlalchemy.orm import Session
 
 from database.models import (
@@ -292,25 +293,48 @@ class EntityResolver:
         
         # Use PostgreSQL similarity search with case-insensitive matching
         # Normalize the search name first
-        normalized_search = self.scorer._normalize_text(entity.name)
-        similarity_threshold = 0.3  # Minimum base similarity to consider
+        try:
+            normalized_search = self.scorer._normalize_text(entity.name)
+            # Ensure it's a valid string and handle encoding issues
+            if not isinstance(normalized_search, str):
+                normalized_search = str(normalized_search)
+            # Remove or replace problematic characters
+            normalized_search = normalized_search.encode('utf-8', errors='ignore').decode('utf-8')
+        except Exception as e:
+            logger.warning(f"Error normalizing text '{entity.name}': {e}, skipping fuzzy match")
+            return ResolutionResult(
+                status=ResolutionStatus.NO_MATCH,
+                reasoning=f"Text normalization failed: {str(e)}"
+            )
+        
+        # Minimum base similarity to consider fuzzy matches
+        # This is tuned based on precision/recall analysis - see entity_resolution docs
+        # Values below this threshold are too dissimilar to be meaningful matches
+        similarity_threshold = 0.3
         
         # Get ID field name for explicit selection
         id_field = self._get_id_field_name(model)
         
         # Use explicit column selection instead of SELECT * to avoid indexing issues
-        query_text = text(f"""
-            SELECT {id_field}, {name_field}, similarity(LOWER({name_field}), :search_name) as sim_score
-            FROM {model.__tablename__}
-            WHERE similarity(LOWER({name_field}), :search_name) > :threshold
-            ORDER BY sim_score DESC
-            LIMIT 10
-        """)
-        
-        results = self.session.execute(
-            query_text,
-            {"search_name": normalized_search, "threshold": similarity_threshold}
-        ).fetchall()
+        try:
+            query_text = text(f"""
+                SELECT {id_field}, {name_field}, similarity(LOWER({name_field}), :search_name) as sim_score
+                FROM {model.__tablename__}
+                WHERE similarity(LOWER({name_field}), :search_name) > :threshold
+                ORDER BY sim_score DESC
+                LIMIT 10
+            """)
+            
+            results = self.session.execute(
+                query_text,
+                {"search_name": normalized_search, "threshold": similarity_threshold}
+            ).fetchall()
+        except (ProgrammingError, OperationalError) as e:
+            logger.warning(f"Error executing fuzzy match query for '{entity.name}': {e}, skipping")
+            return ResolutionResult(
+                status=ResolutionStatus.NO_MATCH,
+                reasoning=f"Fuzzy match query failed: {str(e)}"
+            )
         
         if not results:
             return ResolutionResult(
@@ -391,25 +415,45 @@ class EntityResolver:
         
         # Use PostgreSQL similarity search with case-insensitive matching
         # Normalize the search name first
-        normalized_search = self.scorer._normalize_text(entity.name)
+        try:
+            normalized_search = self.scorer._normalize_text(entity.name)
+            # Ensure it's a valid string and handle encoding issues
+            if not isinstance(normalized_search, str):
+                normalized_search = str(normalized_search)
+            # Remove or replace problematic characters
+            normalized_search = normalized_search.encode('utf-8', errors='ignore').decode('utf-8')
+        except Exception as e:
+            logger.warning(f"Error normalizing text '{entity.name}': {e}, skipping fuzzy match")
+            return ResolutionResult(
+                status=ResolutionStatus.NO_MATCH,
+                reasoning=f"Text normalization failed: {str(e)}"
+            )
+        
         similarity_threshold = 0.70  # Higher threshold for fuzzy alone
         
         # Get ID field name for explicit selection
         id_field = self._get_id_field_name(model)
         
         # Use explicit column selection instead of SELECT * to avoid indexing issues
-        query_text = text(f"""
-            SELECT {id_field}, {name_field}, similarity(LOWER({name_field}), :search_name) as sim_score
-            FROM {model.__tablename__}
-            WHERE similarity(LOWER({name_field}), :search_name) > :threshold
-            ORDER BY sim_score DESC
-            LIMIT 5
-        """)
-        
-        results = self.session.execute(
-            query_text,
-            {"search_name": normalized_search, "threshold": similarity_threshold}
-        ).fetchall()
+        try:
+            query_text = text(f"""
+                SELECT {id_field}, {name_field}, similarity(LOWER({name_field}), :search_name) as sim_score
+                FROM {model.__tablename__}
+                WHERE similarity(LOWER({name_field}), :search_name) > :threshold
+                ORDER BY sim_score DESC
+                LIMIT 5
+            """)
+            
+            results = self.session.execute(
+                query_text,
+                {"search_name": normalized_search, "threshold": similarity_threshold}
+            ).fetchall()
+        except Exception as e:
+            logger.warning(f"Error executing fuzzy match query for '{entity.name}': {e}, skipping")
+            return ResolutionResult(
+                status=ResolutionStatus.NO_MATCH,
+                reasoning=f"Fuzzy match query failed: {str(e)}"
+            )
         
         if not results:
             return ResolutionResult(

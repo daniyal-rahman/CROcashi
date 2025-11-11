@@ -200,6 +200,88 @@ def search_8k_filings(
     )
 
 
+def ingest_termination_8ks(
+    lookback_days: int = 90,
+    limit_per_company: int = 20,
+    load_to_staging: bool = True,
+    requests_per_second: float = 1.0
+) -> Dict[str, Any]:
+    """
+    Fetch recent 8-K filings and detect program terminations.
+    
+    This function specifically targets 8-K filings that may contain
+    program termination announcements, focusing on Item 8.01 sections.
+    
+    Args:
+        lookback_days: Number of days to look back for filings (default: 90)
+        limit_per_company: Maximum filings to fetch per company (default: 20)
+        load_to_staging: Whether to load data into staging table (default: True)
+        requests_per_second: Rate limit for API requests (default: 1.0)
+        
+    Returns:
+        Dict with statistics on filings fetched
+    """
+    from datetime import date, timedelta
+    
+    # Get biotech company CIKs
+    cik_list = get_biotech_ciks()
+    
+    # Calculate cutoff date
+    cutoff_date = date.today() - timedelta(days=lookback_days)
+    
+    all_filings = []
+    
+    print(f"Fetching 8-K filings from last {lookback_days} days for {len(cik_list)} companies...")
+    
+    for cik in cik_list:
+        try:
+            filings = fetch_8k_filings_by_cik(
+                cik=cik,
+                limit=limit_per_company,
+                load_to_staging=False,  # We'll load after filtering
+                requests_per_second=requests_per_second
+            )
+            
+            # Filter filings by date
+            for filing in filings:
+                filing_date_str = filing.get('filing_date', '')
+                if filing_date_str:
+                    try:
+                        filing_date = datetime.strptime(filing_date_str, '%Y-%m-%d').date()
+                        if filing_date >= cutoff_date:
+                            all_filings.append(filing)
+                    except (ValueError, TypeError):
+                        # If date parsing fails, include the filing anyway
+                        all_filings.append(filing)
+                else:
+                    # If no date, include it (will be filtered by processor)
+                    all_filings.append(filing)
+        
+        except Exception as e:
+            print(f"  Error fetching filings for CIK {cik}: {e}")
+            continue
+    
+    print(f"Found {len(all_filings)} total 8-K filings in lookback period")
+    
+    # Load to staging if requested
+    stats = {}
+    if load_to_staging and all_filings:
+        loader = StagingLoader('sec_edgar')
+        stats = loader.load_records(
+            all_filings,
+            id_extractor=sec_filing_id_extractor,
+            skip_duplicates=True
+        )
+        print(f"Staging: {stats['inserted']} inserted, {stats['skipped']} skipped, {stats['errors']} errors")
+    
+    return {
+        'total_filings': len(all_filings),
+        'companies_checked': len(cik_list),
+        'lookback_days': lookback_days,
+        'staging_stats': stats
+    }
+
+
 if __name__ == "__main__":
     out = Path("data/raw/sec_edgar")
     tickers = search_company("", save_dir=out)
@@ -209,4 +291,9 @@ if __name__ == "__main__":
     print("\nFetching 8-K filings for Moderna...")
     moderna_filings = fetch_8k_filings_by_cik("1682852", limit=10, load_to_staging=True)
     print(f"Found {len(moderna_filings)} 8-K filings")
+    
+    # Example: Fetch termination 8-Ks
+    print("\nFetching termination 8-Ks...")
+    termination_stats = ingest_termination_8ks(lookback_days=90, load_to_staging=True)
+    print(f"Termination 8-Ks: {termination_stats}")
 

@@ -41,7 +41,8 @@ def fetch_sample(
     retmax: int = 50,
     api_key: Optional[str] = None,
     save_dir: Optional[Path] = None,
-    load_to_staging: bool = True
+    load_to_staging: bool = True,
+    days_back: Optional[int] = None
 ) -> Dict[str, Any]:
     """
     Fetch publications from PubMed.
@@ -52,11 +53,22 @@ def fetch_sample(
         api_key: NCBI API key (optional)
         save_dir: Optional directory to save raw JSON
         load_to_staging: Whether to load data into staging table (default: True)
+        days_back: Optional number of days to look back (filters by publication date)
         
     Returns:
         Dict with search and summary results
     """
-    search = esearch(term=term, retmax=retmax, api_key=api_key)
+    from datetime import date, timedelta
+    
+    # Add date filter to search term if specified
+    search_term = term
+    if days_back:
+        cutoff_date = (date.today() - timedelta(days=days_back)).strftime("%Y/%m/%d")
+        # PubMed date filter format: [PDAT]YYYY/MM/DD:YYYY/MM/DD
+        today_str = date.today().strftime("%Y/%m/%d")
+        search_term = f"{term} AND ({cutoff_date}:{today_str}[PDAT])"
+    
+    search = esearch(term=search_term, retmax=retmax, api_key=api_key)
     ids: List[str] = search.get("esearchresult", {}).get("idlist", [])
     summaries = esummary(ids[:retmax], api_key=api_key) if ids else {"result": {}}
 

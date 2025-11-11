@@ -79,7 +79,7 @@ print(json.dumps(summary))
                         print(f"  Count: {summary['count']}")
                     if 'path' in summary:
                         print(f"  File: {summary['path']}")
-                except:
+                except (UnicodeEncodeError, AttributeError):
                     print(f"✓ SUCCESS in {elapsed:.1f}s")
                 sys.stdout.flush()
                 return True, None, elapsed

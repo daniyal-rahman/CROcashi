@@ -148,16 +148,69 @@ def show_relationship_stats(session):
     print("\n## RELATIONSHIP STATS")
     print("-" * 80)
     
-    # Count relationships by type
+    # Import all relationship models
+    from database.models import (
+        CompanyDrug, CompanyOwnershipHistory, DrugIndication, DrugTarget, DrugMechanism,
+        TrialSponsor, TrialDrug, TrialDisease, PublicationDrug, PublicationTrial,
+        PublicationCompany, RegulatoryDrugEvent, RegulatoryCompanyEvent,
+        FilingCompany, FilingDrug, PatentDrug, PatentCompany,
+        PresentationDrug, PresentationCompany, PresentationTrial,
+        DrugOwnershipHistory, TrialFunding
+    )
+    
+    # Count relationships by type - organized by category
     relationships = [
+        # Core entity relationships
         ('Company-Drug', CompanyDrug),
+        ('Company-Ownership', CompanyOwnershipHistory),
+        ('Drug-Ownership', DrugOwnershipHistory),
+        
+        # Clinical relationships
+        ('Trial-Sponsor', TrialSponsor),
         ('Trial-Drug', TrialDrug),
         ('Trial-Disease', TrialDisease),
+        ('Trial-Funding', TrialFunding),
+        
+        # Publication relationships (inferred)
+        ('Publication-Trial', PublicationTrial),
+        ('Publication-Drug', PublicationDrug),
+        ('Publication-Company', PublicationCompany),
+        
+        # Regulatory relationships
+        ('Regulatory-Drug-Event', RegulatoryDrugEvent),
+        ('Regulatory-Company-Event', RegulatoryCompanyEvent),
+        
+        # Filing relationships
+        ('Filing-Company', FilingCompany),
+        ('Filing-Drug', FilingDrug),
+        
+        # Patent relationships
+        ('Patent-Drug', PatentDrug),
+        ('Patent-Company', PatentCompany),
+        
+        # Presentation relationships
+        ('Presentation-Drug', PresentationDrug),
+        ('Presentation-Company', PresentationCompany),
+        ('Presentation-Trial', PresentationTrial),
+        
+        # Drug metadata
+        ('Drug-Indication', DrugIndication),
+        ('Drug-Target', DrugTarget),
+        ('Drug-Mechanism', DrugMechanism),
     ]
     
+    total = 0
     for name, model in relationships:
-        count = session.query(func.count()).select_from(model).scalar()
-        print(f"{name:25s}: {count:8d}")
+        try:
+            count = session.query(func.count()).select_from(model).scalar() or 0
+            total += count
+            status = "✓" if count > 0 else "✗"
+            print(f"{status} {name:30s}: {count:8,}")
+        except Exception as e:
+            print(f"✗ {name:30s}: ERROR - {e}")
+    
+    print("-" * 80)
+    print(f"{'TOTAL':30s}: {total:8,}")
 
 
 def show_data_quality(session):
@@ -180,16 +233,41 @@ def show_data_quality(session):
     
     # Entities with multiple sources
     print("\nMulti-Source Coverage:")
+    from sqlalchemy import text
+    import logging
+    logger = logging.getLogger(__name__)
+    
     for name, model in entity_counts:
         if not hasattr(model, 'data_sources'):
             continue
         
-        total = session.query(func.count()).select_from(model).scalar()
+        total = session.query(func.count()).select_from(model).filter(
+            model.deleted_at.is_(None)
+        ).scalar()
         
         # Count entities where data_sources JSONB has > 1 key
-        multi_source = session.query(func.count()).select_from(model).filter(
-            func.jsonb_array_length(func.jsonb_object_keys(model.data_sources)) > 1
-        ).scalar()
+        # Use LATERAL join with jsonb_object_keys to count keys per entity
+        try:
+            table_name = model.__tablename__
+            id_column = model.__table__.primary_key.columns.values()[0].name
+            
+            # Use LATERAL join to count keys in JSONB object
+            multi_source = session.execute(
+                text(f"""
+                    SELECT COUNT(DISTINCT t.{id_column})
+                    FROM {table_name} t
+                    CROSS JOIN LATERAL jsonb_object_keys(t.data_sources) AS key
+                    WHERE t.deleted_at IS NULL
+                      AND t.data_sources IS NOT NULL
+                    GROUP BY t.{id_column}
+                    HAVING COUNT(DISTINCT key) > 1
+                """)
+            ).rowcount or 0
+            
+        except Exception as e:
+            # Fallback: skip multi-source counting if query fails
+            logger.warning(f"Could not count multi-source entities for {name}: {e}")
+            multi_source = 0
         
         if total > 0:
             pct = (multi_source / total * 100)

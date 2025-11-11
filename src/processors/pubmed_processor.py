@@ -238,7 +238,11 @@ class PubMedProcessor(BaseProcessor):
         return publication
     
     def _extract_drugs(self, raw_data: Dict[str, Any]) -> List[ExtractedEntity]:
-        """Extract drug entities from title and abstract."""
+        """
+        Extract drug entities from title and abstract by searching for known drug names.
+        
+        Uses database drug names to find mentions in publication text.
+        """
         drugs = []
         
         # Combine title and abstract for drug extraction
@@ -250,27 +254,89 @@ class PubMedProcessor(BaseProcessor):
         if isinstance(abstract, list):
             abstract = ' '.join(abstract) if abstract else ''
         
-        text = (title + ' ' + abstract).lower()
+        text = title + ' ' + abstract
+        if not text.strip():
+            return drugs
         
-        # Simple drug name extraction - look for common drug name patterns
-        # This is a basic implementation - could be enhanced with NER or drug dictionaries
-        # For now, we'll extract capitalized words that might be drug names
-        # This is a placeholder - real implementation would use a drug name dictionary or NER
+        # Get all drug names from database (similar to SEC processor approach)
+        drug_names = self._get_all_drug_names()
+        if not drug_names:
+            logger.debug("No drug names found in database for publication text search")
+            return drugs
         
-        # Common drug name patterns (basic heuristic)
-        # Look for words that end in common drug suffixes
-        drug_suffixes = ['-mab', '-nib', '-zumab', '-tinib', '-olol', '-pril', '-statin', '-prazole']
+        # Search for drug mentions in text
+        text_lower = text.lower()
+        found_drugs = set()  # Track found drugs to avoid duplicates
         
-        # Split text into words
-        words = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', title + ' ' + abstract)
+        for drug_name in drug_names:
+            # Use word boundaries to avoid partial matches
+            pattern = r'\b' + re.escape(drug_name.lower()) + r'\b'
+            if re.search(pattern, text_lower):
+                # Normalize drug name
+                normalized_name = self.normalize_drug_name(drug_name)
+                
+                # Avoid duplicates
+                if normalized_name not in found_drugs:
+                    found_drugs.add(normalized_name)
+                    
+                    drug = ExtractedEntity(
+                        entity_type=EntityType.DRUG,
+                        name=normalized_name,
+                        identifiers={},
+                        context={
+                            'mention_context': 'title_abstract',
+                            'source': 'text_search'
+                        },
+                        source_name=self.SOURCE_NAME,
+                        source_identifier=self.get_source_identifier(raw_data),
+                        raw_data={'drug_name': drug_name, 'extraction_method': 'text_search'}
+                    )
+                    drugs.append(drug)
         
-        # Filter potential drug names (this is very basic - would need proper drug dictionary)
-        # For now, we'll skip automatic drug extraction and rely on manual annotation
-        # or external drug name recognition services
-        
-        # Placeholder: return empty list for now
-        # In production, this would use a drug name dictionary or NER model
         return drugs
+    
+    def _get_all_drug_names(self) -> set:
+        """
+        Get all drug names from database for text search.
+        
+        Returns:
+            Set of normalized drug names
+        """
+        drug_names = set()
+        
+        try:
+            from database.models import Drug
+            
+            # Query all drugs from database
+            drugs = self.session.query(Drug).filter(
+                Drug.deleted_at.is_(None)
+            ).all()
+            
+            for drug in drugs:
+                # Add primary name
+                if drug.primary_name:
+                    normalized = self.normalize_drug_name(drug.primary_name)
+                    drug_names.add(normalized)
+                
+                # Add generic name
+                if drug.generic_name:
+                    normalized = self.normalize_drug_name(drug.generic_name)
+                    drug_names.add(normalized)
+                
+                # Add aliases
+                if drug.aliases:
+                    for alias in drug.aliases:
+                        if alias:
+                            normalized = self.normalize_drug_name(alias)
+                            drug_names.add(normalized)
+            
+            logger.debug(f"Loaded {len(drug_names)} drug names for publication text search")
+            
+        except Exception as e:
+            logger.error(f"Error loading drug names from database: {e}")
+            drug_names = set()
+        
+        return drug_names
     
     def _extract_diseases(self, raw_data: Dict[str, Any]) -> List[ExtractedEntity]:
         """Extract disease entities from MeSH terms."""
