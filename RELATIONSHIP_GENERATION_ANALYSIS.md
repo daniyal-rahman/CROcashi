@@ -173,3 +173,5 @@ SELECT COUNT(*) FROM events WHERE event_type = 'program.discontinued';
 6. ✅ Test with real data
 
 
+
+

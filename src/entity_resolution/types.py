@@ -31,6 +31,7 @@ class MatchMethod(str, Enum):
     ALIAS = "alias"
     FUZZY_CONTEXT = "fuzzy_context"
     FUZZY_ALONE = "fuzzy_alone"
+    HYBRID_LLM = "hybrid_llm"
     MANUAL = "manual"
     NO_MATCH = "no_match"
 

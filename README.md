@@ -168,6 +168,43 @@ This writes a consolidated report to `reports/ingestion_report.md` and `reports/
 - medRxiv API (recent window)
 - And 100+ more sources (see `data_sources_covered.md`)
 
+### Automation & Monitoring
+
+The platform includes automated daily processing and monitoring tools:
+
+#### Daily Pipeline
+
+Automated daily ingestion and processing:
+
+```bash
+# Run manually
+python scripts/daily_pipeline.py
+
+# Set up cron job (runs daily at 2 AM)
+./scripts/setup_cron.sh
+```
+
+#### System Status
+
+Check system health and status:
+
+```bash
+# Comprehensive status check
+python scripts/system_status_check.py
+
+# Verify implementation
+python scripts/verify_implementation.py
+```
+
+#### Additional Scripts
+
+- `scripts/process_backlog.py` - Process unprocessed staging records
+- `scripts/infer_relationships.py` - Run relationship inference
+- `scripts/prioritize_entity_matches.py` - Prioritize entity match candidates
+- `scripts/map_dashboard_requirements.py` - Map dashboard requirements
+
+See `QUICK_START.md` and `AUTOMATION_SETUP.md` for more details.
+
 ### Notes
 
 - WHO ICTRP bulk export link can change; update the URL in `ingestion/who_ictrp.py` or pass it when calling `download_bulk_csv`.

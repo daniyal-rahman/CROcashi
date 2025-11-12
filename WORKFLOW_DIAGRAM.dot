@@ -1,0 +1,229 @@
+digraph CROcashiWorkflow {
+    rankdir=TB;
+    node [shape=box, style=rounded];
+    
+    /* Data Sources */
+    subgraph cluster_sources {
+        label="Data Sources (100+ sources)";
+        style=filled;
+        color=lightblue;
+        
+        ClinicalTrials [label="ClinicalTrials.gov\n✅ Tested"];
+        PubMed [label="PubMed\n✅ Tested"];
+        SECEdgar [label="SEC Edgar\n✅ Tested"];
+        FDAEUA [label="FDA EUA\n✅ Tested"];
+        FDAGuidance [label="FDA Guidance\n✅ Tested"];
+        FDAOrphan [label="FDA Orphan\n✅ Tested"];
+        NIHReporter [label="NIH RePORTER\n✅ Tested"];
+        OtherSources [label="... 90+ more sources"];
+    }
+    
+    /* Ingestion Layer */
+    subgraph cluster_ingestion {
+        label="Ingestion Layer";
+        style=filled;
+        color=lightgreen;
+        
+        IngestionScripts [label="Ingestion Scripts\n(ingestion/*.py)\n✅ Tested"];
+        StagingLoader [label="StagingLoader\n(utils/staging_loader.py)\n✅ Tested"];
+        StagingTable [label="staging_raw_data\n(PostgreSQL)\n387 records tested"];
+    }
+    
+    /* Automation */
+    subgraph cluster_automation {
+        label="Automation Layer";
+        style=filled;
+        color=lightgoldenrodyellow;
+        
+        DailyPipeline [label="Daily Pipeline\n(scripts/daily_pipeline.py)\n✅ Ready"];
+        CronJob [label="Cron Job\n(runs daily at 2 AM)\n✅ Ready"];
+    }
+    
+    /* Processing Pipeline */
+    subgraph cluster_processing {
+        label="Processing Pipeline";
+        style=filled;
+        color=lightyellow;
+        
+        ProcessingPipeline [label="ProcessingPipeline\n(processing/pipeline.py)\n✅ Tested\n100% success rate"];
+        SourceProcessors [label="Source Processors\n(processors/*_processor.py)\n✅ Tested"];
+        EntityExtraction [label="Entity Extraction\n(extract_entities())\n✅ Tested"];
+        EntityResolver [label="EntityResolver\n(entity_resolution/entity_resolver.py)\n✅ Tested"];
+        RelationshipBuilder [label="RelationshipBuilder\n(entity_resolution/relationship_builder.py)\n✅ Tested"];
+    }
+    
+    /* Entity Resolution */
+    subgraph cluster_resolution {
+        label="Entity Resolution (6-Level Hierarchy)";
+        style=filled;
+        color=lightcoral;
+        
+        ExactIdentifier [label="Level 1: Exact Identifier\n(confidence: 1.0)\n✅ Working"];
+        ExactName [label="Level 2: Exact Name\n(confidence: 0.95)\n✅ Working"];
+        AliasLookup [label="Level 3: Alias Lookup\n(confidence: 0.90)\n✅ Working\n4,727 aliases"];
+        FuzzyContext [label="Level 4: Fuzzy + Context\n(confidence: 0.70-0.89)\n✅ Working"];
+        FuzzyAlone [label="Level 5: Fuzzy Alone\n(confidence: 0.60-0.79)\n✅ Working"];
+        NoMatch [label="Level 6: No Match\n(create new entity)\n✅ Working"];
+    }
+    
+    /* Database Entities */
+    subgraph cluster_database {
+        label="PostgreSQL Database";
+        style=filled;
+        color=lightpink;
+        
+        Entities [label="Entity Tables\n(companies, drugs, trials,\npublications, patents, etc.)\n✅ 451 entities created"];
+        Relationships [label="Relationship Tables\n(company_drug, trial_sponsor,\npublication_drug, etc.)\n✅ 908 relationships created"];
+        Aliases [label="Entity Aliases\n(for matching)\n✅ 4,727 aliases"];
+        MatchCandidates [label="Match Candidates\n(needs review)\n⚠️ 496 candidates"];
+        ProcessingLogs [label="Processing Logs\n✅ 429 logs\n100% success"];
+    }
+    
+    /* Relationship Inference */
+    subgraph cluster_inference {
+        label="Relationship Inference";
+        style=filled;
+        color=lightcyan;
+        
+        InferenceService [label="RelationshipInferenceService\n(services/relationship_inference.py)\n✅ Tested"];
+        CompanyDrugInf [label="Company-Drug Inference\n✅ Working\n84 relationships"];
+        PublicationTrialInf [label="Publication-Trial Inference\n⚠️ Needs NLP"];
+        PublicationDrugInf [label="Publication-Drug Inference\n⚠️ Needs NLP"];
+        FilingDrugInf [label="Filing-Drug Inference\n⚠️ Needs NLP"];
+    }
+    
+    /* Monitoring */
+    subgraph cluster_monitoring {
+        label="Monitoring & Verification";
+        style=filled;
+        color=lightsteelblue;
+        
+        StatusCheck [label="System Status Check\n(scripts/system_status_check.py)\n✅ Tested"];
+        VerifyImpl [label="Verify Implementation\n(scripts/verify_implementation.py)\n✅ Tested"];
+    }
+    
+    /* API Layer */
+    subgraph cluster_api {
+        label="API Layer (FastAPI)";
+        style=filled;
+        color=lightsteelblue;
+        
+        FastAPI [label="FastAPI App\n(api/main.py)"];
+        CompanyRiskAPI [label="Company Risk Routes\n(api/routes/company_risk.py)"];
+        CompanyRiskService [label="CompanyRiskService\n(services/company_risk_service.py)"];
+    }
+    
+    /* Frontend */
+    subgraph cluster_frontend {
+        label="Frontend (React + TypeScript)";
+        style=filled;
+        color=lavender;
+        
+        ReactApp [label="React Dashboard\n(frontend/src/)"];
+        RiskDashboard [label="Company Risk Dashboard\n(pages/CompanyRiskDashboard.tsx)"];
+        RiskScoreCard [label="Risk Score Card"];
+        MetricsCards [label="Metrics Cards"];
+        TimelineViz [label="Timeline Visualization"];
+    }
+    
+    /* Flow connections */
+    ClinicalTrials -> IngestionScripts;
+    PubMed -> IngestionScripts;
+    SECEdgar -> IngestionScripts;
+    FDAEUA -> IngestionScripts;
+    FDAGuidance -> IngestionScripts;
+    FDAOrphan -> IngestionScripts;
+    NIHReporter -> IngestionScripts;
+    OtherSources -> IngestionScripts;
+    
+    IngestionScripts -> StagingLoader;
+    StagingLoader -> StagingTable;
+    
+    DailyPipeline -> IngestionScripts;
+    CronJob -> DailyPipeline;
+    
+    StagingTable -> ProcessingPipeline;
+    ProcessingPipeline -> SourceProcessors;
+    SourceProcessors -> EntityExtraction;
+    
+    EntityExtraction -> EntityResolver;
+    EntityResolver -> ExactIdentifier;
+    ExactIdentifier -> ExactName;
+    ExactName -> AliasLookup;
+    AliasLookup -> FuzzyContext;
+    FuzzyContext -> FuzzyAlone;
+    FuzzyAlone -> NoMatch;
+    
+    ExactIdentifier -> Entities;
+    ExactName -> Entities;
+    AliasLookup -> Entities;
+    FuzzyContext -> Entities;
+    FuzzyAlone -> MatchCandidates;
+    NoMatch -> Entities;
+    
+    EntityExtraction -> RelationshipBuilder;
+    RelationshipBuilder -> Relationships;
+    
+    Entities -> Aliases;
+    Entities -> Relationships;
+    
+    ProcessingPipeline -> ProcessingLogs;
+    
+    Relationships -> InferenceService;
+    InferenceService -> CompanyDrugInf;
+    InferenceService -> PublicationTrialInf;
+    InferenceService -> PublicationDrugInf;
+    InferenceService -> FilingDrugInf;
+    CompanyDrugInf -> Relationships;
+    PublicationTrialInf -> Relationships;
+    PublicationDrugInf -> Relationships;
+    FilingDrugInf -> Relationships;
+    
+    Entities -> StatusCheck;
+    Relationships -> StatusCheck;
+    ProcessingLogs -> StatusCheck;
+    StatusCheck -> VerifyImpl;
+    
+    Entities -> CompanyRiskService;
+    Relationships -> CompanyRiskService;
+    
+    CompanyRiskService -> CompanyRiskAPI;
+    CompanyRiskAPI -> FastAPI;
+    
+    FastAPI -> ReactApp;
+    ReactApp -> RiskDashboard;
+    RiskDashboard -> RiskScoreCard;
+    RiskDashboard -> MetricsCards;
+    RiskDashboard -> TimelineViz;
+    
+    /* Styling */
+    ClinicalTrials [fillcolor=lightblue];
+    PubMed [fillcolor=lightblue];
+    SECEdgar [fillcolor=lightblue];
+    FDAEUA [fillcolor=lightblue];
+    FDAGuidance [fillcolor=lightblue];
+    FDAOrphan [fillcolor=lightblue];
+    NIHReporter [fillcolor=lightblue];
+    
+    StagingTable [fillcolor=lightgreen];
+    DailyPipeline [fillcolor=lightgoldenrodyellow];
+    CronJob [fillcolor=lightgoldenrodyellow];
+    
+    ProcessingPipeline [fillcolor=lightyellow];
+    EntityResolver [fillcolor=lightyellow];
+    
+    Entities [fillcolor=lightpink];
+    Relationships [fillcolor=lightpink];
+    
+    CompanyDrugInf [fillcolor=lightcyan];
+    PublicationTrialInf [fillcolor=lightgray];
+    PublicationDrugInf [fillcolor=lightgray];
+    FilingDrugInf [fillcolor=lightgray];
+    
+    StatusCheck [fillcolor=lightsteelblue];
+    VerifyImpl [fillcolor=lightsteelblue];
+    
+    FastAPI [fillcolor=lightsteelblue];
+    
+    ReactApp [fillcolor=lavender];
+}

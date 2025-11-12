@@ -226,6 +226,91 @@ class ConfidenceScorer:
         return text.strip()
     
     @staticmethod
+    def _normalize_stage_info(text: str) -> str:
+        """
+        Normalize stage information in disease names for better matching.
+        
+        Removes stage-specific information (Stage I, Stage II, Stage IVA, etc.)
+        and progression terms (recurrent, metastatic, advanced, etc.) to allow
+        matching of stage-specific diseases to base disease names.
+        
+        Args:
+            text: Disease name text
+            
+        Returns:
+            Text with stage information normalized/removed
+        """
+        import re
+        
+        # Stage patterns to remove or normalize
+        stage_patterns = [
+            r'\bstage\s+[ivx\d]+[abc]?\b',  # Stage I, Stage II, Stage IVA, Stage 1, etc.
+            r'\bstage\s+[ivx]+[abc]?\b',    # Stage I, Stage IVA, etc.
+            r'\brecurrent\b',               # Recurrent
+            r'\bmetastatic\b',              # Metastatic
+            r'\badvanced\b',                # Advanced
+            r'\blocalized\b',               # Localized
+            r'\bearly\s+stage\b',          # Early stage
+            r'\blate\s+stage\b',           # Late stage
+        ]
+        
+        normalized = text.lower()
+        for pattern in stage_patterns:
+            normalized = re.sub(pattern, '', normalized, flags=re.IGNORECASE)
+        
+        # Clean up extra whitespace
+        normalized = ' '.join(normalized.split())
+        
+        return normalized.strip()
+    
+    def calculate_score_with_stage_normalization(
+        self,
+        name1: str,
+        name2: str,
+        entity_type: str,
+        context1: Optional[Dict[str, Any]] = None,
+        context2: Optional[Dict[str, Any]] = None,
+    ) -> tuple[float, List[str]]:
+        """
+        Calculate confidence score with stage normalization for diseases.
+        
+        For disease entities, also calculates score after normalizing stage info
+        and takes the higher of the two scores.
+        
+        Args:
+            name1: First entity name
+            name2: Second entity name
+            entity_type: Type of entity (for stage normalization)
+            context1: Context for first entity
+            context2: Context for second entity
+            
+        Returns:
+            Tuple of (final_score, reasons)
+        """
+        # Calculate normal score
+        normal_score, normal_reasons = self.calculate_score(name1, name2, context1, context2)
+        
+        # For diseases, also try stage-normalized matching
+        if entity_type == 'disease':
+            normalized1 = self._normalize_stage_info(name1)
+            normalized2 = self._normalize_stage_info(name2)
+            
+            # Only recalculate if normalization changed the text
+            if normalized1 != name1.lower() or normalized2 != name2.lower():
+                stage_score, stage_reasons = self.calculate_score(
+                    normalized1, normalized2, context1, context2
+                )
+                
+                # Use the higher score, but note if stage normalization helped
+                if stage_score > normal_score:
+                    final_score = stage_score
+                    reasons = [f"Stage-normalized matching: {stage_score:.2f} (vs {normal_score:.2f} without normalization)"]
+                    reasons.extend(stage_reasons)
+                    return final_score, reasons
+        
+        return normal_score, normal_reasons
+    
+    @staticmethod
     def _same_entities(list1: List[Any], list2: List[Any]) -> bool:
         """
         Check if two lists have any common entities.

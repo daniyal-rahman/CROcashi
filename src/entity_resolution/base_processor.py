@@ -90,6 +90,95 @@ class BaseProcessor(ABC):
         """
         pass
     
+    def is_valid_entity_name(self, name: str) -> bool:
+        """
+        Check if an extracted name is a valid entity name (not navigation/header text).
+        
+        Args:
+            name: Entity name to validate
+            
+        Returns:
+            True if valid, False if appears to be navigation/header text
+        """
+        if not name or not name.strip():
+            return False
+        
+        # Check minimum length
+        if len(name.strip()) < 3:
+            return False
+        
+        name_lower = name.lower().strip()
+        
+        # Navigation/header text patterns
+        navigation_patterns = [
+            'back to',
+            'go to',
+            'search for',
+            'browse',
+            'all ',
+            'guidance:',
+            'fda guidance:',
+            'eua authorization',
+            'search criteria',
+            'system limitation',
+            'due to a system limitation',
+            'if your search',
+            'the search results will not display',
+            'to perform your search',
+            'use a wildcard',
+            'enter "',
+            'click here',
+            'read more',
+            'view all',
+            'see also',
+            'related links',
+            'navigation',
+            'menu',
+            'home',
+            'about',
+            'contact',
+            'privacy',
+            'terms',
+            'cookie',
+            'sitemap'
+        ]
+        
+        # Check if name matches navigation patterns
+        for pattern in navigation_patterns:
+            if pattern in name_lower:
+                return False
+        
+        # Check if it's mostly punctuation or numbers
+        if len(name.strip()) <= 5 and not any(c.isalpha() for c in name):
+            return False
+        
+        return True
+    
+    def filter_invalid_entities(self, entities: Dict[str, List[ExtractedEntity]]) -> Dict[str, List[ExtractedEntity]]:
+        """
+        Filter out invalid entities (navigation text, too short, etc.).
+        
+        Args:
+            entities: Extracted entities
+            
+        Returns:
+            Filtered entities dict
+        """
+        filtered = {}
+        
+        for entity_type, entity_list in entities.items():
+            filtered_list = []
+            for entity in entity_list:
+                if self.is_valid_entity_name(entity.name):
+                    filtered_list.append(entity)
+                else:
+                    self.metrics.warnings.append(
+                        f"Filtered invalid entity name: {entity.name[:50]}"
+                    )
+            filtered[entity_type] = filtered_list
+        
+        return filtered
+    
     def validate_extraction(self, entities: Dict[str, List[ExtractedEntity]]) -> bool:
         """
         Validate extracted entities.

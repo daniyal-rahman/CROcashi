@@ -24,6 +24,7 @@ from database.models import (
 )
 from src.entity_resolution.base_processor import BaseProcessor
 from src.entity_resolution.entity_resolver import EntityResolver
+from src.entity_resolution.hybrid_resolver import HybridEntityResolver
 from src.entity_resolution.relationship_builder import RelationshipBuilder
 from src.entity_resolution.types import EntityType, ExtractedEntity, ResolutionStatus
 from src.services.lineage_service import LineageService
@@ -128,14 +129,17 @@ class ProcessingPipeline:
         # Add more processors as they're implemented
     }
     
-    def __init__(self, batch_size: int = 100):
+    def __init__(self, batch_size: int = 100, use_hybrid_resolver: bool = True):
         """
         Initialize processing pipeline.
         
         Args:
             batch_size: Number of records to process per batch
+            use_hybrid_resolver: Use hybrid resolver (rule-based + LLM) if True,
+                                 otherwise use rule-based only
         """
         self.batch_size = batch_size
+        self.use_hybrid_resolver = use_hybrid_resolver
     
     def process_source(
         self,
@@ -305,7 +309,13 @@ class ProcessingPipeline:
         try:
             # Initialize processor
             processor = processor_class(session)
-            resolver = EntityResolver(session)
+            
+            # Use hybrid resolver if enabled
+            if self.use_hybrid_resolver:
+                resolver = HybridEntityResolver(session)
+            else:
+                resolver = EntityResolver(session)
+            
             rel_builder = RelationshipBuilder(session)
             lineage_service = LineageService(session)
             event_service = EventService(session)
@@ -313,6 +323,9 @@ class ProcessingPipeline:
             # Extract entities from raw data
             raw_data = staging_record.raw_data
             entities = processor.extract_entities(raw_data)
+            
+            # Filter out invalid entities (navigation text, etc.)
+            entities = processor.filter_invalid_entities(entities)
             
             if not processor.validate_extraction(entities):
                 raise ValueError("Entity extraction validation failed")

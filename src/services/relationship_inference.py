@@ -627,7 +627,7 @@ class RelationshipInferenceService:
                         new_rel = PublicationDrug(
                             pub_id=pub.pub_id,
                             drug_id=drug.drug_id,
-                            mention_context='title_abstract',
+                            mention_context='mentioned',  # Valid values: 'primary_subject', 'comparator', 'mentioned'
                             data_sources={
                                 'source': 'inferred_from_text',
                                 'inference_method': 'text_search',

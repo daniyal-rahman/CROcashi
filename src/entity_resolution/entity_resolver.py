@@ -350,14 +350,23 @@ class EntityResolver:
             entity_name = str(row[1])  # Second column is name
             sim_score = float(row[2])  # Third column is similarity score
             
-            # Calculate score with context
+            # Calculate score with context (using stage normalization for diseases)
             candidate_context = self._get_entity_context(model, entity_id)
-            score, reasons = self.scorer.calculate_score(
-                entity.name,
-                entity_name,
-                entity.context,
-                candidate_context
-            )
+            if entity.entity_type == EntityType.DISEASE:
+                score, reasons = self.scorer.calculate_score_with_stage_normalization(
+                    entity.name,
+                    entity_name,
+                    entity.entity_type.value,
+                    entity.context,
+                    candidate_context
+                )
+            else:
+                score, reasons = self.scorer.calculate_score(
+                    entity.name,
+                    entity_name,
+                    entity.context,
+                    candidate_context
+                )
             
             if score >= 0.70:  # Only include if above fuzzy threshold
                 candidates.append(
@@ -379,6 +388,15 @@ class EntityResolver:
         candidates.sort(key=lambda x: x.confidence_score, reverse=True)
         best_candidate = candidates[0]
         
+        # Best match threshold: if best match is significantly better than second, auto-approve
+        BEST_MATCH_THRESHOLD = 0.15  # 15% confidence difference
+        has_clear_best_match = False
+        if len(candidates) > 1:
+            second_best_score = candidates[1].confidence_score
+            score_diff = best_candidate.confidence_score - second_best_score
+            if score_diff >= BEST_MATCH_THRESHOLD:
+                has_clear_best_match = True
+        
         # Decide based on best score
         if best_candidate.confidence_score >= 0.85:
             return ResolutionResult(
@@ -388,6 +406,16 @@ class EntityResolver:
                 match_method=MatchMethod.FUZZY_CONTEXT,
                 candidates=candidates[:5],  # Include top 5 for reference
                 reasoning="; ".join(best_candidate.match_reasons)
+            )
+        elif best_candidate.confidence_score >= 0.75 and has_clear_best_match:
+            # Medium confidence but clear best match - auto-approve
+            return ResolutionResult(
+                status=ResolutionStatus.HIGH_CONFIDENCE,
+                entity_id=best_candidate.entity_id,
+                confidence_score=best_candidate.confidence_score,
+                match_method=MatchMethod.FUZZY_CONTEXT,
+                candidates=candidates[:5],
+                reasoning=f"Clear best match (score diff: {score_diff:.2f}); " + "; ".join(best_candidate.match_reasons)
             )
         else:
             return ResolutionResult(
