@@ -80,10 +80,23 @@ class EntityResolver:
         """
         self.session = session
         self.scorer = ConfidenceScorer(session)
+        
+        # Memory cache for current processing run
+        # Maps cache key (entity_type, identifier_field, identifier_value) -> (entity_id, match_method, confidence_score, status, reasoning)
+        # Only stores high-confidence resolutions (EXACT_MATCH or HIGH_CONFIDENCE)
+        # Stores metadata to preserve original resolution method for audit trails
+        self._memory_cache: Dict[tuple, tuple] = {}
+        
+        # Reverse cache: entity_id -> cache key (for deduplication)
+        self._id_to_cache_key: Dict[UUID, tuple] = {}
     
     def resolve(self, entity: ExtractedEntity) -> ResolutionResult:
         """
         Resolve an extracted entity using hierarchical matching.
+        
+        Uses two-tier lookup:
+        1. Memory cache (fast path) - entities resolved in current run
+        2. Database queries (fallback) - for cross-run resolution
         
         Args:
             entity: Extracted entity to resolve
@@ -91,46 +104,122 @@ class EntityResolver:
         Returns:
             ResolutionResult with match details
         """
-        logger.info(f"Resolving {entity.entity_type.value}: {entity.name}")
+        logger.info(
+            f"[RESOLVER] Resolving {entity.entity_type.value}: '{entity.name}' "
+            f"with identifiers: {entity.identifiers}"
+        )
         
+        # Tier 1: Check memory cache first (fast path)
+        cached_result = self._lookup_in_memory_cache(entity)
+        if cached_result:
+            entity_id, match_method, confidence_score, status, reasoning = cached_result
+            logger.info(
+                f"[RESOLVER] ✅ Memory cache HIT for {entity.entity_type.value} "
+                f"'{entity.name}' -> {entity_id} (original method: {match_method.value if match_method else 'N/A'})"
+            )
+            return ResolutionResult(
+                status=status,
+                entity_id=entity_id,
+                confidence_score=confidence_score,
+                match_method=match_method,
+                reasoning=f"Found in memory cache from current run (originally: {reasoning})"
+            )
+        
+        logger.info(
+            f"[RESOLVER] Memory cache MISS for {entity.entity_type.value} '{entity.name}', "
+            f"trying database queries..."
+        )
+        
+        # Tier 2: Database fallback (cross-run resolution)
         # Level 1: Try exact identifier match
+        logger.debug(f"[RESOLVER] Level 1: Trying exact identifier match...")
         result = self._try_exact_identifier(entity)
         if result.status == ResolutionStatus.EXACT_MATCH:
-            logger.info(f"Exact identifier match found: {result.entity_id}")
+            logger.info(
+                f"[RESOLVER] ✅ Level 1 SUCCESS: Exact identifier match found: {result.entity_id} "
+                f"(reasoning: {result.reasoning})"
+            )
+            # Register in cache for future lookups in this run
+            if result.entity_id:
+                self._register_in_cache(entity, result)
             return result
+        else:
+            logger.debug(f"[RESOLVER] Level 1 FAILED: {result.reasoning}")
         
         # Level 2: Try exact name match
+        logger.debug(f"[RESOLVER] Level 2: Trying exact name match...")
         result = self._try_exact_name(entity)
         if result.status == ResolutionStatus.EXACT_MATCH:
-            logger.info(f"Exact name match found: {result.entity_id}")
+            logger.info(
+                f"[RESOLVER] ✅ Level 2 SUCCESS: Exact name match found: {result.entity_id} "
+                f"(reasoning: {result.reasoning})"
+            )
+            # Register in cache for future lookups in this run
+            if result.entity_id:
+                self._register_in_cache(entity, result)
             return result
+        else:
+            logger.debug(f"[RESOLVER] Level 2 FAILED: {result.reasoning}")
         
         # Level 3: Try alias lookup
+        logger.debug(f"[RESOLVER] Level 3: Trying alias lookup...")
         result = self._try_alias_lookup(entity)
         if result.status in (ResolutionStatus.EXACT_MATCH, ResolutionStatus.HIGH_CONFIDENCE):
-            logger.info(f"Alias match found: {result.entity_id}")
+            logger.info(
+                f"[RESOLVER] ✅ Level 3 SUCCESS: Alias match found: {result.entity_id} "
+                f"(status: {result.status.value}, reasoning: {result.reasoning})"
+            )
+            # Register in cache for future lookups in this run
+            if result.entity_id:
+                self._register_in_cache(entity, result)
             return result
         elif result.status == ResolutionStatus.NEEDS_REVIEW:
-            logger.info(f"Multiple alias matches found, needs review")
+            logger.info(
+                f"[RESOLVER] ⚠️ Level 3 NEEDS_REVIEW: Multiple alias matches found "
+                f"(reasoning: {result.reasoning})"
+            )
             return result
+        else:
+            logger.debug(f"[RESOLVER] Level 3 FAILED: {result.reasoning}")
         
         # Level 4: Try fuzzy match with context
+        logger.debug(f"[RESOLVER] Level 4: Trying fuzzy match with context...")
         result = self._try_fuzzy_context(entity)
         if result.status == ResolutionStatus.HIGH_CONFIDENCE:
-            logger.info(f"Fuzzy context match found: {result.entity_id} (score: {result.confidence_score:.2f})")
+            logger.info(
+                f"[RESOLVER] ✅ Level 4 SUCCESS: Fuzzy context match found: {result.entity_id} "
+                f"(score: {result.confidence_score:.2f}, reasoning: {result.reasoning})"
+            )
+            # Register in cache for future lookups in this run
+            if result.entity_id:
+                self._register_in_cache(entity, result)
             return result
         elif result.status == ResolutionStatus.NEEDS_REVIEW:
-            logger.info(f"Fuzzy context match needs review (score: {result.confidence_score:.2f})")
+            logger.info(
+                f"[RESOLVER] ⚠️ Level 4 NEEDS_REVIEW: Fuzzy context match "
+                f"(score: {result.confidence_score:.2f}, reasoning: {result.reasoning})"
+            )
             return result
+        else:
+            logger.debug(f"[RESOLVER] Level 4 FAILED: {result.reasoning}")
         
         # Level 5: Try fuzzy match alone
+        logger.debug(f"[RESOLVER] Level 5: Trying fuzzy match alone...")
         result = self._try_fuzzy_alone(entity)
         if result.status == ResolutionStatus.NEEDS_REVIEW:
-            logger.info(f"Fuzzy match needs review (score: {result.confidence_score:.2f})")
+            logger.info(
+                f"[RESOLVER] ⚠️ Level 5 NEEDS_REVIEW: Fuzzy match "
+                f"(score: {result.confidence_score:.2f}, reasoning: {result.reasoning})"
+            )
             return result
+        else:
+            logger.debug(f"[RESOLVER] Level 5 FAILED: {result.reasoning}")
         
         # Level 6: No match found
-        logger.info(f"No match found for {entity.name}, marking for new entity creation")
+        logger.warning(
+            f"[RESOLVER] ❌ Level 6 FAILED: No match found for {entity.entity_type.value} "
+            f"'{entity.name}' after trying all strategies. Marking for new entity creation."
+        )
         return ResolutionResult(
             status=ResolutionStatus.NO_MATCH,
             confidence_score=0.0,
@@ -722,4 +811,127 @@ class EntityResolver:
             'Mechanism': 'mechanism_id',
         }
         return id_fields.get(model.__name__, 'id')
+    
+    def _make_cache_key(self, entity: ExtractedEntity) -> Optional[tuple]:
+        """
+        Create a cache key from entity identifiers.
+        
+        Uses primary identifier fields in priority order. Only creates cache key
+        if entity has at least one identifier field populated.
+        
+        IMPORTANT: Cache keys must be consistent for the same entity across
+        multiple calls. This method ensures consistency by:
+        - Using identifier fields in priority order (first match wins)
+        - Normalizing identifier values (strip whitespace)
+        - Using same normalization for name fallback
+        
+        Args:
+            entity: ExtractedEntity to create cache key for
+            
+        Returns:
+            Cache key tuple (entity_type, identifier_field, identifier_value) or None
+        """
+        identifier_fields = self.IDENTIFIER_FIELDS.get(entity.entity_type, [])
+        
+        # Try each identifier field in priority order
+        # This ensures consistent key generation: same entity with same identifier
+        # will always produce the same cache key, regardless of other fields
+        for field in identifier_fields:
+            if field in entity.identifiers and entity.identifiers[field]:
+                # Normalize value: convert to string and strip whitespace
+                # This ensures "NCT12345678" and "NCT12345678 " produce same key
+                value = str(entity.identifiers[field]).strip()
+                if value:  # Ensure non-empty
+                    return (entity.entity_type.value, field, value)
+        
+        # Fallback: use normalized name if no identifiers available
+        # This is less reliable but allows caching entities without identifiers
+        # Uses same normalization as scorer to ensure consistency
+        normalized_name = self.scorer._normalize_text(entity.name)
+        if normalized_name:
+            return (entity.entity_type.value, 'name', normalized_name)
+        
+        return None
+    
+    def _lookup_in_memory_cache(self, entity: ExtractedEntity) -> Optional[tuple]:
+        """
+        Look up entity in memory cache.
+        
+        Checks cache using identifier-based keys. Returns cached resolution metadata if found.
+        
+        Args:
+            entity: ExtractedEntity to look up
+            
+        Returns:
+            Tuple of (entity_id, match_method, confidence_score, status, reasoning) if found,
+            or None if not found
+        """
+        cache_key = self._make_cache_key(entity)
+        if cache_key:
+            result = self._memory_cache.get(cache_key)
+            if result:
+                logger.debug(f"Cache HIT: {cache_key} -> {result[0]} (method: {result[1].value if result[1] else 'N/A'}) for {entity.entity_type.value} '{entity.name}'")
+            else:
+                logger.debug(f"Cache MISS: {cache_key} for {entity.entity_type.value} '{entity.name}'")
+            return result
+        logger.debug(f"Cache SKIP: No cache key generated for {entity.entity_type.value} '{entity.name}'")
+        return None
+    
+    def _register_in_cache(self, entity: ExtractedEntity, resolution: ResolutionResult) -> None:
+        """
+        Register a resolved entity in the memory cache with resolution metadata.
+        
+        Only caches high-confidence resolutions (EXACT_MATCH or HIGH_CONFIDENCE).
+        Stores metadata (match_method, confidence_score, status, reasoning) to preserve
+        the original resolution method for audit trails and logging.
+        
+        Args:
+            entity: ExtractedEntity that was resolved
+            resolution: ResolutionResult containing entity_id and resolution metadata
+        """
+        if not resolution.entity_id:
+            return
+        
+        cache_key = self._make_cache_key(entity)
+        if cache_key:
+            # Store entity_id with resolution metadata
+            cache_entry = (
+                resolution.entity_id,
+                resolution.match_method,
+                resolution.confidence_score,
+                resolution.status,
+                resolution.reasoning
+            )
+            self._memory_cache[cache_key] = cache_entry
+            # Store in reverse cache for deduplication
+            self._id_to_cache_key[resolution.entity_id] = cache_key
+            logger.debug(
+                f"Cached {entity.entity_type.value} {entity.name} -> {resolution.entity_id} "
+                f"(method: {resolution.match_method.value if resolution.match_method else 'N/A'})"
+            )
+    
+    def register_entity(self, entity: ExtractedEntity, entity_id: UUID) -> None:
+        """
+        Public method to register an entity in the cache.
+        
+        Used by pipeline after entity creation or resolution to ensure
+        entities are available for subsequent lookups in the same run.
+        
+        For newly created entities, uses default metadata (EXACT_MATCH, confidence 1.0).
+        For resolved entities, use _register_in_cache() with full ResolutionResult instead.
+        
+        Args:
+            entity: ExtractedEntity that was resolved/created
+            entity_id: UUID of the entity
+        """
+        # Create a default ResolutionResult for newly created entities
+        # (entities created in pipeline don't have a resolution result)
+        default_result = ResolutionResult(
+            status=ResolutionStatus.EXACT_MATCH,
+            entity_id=entity_id,
+            confidence_score=1.0,
+            match_method=MatchMethod.EXACT_IDENTIFIER,
+            reasoning="Newly created entity registered in cache"
+        )
+        self._register_in_cache(entity, default_result)
 

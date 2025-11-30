@@ -233,4 +233,16 @@ class HybridEntityResolver:
             f"LLM reasoning: {llm_decision.reasoning}"
         )
         return reasoning
+    
+    def register_entity(self, entity: ExtractedEntity, entity_id: UUID) -> None:
+        """
+        Register an entity in the underlying resolver's cache.
+        
+        Pass-through method to ensure cache works when using hybrid resolver.
+        
+        Args:
+            entity: ExtractedEntity that was resolved/created
+            entity_id: UUID of the entity
+        """
+        self.rule_based.register_entity(entity, entity_id)
 

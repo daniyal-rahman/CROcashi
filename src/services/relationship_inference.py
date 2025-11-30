@@ -415,6 +415,7 @@ class RelationshipInferenceService:
             from database.models.publications import Publication
             from database.models.clinical import ClinicalTrial
             from database.models.relationships import PublicationTrial
+            from database.models.staging import StagingRawData
             
             # Count total publications for batching
             total_count = self.session.query(Publication).filter(
@@ -445,6 +446,25 @@ class RelationshipInferenceService:
                         text += pub.title + " "
                     if pub.abstract:
                         text += pub.abstract
+                    
+                    # Also check if we have raw staging data with more complete text
+                    # This helps find NCT IDs that might be in other fields
+                    staging_record = self.session.query(StagingRawData).filter(
+                        StagingRawData.source_system == 'pubmed',
+                        StagingRawData.source_record_id == str(pub.pmid)
+                    ).first()
+                    
+                    if staging_record and staging_record.raw_data:
+                        # Search all text fields in raw_data
+                        raw_data = staging_record.raw_data
+                        for key, value in raw_data.items():
+                            if key not in ['title', 'abstract'] and value:
+                                if isinstance(value, list):
+                                    list_text = ' '.join(str(v) for v in value if v)
+                                    if list_text.strip():
+                                        text += ' ' + list_text
+                                elif isinstance(value, str) and len(value) > 10:
+                                    text += ' ' + value
                     
                     if not text.strip():
                         continue

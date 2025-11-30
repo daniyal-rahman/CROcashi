@@ -358,6 +358,9 @@ class ProcessingPipeline:
                         stub_key = self._make_entity_stub_key(extracted_entity)
                         entity_stub_to_id[stub_key] = resolution.entity_id
                         
+                        # Register in resolver cache for subsequent lookups in this run
+                        resolver.register_entity(extracted_entity, resolution.entity_id)
+                        
                     elif resolution.status == ResolutionStatus.NEEDS_REVIEW:
                         # Create match candidate for review
                         self._create_match_candidate(
@@ -397,6 +400,9 @@ class ProcessingPipeline:
                         # Store mapping from entity stub to resolved ID
                         stub_key = self._make_entity_stub_key(extracted_entity)
                         entity_stub_to_id[stub_key] = resolved_id
+                        
+                        # Register in resolver cache for subsequent lookups in this run
+                        resolver.register_entity(extracted_entity, resolved_id)
                         
                         # Create alias for future matching (only for entity types that support aliases)
                         # Allowed types: company, drug, disease, target, institution, trial, publication, patent
@@ -488,67 +494,109 @@ class ProcessingPipeline:
                         resolved_entities[entity_type] = resolved_ids
             
             # Extract and create relationships
+            logger.info(f"[RELATIONSHIPS] Extracting relationships for {source_identifier}...")
             relationships = processor.extract_relationships(raw_data, resolved_entities, id_to_entity)
             
-            logger.debug(f"Extracted {len(relationships)} relationships for {source_identifier}")
+            logger.info(
+                f"[RELATIONSHIPS] Extracted {len(relationships)} relationships for {source_identifier}"
+            )
             
-            for relationship in relationships:
-                # Look up source entity ID from the entity stub
+            if len(relationships) == 0:
+                logger.warning(
+                    f"[RELATIONSHIPS] ⚠️ No relationships extracted for {source_identifier}. "
+                    f"Resolved entities: {list(resolved_entities.keys())}"
+                )
+            
+            for i, relationship in enumerate(relationships):
+                logger.info(
+                    f"[RELATIONSHIPS] Processing relationship {i+1}/{len(relationships)}: "
+                    f"{relationship.relationship_type} "
+                    f"({relationship.source_entity.entity_type.value} '{relationship.source_entity.name}' -> "
+                    f"{relationship.target_entity.entity_type.value} '{relationship.target_entity.name}')"
+                )
+                
+                # Look up source entity ID from the entity stub (Tier 1: memory cache)
                 source_stub_key = self._make_entity_stub_key(relationship.source_entity)
                 source_id = entity_stub_to_id.get(source_stub_key)
                 
-                # Look up target entity ID from the entity stub
+                logger.debug(
+                    f"[RELATIONSHIPS] Source entity lookup: stub_key={source_stub_key}, "
+                    f"pipeline_cache_hit={source_id is not None}"
+                )
+                
+                # Tier 2: Database fallback if not in memory cache
+                if not source_id:
+                    logger.info(
+                        f"[RELATIONSHIPS] Source entity not in pipeline cache, trying database fallback..."
+                    )
+                    source_id = self._resolve_entity_for_relationship(
+                        resolver,
+                        relationship.source_entity,
+                        entity_stub_to_id
+                    )
+                
+                # Look up target entity ID from the entity stub (Tier 1: memory cache)
                 target_stub_key = self._make_entity_stub_key(relationship.target_entity)
                 target_id = entity_stub_to_id.get(target_stub_key)
                 
                 logger.debug(
-                    f"Relationship {relationship.relationship_type}: "
-                    f"source_key={source_stub_key}, source_id={source_id}, "
-                    f"target_key={target_stub_key}, target_id={target_id}"
+                    f"[RELATIONSHIPS] Target entity lookup: stub_key={target_stub_key}, "
+                    f"pipeline_cache_hit={target_id is not None}"
+                )
+                
+                # Tier 2: Database fallback if not in memory cache
+                if not target_id:
+                    logger.info(
+                        f"[RELATIONSHIPS] Target entity not in pipeline cache, trying database fallback..."
+                    )
+                    target_id = self._resolve_entity_for_relationship(
+                        resolver,
+                        relationship.target_entity,
+                        entity_stub_to_id
+                    )
+                
+                logger.info(
+                    f"[RELATIONSHIPS] Resolution results: "
+                    f"source_id={source_id}, target_id={target_id}"
                 )
                 
                 if source_id and target_id:
+                    logger.info(
+                        f"[RELATIONSHIPS] ✅ Both entities resolved, creating relationship..."
+                    )
                     result = rel_builder.create_relationship(
                         relationship,
                         source_id,
                         target_id,
                         processor.SOURCE_NAME
                     )
-                    if not result:
+                    if result:
+                        logger.info(
+                            f"[RELATIONSHIPS] ✅ SUCCESS: Created {relationship.relationship_type} "
+                            f"relationship between {source_id} and {target_id}"
+                        )
+                    else:
                         logger.warning(
-                            f"Failed to create relationship {relationship.relationship_type} "
-                            f"between {relationship.source_entity.name} and {relationship.target_entity.name}"
+                            f"[RELATIONSHIPS] ❌ FAILED: RelationshipBuilder returned False for "
+                            f"{relationship.relationship_type} between "
+                            f"{relationship.source_entity.name} and {relationship.target_entity.name}"
                         )
                 else:
-                    # Log warning if entities not found
+                    # Log warning if entities not found after both tiers
                     if not source_id:
                         logger.warning(
-                            f"Source entity not resolved for relationship: "
-                            f"{relationship.relationship_type} - "
+                            f"[RELATIONSHIPS] ❌ Source entity not resolved for relationship "
+                            f"(after database fallback): {relationship.relationship_type} - "
                             f"{relationship.source_entity.entity_type.value}: {relationship.source_entity.name} "
-                            f"(stub_key: {source_stub_key})"
+                            f"(stub_key: {source_stub_key}, identifiers: {relationship.source_entity.identifiers})"
                         )
-                        # Debug: show available keys
-                        available_source_keys = [
-                            k for k in entity_stub_to_id.keys()
-                            if k[0] == source_stub_key[0]  # Same entity type
-                        ]
-                        if available_source_keys:
-                            logger.debug(f"Available source keys: {available_source_keys[:3]}")
                     if not target_id:
                         logger.warning(
-                            f"Target entity not resolved for relationship: "
-                            f"{relationship.relationship_type} - "
+                            f"[RELATIONSHIPS] ❌ Target entity not resolved for relationship "
+                            f"(after database fallback): {relationship.relationship_type} - "
                             f"{relationship.target_entity.entity_type.value}: {relationship.target_entity.name} "
-                            f"(stub_key: {target_stub_key})"
+                            f"(stub_key: {target_stub_key}, identifiers: {relationship.target_entity.identifiers})"
                         )
-                        # Debug: show available keys
-                        available_target_keys = [
-                            k for k in entity_stub_to_id.keys()
-                            if k[0] == target_stub_key[0]  # Same entity type
-                        ]
-                        if available_target_keys:
-                            logger.debug(f"Available target keys: {available_target_keys[:3]}")
             
             rel_stats = rel_builder.get_stats()
             log.relationships_created = rel_stats['created']
@@ -1368,6 +1416,83 @@ class ProcessingPipeline:
             normalized_name,
             identifier_tuple
         )
+    
+    def _resolve_entity_for_relationship(
+        self,
+        resolver: EntityResolver,
+        entity: ExtractedEntity,
+        entity_stub_to_id: Dict
+    ) -> Optional[UUID]:
+        """
+        Resolve an entity for relationship building with database fallback.
+        
+        This implements Tier 2 (database fallback) for cross-run entity resolution.
+        When an entity is not in the current run's memory cache, this method
+        queries the database to find entities from previous runs.
+        
+        Args:
+            resolver: EntityResolver instance (has its own memory cache)
+            entity: ExtractedEntity to resolve
+            entity_stub_to_id: Pipeline's entity stub to ID mapping
+            
+        Returns:
+            UUID of resolved entity, or None if not found
+        """
+        logger.info(
+            f"[CROSS-RUN RESOLUTION] Attempting to resolve {entity.entity_type.value} "
+            f"'{entity.name}' with identifiers: {entity.identifiers}"
+        )
+        
+        # Check pipeline's memory cache first (Tier 1)
+        stub_key = self._make_entity_stub_key(entity)
+        logger.debug(f"[CROSS-RUN RESOLUTION] Pipeline cache key: {stub_key}")
+        
+        if stub_key in entity_stub_to_id:
+            cached_id = entity_stub_to_id[stub_key]
+            logger.info(
+                f"[CROSS-RUN RESOLUTION] ✅ Pipeline cache HIT for {entity.entity_type.value} "
+                f"'{entity.name}' -> {cached_id}"
+            )
+            return cached_id
+        
+        logger.info(
+            f"[CROSS-RUN RESOLUTION] Pipeline cache MISS for {entity.entity_type.value} "
+            f"'{entity.name}', trying resolver (database fallback)..."
+        )
+        
+        # Tier 2: Try resolver (checks its memory cache, then database)
+        # This enables cross-run resolution - finding entities processed in previous runs
+        logger.debug(f"[CROSS-RUN RESOLUTION] Calling resolver.resolve() for {entity.entity_type.value} '{entity.name}'")
+        resolution = resolver.resolve(entity)
+        
+        logger.info(
+            f"[CROSS-RUN RESOLUTION] Resolver result: status={resolution.status.value}, "
+            f"entity_id={resolution.entity_id}, confidence={resolution.confidence_score:.2f}, "
+            f"reasoning={resolution.reasoning}"
+        )
+        
+        # Only use high-confidence resolutions (EXACT_MATCH or HIGH_CONFIDENCE)
+        # NEEDS_REVIEW and NO_MATCH don't have entity_id, so they're safely ignored
+        if resolution.entity_id:
+            # Register in pipeline cache for subsequent lookups in this run
+            entity_stub_to_id[stub_key] = resolution.entity_id
+            logger.info(
+                f"[CROSS-RUN RESOLUTION] ✅ SUCCESS: Resolved {entity.entity_type.value} "
+                f"'{entity.name}' via database fallback -> {resolution.entity_id} "
+                f"(status: {resolution.status.value})"
+            )
+            logger.debug(
+                f"[CROSS-RUN RESOLUTION] Registered in pipeline cache: {stub_key} -> {resolution.entity_id}"
+            )
+            return resolution.entity_id
+        
+        # Entity not found in database either
+        logger.warning(
+            f"[CROSS-RUN RESOLUTION] ❌ FAILED: Entity {entity.entity_type.value} "
+            f"'{entity.name}' not found in database fallback. "
+            f"Status: {resolution.status.value}, Reasoning: {resolution.reasoning}"
+        )
+        return None
     
     @staticmethod
     def _create_alias(

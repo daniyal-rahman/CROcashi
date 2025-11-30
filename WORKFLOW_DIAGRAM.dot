@@ -25,7 +25,7 @@ digraph CROcashiWorkflow {
         color=lightgreen;
         
         IngestionScripts [label="Ingestion Scripts\n(ingestion/*.py)\n✅ Tested"];
-        StagingLoader [label="StagingLoader\n(utils/staging_loader.py)\n✅ Tested"];
+        StagingLoader [label="StagingLoader\n(ingestion/utils/staging_loader.py)\n✅ Tested"];
         StagingTable [label="staging_raw_data\n(PostgreSQL)\n387 records tested"];
     }
     
@@ -36,7 +36,7 @@ digraph CROcashiWorkflow {
         color=lightgoldenrodyellow;
         
         DailyPipeline [label="Daily Pipeline\n(scripts/daily_pipeline.py)\n✅ Ready"];
-        CronJob [label="Cron Job\n(runs daily at 2 AM)\n✅ Ready"];
+        CronJob [label="Cron Job\n(runs daily at 2 AM)\n⚠️ Not configured\n(setup: ./scripts/setup_cron.sh)"];
     }
     
     /* Processing Pipeline */
@@ -45,11 +45,11 @@ digraph CROcashiWorkflow {
         style=filled;
         color=lightyellow;
         
-        ProcessingPipeline [label="ProcessingPipeline\n(processing/pipeline.py)\n✅ Tested\n100% success rate"];
-        SourceProcessors [label="Source Processors\n(processors/*_processor.py)\n✅ Tested"];
+        ProcessingPipeline [label="ProcessingPipeline\n(src/processing/pipeline.py)\n✅ Tested\n100% success rate"];
+        SourceProcessors [label="Source Processors\n(src/processors/*_processor.py)\n✅ Tested"];
         EntityExtraction [label="Entity Extraction\n(extract_entities())\n✅ Tested"];
-        EntityResolver [label="EntityResolver\n(entity_resolution/entity_resolver.py)\n✅ Tested"];
-        RelationshipBuilder [label="RelationshipBuilder\n(entity_resolution/relationship_builder.py)\n✅ Tested"];
+        EntityResolver [label="EntityResolver\n(src/entity_resolution/entity_resolver.py)\n✅ Tested"];
+        RelationshipBuilder [label="RelationshipBuilder\n(src/entity_resolution/relationship_builder.py)\n✅ Tested"];
     }
     
     /* Entity Resolution */
@@ -85,11 +85,11 @@ digraph CROcashiWorkflow {
         style=filled;
         color=lightcyan;
         
-        InferenceService [label="RelationshipInferenceService\n(services/relationship_inference.py)\n✅ Tested"];
+        InferenceService [label="RelationshipInferenceService\n(src/services/relationship_inference.py)\n✅ Tested"];
         CompanyDrugInf [label="Company-Drug Inference\n✅ Working\n84 relationships"];
-        PublicationTrialInf [label="Publication-Trial Inference\n⚠️ Needs NLP"];
-        PublicationDrugInf [label="Publication-Drug Inference\n⚠️ Needs NLP"];
-        FilingDrugInf [label="Filing-Drug Inference\n⚠️ Needs NLP"];
+        PublicationTrialInf [label="Publication-Trial Inference\n✅ Basic (NCT ID regex)\n⚠️ Limited by text availability"];
+        PublicationDrugInf [label="Publication-Drug Inference\n✅ Basic (text search)\n⚠️ Limited accuracy"];
+        FilingDrugInf [label="Filing-Drug Inference\n✅ Basic (text search)\n⚠️ Needs full_text data"];
     }
     
     /* Monitoring */
@@ -108,9 +108,9 @@ digraph CROcashiWorkflow {
         style=filled;
         color=lightsteelblue;
         
-        FastAPI [label="FastAPI App\n(api/main.py)"];
-        CompanyRiskAPI [label="Company Risk Routes\n(api/routes/company_risk.py)"];
-        CompanyRiskService [label="CompanyRiskService\n(services/company_risk_service.py)"];
+        FastAPI [label="FastAPI App\n(src/api/main.py)"];
+        CompanyRiskAPI [label="Company Risk Routes\n(src/api/routes/company_risk.py)"];
+        CompanyRiskService [label="CompanyRiskService\n(src/services/company_risk_service.py)"];
     }
     
     /* Frontend */

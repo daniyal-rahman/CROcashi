@@ -130,7 +130,8 @@ class PubMedProcessor(BaseProcessor):
             pub_entity = self._make_publication_entity(raw_data)
         
         # Extract NCT IDs from publication text and link to trials
-        nct_ids = self._extract_nct_ids(raw_data)
+        # Pass pub_id to also search database record for more complete text
+        nct_ids = self._extract_nct_ids(raw_data, pub_id=pub_id)
         if nct_ids:
             # Query database for matching trials by nct_id
             from database.models.clinical import ClinicalTrial
@@ -375,34 +376,110 @@ class PubMedProcessor(BaseProcessor):
         
         return diseases
     
-    def _extract_nct_ids(self, raw_data: Dict[str, Any]) -> List[str]:
+    def _extract_nct_ids(self, raw_data: Dict[str, Any], pub_id: Optional[UUID] = None) -> List[str]:
         """
         Extract NCT IDs from publication text.
         
+        Searches multiple sources:
+        1. Raw data title and abstract
+        2. Raw data other text fields (if available)
+        3. Database publication record (if pub_id provided)
+        
         Args:
             raw_data: Raw publication data
+            pub_id: Optional publication UUID to also search database record
             
         Returns:
             List of NCT IDs found (e.g., ["NCT12345678"])
         """
         nct_ids = []
+        text_parts = []
         
-        # Combine title and abstract
+        # 1. Extract from raw_data title and abstract
         title = raw_data.get('title', '')
         if isinstance(title, list):
             title = ' '.join(title) if title else ''
+        if title:
+            text_parts.append(title)
         
         abstract = raw_data.get('abstract', '')
         if isinstance(abstract, list):
             abstract = ' '.join(abstract) if abstract else ''
+        if abstract:
+            text_parts.append(abstract)
         
-        text = title + ' ' + abstract
+        # 2. Search ALL text fields in raw_data that might contain NCT IDs
+        # PubMed data can have NCT IDs in various fields, so search all string/list fields
+        for key, value in raw_data.items():
+            if value and key not in ['title', 'abstract']:  # Already searched above
+                if isinstance(value, list):
+                    # Join list items into text
+                    list_text = ' '.join(str(v) for v in value if v)
+                    if list_text.strip():
+                        text_parts.append(list_text)
+                elif isinstance(value, str):
+                    # Add string fields that might contain text
+                    if len(value) > 10:  # Only search substantial text fields
+                        text_parts.append(value)
+                elif isinstance(value, dict):
+                    # Recursively search nested dictionaries
+                    nested_text = self._extract_text_from_dict(value)
+                    if nested_text:
+                        text_parts.append(nested_text)
         
-        # Find all NCT IDs
-        matches = NCT_ID_PATTERN.findall(text)
-        nct_ids = list(set(matches))  # Remove duplicates
+        # 3. If pub_id provided, also search database publication record
+        if pub_id:
+            try:
+                from database.models.publications import Publication
+                db_pub = self.session.query(Publication).filter(
+                    Publication.pub_id == pub_id
+                ).first()
+                
+                if db_pub:
+                    # Add database title and abstract (may have more complete data)
+                    if db_pub.title and db_pub.title not in text_parts:
+                        text_parts.append(db_pub.title)
+                    if db_pub.abstract and db_pub.abstract not in text_parts:
+                        text_parts.append(db_pub.abstract)
+            except Exception as e:
+                logger.debug(f"Could not query database publication {pub_id}: {e}")
+        
+        # Combine all text and search for NCT IDs
+        combined_text = ' '.join(text_parts)
+        
+        if combined_text.strip():
+            # Find all NCT IDs
+            matches = NCT_ID_PATTERN.findall(combined_text)
+            nct_ids = list(set([m.upper() for m in matches]))  # Remove duplicates and normalize
         
         return nct_ids
+    
+    def _extract_text_from_dict(self, data: Dict[str, Any], max_depth: int = 3) -> str:
+        """
+        Recursively extract all text from a nested dictionary.
+        
+        Args:
+            data: Dictionary to search
+            max_depth: Maximum recursion depth
+            
+        Returns:
+            Combined text from all string/list values
+        """
+        if max_depth <= 0:
+            return ''
+        
+        text_parts = []
+        for key, value in data.items():
+            if isinstance(value, str) and len(value) > 5:
+                text_parts.append(value)
+            elif isinstance(value, list):
+                text_parts.extend([str(v) for v in value if isinstance(v, (str, int, float))])
+            elif isinstance(value, dict):
+                nested = self._extract_text_from_dict(value, max_depth - 1)
+                if nested:
+                    text_parts.append(nested)
+        
+        return ' '.join(text_parts)
     
     def _extract_publication_date(self, raw_data: Dict[str, Any]) -> Optional[datetime]:
         """Extract publication date from PubMed data."""
