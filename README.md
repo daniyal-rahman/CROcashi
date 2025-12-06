@@ -1,375 +1,214 @@
-# CROcashi - Clinical Research Organization Cash Investment
+## Biotech Knowledge Graph Platform
 
-**Near-Certain Failure Detector** for US-listed biotech pivotal trials.
+This repository contains Python scripts to fetch raw data from high-priority biotech/pharma sources and a comprehensive PostgreSQL database schema for entity resolution and relationship mapping.
 
-A comprehensive clinical trial failure detection system that uses advanced signal detection, pattern recognition, and Bayesian scoring to identify high-risk trials before they fail. This system provides investment-grade analysis for biotech trading decisions.
+### Setup
 
-## 🎯 **What This System Does**
-
-CROcashi analyzes clinical trial data to predict trial failures with high confidence, enabling:
-- **Risk Assessment**: Identify high-risk biotech investments before failure
-- **Trading Decisions**: Make informed decisions based on trial success probability
-- **Portfolio Management**: Diversify biotech holdings based on risk profiles
-- **Early Warning**: Detect trial problems before they become public knowledge
-
-## 🏗️ **System Architecture**
-
-### **Core Components**
-- **Signal Detection**: 9 primitive failure signals (S1-S9) for trial analysis
-- **Gate Analysis**: 4 failure pattern gates (G1-G4) for risk assessment
-- **Bayesian Scoring**: Mathematical probability calculation for failure risk
-- **Machine Learning**: LLM-based resolution for ambiguous cases
-- **Data Pipeline**: Automated ingestion and processing of trial data
-
-### **Technology Stack**
-- **Backend**: Python 3.11+ with modern type hints
-- **Database**: PostgreSQL with Alembic migrations
-- **ORM**: SQLAlchemy with async support
-- **Workflow**: Prefect for orchestration
-- **AI/ML**: OpenAI/LLM integration
-- **Deployment**: Docker containerization
-
-## 🚀 **Quick Start**
-
-### **1. Prerequisites**
-- Python 3.11 or higher
-- PostgreSQL 15+
-- Docker (optional, for containerized setup)
-- Git
-
-### **2. Clone and Setup**
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd CROcashi
-
-# Create virtual environment and install dependencies
-make setup
-
-# Activate virtual environment
+python -m venv .venv
 source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-### **3. Configure Environment**
-```bash
-# Copy environment template
-cp .env.example .env
+### Database Setup
 
-# Edit .env with your configuration
-# Required: DATABASE_URL, OPENAI_API_KEY
-# Optional: Other service configurations
+The database schema uses SQLAlchemy 2.0+ and Alembic for migrations. It supports complex entity resolution across companies, drugs, clinical trials, publications, patents, and regulatory events.
+
+#### 1. PostgreSQL Installation
+
+Ensure PostgreSQL is installed and running:
+
+```bash
+# macOS (using Homebrew)
+brew install postgresql@14
+brew services start postgresql@14
+
+# Ubuntu/Debian
+sudo apt-get install postgresql postgresql-contrib
+sudo systemctl start postgresql
 ```
 
-### **4. Database Setup**
-```bash
-# Start PostgreSQL (adjust for your setup)
-docker run -d --name postgres \
-  -e POSTGRES_PASSWORD=ncfd \
-  -e POSTGRES_USER=ncfd \
-  -e POSTGRES_DB=ncfd \
-  -p 5432:5432 postgres:15
+#### 2. Create Database
 
-# Run database migrations
-export DATABASE_URL="postgresql://ncfd:ncfd@localhost:5432/ncfd"
+```bash
+# Connect to PostgreSQL
+psql postgres
+
+# Create database and user
+CREATE DATABASE biotech_kg;
+CREATE USER biotech_user WITH PASSWORD 'your_password';
+GRANT ALL PRIVILEGES ON DATABASE biotech_kg TO biotech_user;
+\q
+```
+
+#### 3. Configure Database Connection
+
+Create a `.env` file in the project root:
+
+```bash
+DATABASE_URL=postgresql://biotech_user:your_password@localhost:5432/biotech_kg
+```
+
+#### 4. Initialize Database
+
+```bash
+# Option 1: Using the init script
+python database/init_db.py
+
+# Option 2: Using Alembic (recommended for production)
+alembic revision --autogenerate -m "Initial schema"
 alembic upgrade head
 ```
 
-### **5. Verify Installation**
+#### 5. Verify Installation
+
+```python
+from database.config import get_db_session
+from database.models import Company, Drug
+
+# Test connection
+with get_db_session() as session:
+    companies = session.query(Company).count()
+    print(f"Database connected! Companies: {companies}")
+```
+
+### Database Schema Overview
+
+The database includes 45+ tables organized into:
+
+- **Entities**: Companies, Institutions, Drugs, Targets, Mechanisms, Diseases
+- **Clinical**: Clinical Trials, Regulatory Events
+- **Publications**: Publications, Patents, Conferences, SEC Filings
+- **Relationships**: 20+ relationship tables connecting entities
+- **Resolution**: Entity aliases, matching, confidence tracking
+- **Staging**: Raw data staging before entity resolution
+
+Key features:
+- UUID primary keys for all tables
+- Temporal tracking (date ranges for ownership, name changes)
+- JSONB for flexible metadata storage
+- Comprehensive indexes for performance
+- Proper foreign key constraints with cascade behaviors
+
+### Database Usage Examples
+
+See `database/examples.py` for example queries demonstrating:
+
+- Company-drug relationships
+- Drug indications and trials
+- Disease-drug mappings
+- Complex multi-table queries
+- Search functionality
+
+```python
+from database.config import get_db_session
+from database.utils import (
+    get_company_by_name,
+    get_company_pipeline,
+    get_trials_for_drug,
+    search_drugs
+)
+
+with get_db_session() as session:
+    # Find company
+    company = get_company_by_name(session, "Pfizer")
+    
+    # Get pipeline
+    drugs = get_company_pipeline(session, company.company_id)
+    
+    # Search drugs
+    results = search_drugs(session, "umab", limit=10)
+```
+
+### Database Migrations
+
 ```bash
-# Run the main validation script
-python scripts/validate_phase6_pipeline.py
+# Create a new migration
+alembic revision --autogenerate -m "description"
 
-# Expected: 100% validation success rate ✅
-```
-
-## 🧪 **Testing & Validation**
-
-### **End-to-End System Testing**
-
-The system includes comprehensive E2E testing that validates the complete pipeline:
-
-```bash
-# Quick E2E test (2-3 minutes)
-make e2e-quick
-
-# Standard E2E test (5-10 minutes) 
-make e2e-system
-
-# Full E2E with synthesis (10-15 minutes)
-make e2e-full
-
-# Run E2E unit tests
-make test-e2e
-```
-
-**E2E Test Coverage:**
-- CT.gov trial ingestion and processing
-- SEC filing monitoring and analysis
-- PubMed literature search and extraction
-- Study card synthesis and risk scoring
-- Complete database integration
-
-See [docs/E2E_TESTING.md](docs/E2E_TESTING.md) for detailed E2E testing documentation.
-
-### **Run Complete Test Suite**
-```bash
-# Run all tests
-make test
-
-# Run with coverage
-pytest --cov=src/ncfd tests/
-```
-
-### **Individual Component Tests**
-```bash
-# Test signal detection
-python scripts/demo_signals_and_gates.py
-
-# Test scoring system
-python scripts/demo_scoring_system.py
-
-# Test testing framework
-python scripts/demo_testing_validation.py
-
-# Test complete pipeline
-python scripts/demo_pipeline_integration.py
-```
-
-### **Integration Tests**
-```bash
-# Test document ingestion
-python scripts/test_document_ingest.py
-
-# Test pipeline integration
-python scripts/demo_pipeline_integration.py
-
-# Test storage system
-python scripts/demo_storage_system.py
-```
-
-## 🔧 **Development Commands**
-
-### **Code Quality**
-```bash
-# Check for issues
-make lint
-
-# Auto-fix formatting
-make fmt
-
-# Type checking
-mypy src/
-```
-
-### **Database Operations**
-```bash
-# Run migrations
-make db_migrate
-
-# Reset database
-make db_reset
-
-# Check migration status
-alembic current
-```
-
-### **Environment Management**
-```bash
-# Install dependencies
-make install
-
-# Update dependencies
-make update
-
-# Clean environment
-make clean
-```
-
-## 📁 **Repository Structure**
-
-```
-CROcashi/
-├── src/ncfd/                    # Main application code
-│   ├── signals/                 # Signal detection (S1-S9)
-│   ├── gates/                   # Gate analysis (G1-G4)
-│   ├── scoring/                 # Bayesian scoring system
-│   ├── mapping/                 # Company resolution & linking
-│   ├── extract/                 # Document processing & extraction
-│   ├── ingest/                  # Data ingestion & validation
-│   ├── pipeline/                # Workflow orchestration
-│   ├── storage/                 # File storage management
-│   ├── catalyst/                # Catalyst window inference
-│   └── db/                      # Database models & sessions
-├── alembic/                     # Database migrations
-├── tests/                       # Test suite
-├── scripts/                     # Validation & demo scripts
-├── config/                      # Configuration files
-├── monitoring/                  # Prometheus & Grafana configs
-├── nginx/                       # Web server configuration
-├── docs/                        # Documentation
-│   ├── CODE_REVIEWER_GUIDE.md  # External reviewer guide
-│   └── [other documentation]
-└── [configuration files]
-```
-
-## 📊 **System Capabilities**
-
-### **Signal Detection (S1-S9)**
-- **S1**: Endpoint change detection
-- **S2**: Sample size modifications
-- **S3**: Analysis plan changes
-- **S4**: Sponsor pattern analysis
-- **S5**: Historical failure correlation
-- **S6**: Regulatory submission delays
-- **S7**: Publication pattern analysis
-- **S8**: Financial distress indicators
-- **S9**: Management turnover signals
-
-### **Gate Analysis (G1-G4)**
-- **G1**: High-risk signal combination
-- **G2**: Sponsor reliability assessment
-- **G3**: Trial design quality evaluation
-- **G4**: Market sentiment integration
-
-### **Scoring System**
-- **Bayesian probability** calculation
-- **Confidence intervals** for risk assessment
-- **Historical calibration** for accuracy
-- **Real-time updates** as new data arrives
-
-## 🔒 **Security & Configuration**
-
-### **Environment Variables**
-```bash
-# Required
-DATABASE_URL=postgresql://user:pass@host:port/db
-OPENAI_API_KEY=your_openai_api_key
-
-# Optional
-LOG_LEVEL=INFO
-STORAGE_BACKEND=local  # or s3
-S3_BUCKET=your_bucket_name
-AWS_ACCESS_KEY_ID=your_access_key
-AWS_SECRET_ACCESS_KEY=your_secret_key
-```
-
-### **API Security**
-- API keys stored in environment variables
-- Rate limiting on external API calls
-- Input validation and sanitization
-- Secure credential management
-
-## 📈 **Performance & Scalability**
-
-### **Optimizations**
-- **Database indexing** on frequently queried columns
-- **Connection pooling** for database efficiency
-- **Async processing** for I/O operations
-- **Caching strategies** for repeated calculations
-- **Batch processing** for large datasets
-
-### **Monitoring**
-- **Prometheus metrics** for system health
-- **Grafana dashboards** for visualization
-- **Log aggregation** for debugging
-- **Performance profiling** for optimization
-
-## 🚀 **Deployment**
-
-### **Docker Deployment**
-```bash
-# Production deployment
-docker-compose -f docker-compose.prod.yml up -d
-
-# Development deployment
-docker-compose up -d
-```
-
-### **Manual Deployment**
-```bash
-# Install dependencies
-pip install -e .
-
-# Run migrations
+# Apply migrations
 alembic upgrade head
 
-# Start services
-python -m ncfd.api.main
+# Rollback
+alembic downgrade -1
+
+# View history
+alembic history
 ```
 
-## 📚 **Documentation**
+### Data Ingestion
 
-### **For Users**
-- **README.md** (this file) - Setup and usage
-- **CODE_REVIEWER_GUIDE.md** - External review guide
+#### Run sample ingestions
 
-### **For Developers**
-- **API Documentation** - Endpoint specifications
-- **Database Schema** - Table structures and relationships
-- **Migration History** - Database change tracking
-- **Test Coverage** - Code quality metrics
+```bash
+python scripts/run_samples.py
+```
 
-### **For Operations**
-- **Deployment Guides** - Production setup instructions
-- **Monitoring Setup** - Metrics and alerting configuration
-- **Troubleshooting** - Common issues and solutions
+Outputs are written under `data/raw/{source}/` as JSON, HTML, or downloaded files.
 
-## 🤝 **Contributing**
+#### Run with report
 
-### **Development Workflow**
-1. **Fork** the repository
-2. **Create** a feature branch
-3. **Implement** your changes
-4. **Test** thoroughly
-5. **Submit** a pull request
+```bash
+python scripts/run_with_report.py
+```
 
-### **Code Standards**
-- **Type hints** required for all functions
-- **Docstrings** for public APIs
-- **Tests** for new functionality
-- **Linting** must pass
-- **Formatting** must be consistent
+This writes a consolidated report to `reports/ingestion_report.md` and `reports/ingestion_report.json`, including success/failure reasons.
 
-### **Testing Requirements**
-- **Unit tests** for all new code
-- **Integration tests** for complex features
-- **Performance tests** for critical paths
-- **Coverage** should not decrease
+### Sources Covered
 
-## 🐛 **Troubleshooting**
+- ClinicalTrials.gov API (sample page)
+- WHO ICTRP bulk CSV (requires current export URL)
+- EMA Clinical Trials search (first page scrape)
+- FDA Drugs@FDA data files (link scrape + download)
+- FDA Orange Book data files (link scrape + download)
+- FDA FAERS quarterly data (attempt recent quarter patterns)
+- PubMed E-utilities (ESearch + ESummary)
+- PMC E-utilities (ESearch + ESummary)
+- bioRxiv API (recent window)
+- medRxiv API (recent window)
+- And 100+ more sources (see `data_sources_covered.md`)
 
-### **Common Issues**
-- **Database connection**: Check DATABASE_URL and PostgreSQL status
-- **Import errors**: Ensure virtual environment is activated
-- **Migration issues**: Verify alembic chain with `alembic history`
-- **Test failures**: Check dependencies and environment setup
+### Automation & Monitoring
 
-### **Getting Help**
-1. **Check logs** in the `logs/` directory
-2. **Review error messages** for specific details
-3. **Consult documentation** in the `docs/` directory
-4. **Run validation scripts** to isolate issues
-5. **Contact the team** with specific error details
+The platform includes automated daily processing and monitoring tools:
 
-## 📄 **License**
+#### Daily Pipeline
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+Automated daily ingestion and processing:
 
-## 🙏 **Acknowledgments**
+```bash
+# Run manually
+python scripts/daily_pipeline.py
 
-- **Clinical trial data** from ClinicalTrials.gov
-- **Financial data** from SEC filings and market sources
-- **Machine learning** powered by OpenAI
-- **Open source** community for tools and libraries
+# Set up cron job (runs daily at 2 AM)
+./scripts/setup_cron.sh
+```
 
----
+#### System Status
 
-## 🎯 **Next Steps**
+Check system health and status:
 
-1. **Review the CODE_REVIEWER_GUIDE.md** for detailed analysis
-2. **Run the validation scripts** to verify functionality
-3. **Explore the test suite** to understand capabilities
-4. **Check the documentation** for specific use cases
-5. **Contact the team** for questions or support
+```bash
+# Comprehensive status check
+python scripts/system_status_check.py
 
-**Ready to detect trial failures with near-certainty?** 🚀
+# Verify implementation
+python scripts/verify_implementation.py
+```
+
+#### Additional Scripts
+
+- `scripts/process_backlog.py` - Process unprocessed staging records
+- `scripts/infer_relationships.py` - Run relationship inference
+- `scripts/prioritize_entity_matches.py` - Prioritize entity match candidates
+- `scripts/map_dashboard_requirements.py` - Map dashboard requirements
+
+See `QUICK_START.md` and `AUTOMATION_SETUP.md` for more details.
+
+### Notes
+
+- WHO ICTRP bulk export link can change; update the URL in `ingestion/who_ictrp.py` or pass it when calling `download_bulk_csv`.
+- NCBI rate limits: ~3 req/s without an API key, ~10 req/s with a key. These scripts throttle accordingly if you supply a key to the call.
+- Database uses PostgreSQL-specific features (JSONB, arrays, extensions). Ensure PostgreSQL 12+ is used.
+
+

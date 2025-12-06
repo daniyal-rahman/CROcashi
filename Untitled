@@ -1,0 +1,220 @@
+# Slide Design System - Clinical Trials Deck
+
+## Color System
+
+| Color | Hex | Usage | Rule |
+|-------|-----|-------|------|
+| **Navy** | #1A2B49 | H1, H3, structure | Headlines only |
+| **Teal** | #2C7873 | Subtitles, bullets, arrows | Secondary elements |
+| **Coral** | #E85D75 | Numbers ONLY | All statistics |
+| **Warm Gray** | #F5F5F5 | Box backgrounds | Never for text |
+| **Dark Gray** | #333333 | Body text | All paragraphs/lists |
+| **White** | #FFFFFF | Slide backgrounds, text on navy | - |
+
+**Critical Rule**: Coral = numbers only. Creates instant data scanning.
+
+---
+
+## Typography
+
+**Font**: Inter (sans-serif only)
+
+```css
+--font-size-hero: 56px      /* Big numbers: $40K, $30M */
+--font-size-h1: 42px        /* Slide titles (38px if tight) */
+--font-size-h3: 22px        /* Box titles (18-19px if tight) */
+--font-size-body: 17px      /* Standard text (14-15px if tight) */
+--font-size-small: 15px     /* Details */
+
+--font-weight-bold: 700     /* Headlines, numbers */
+--font-weight-semibold: 600 /* Labels, subtitles */
+--font-weight-normal: 400   /* Body text */
+```
+
+**Line Height**:
+- Headlines: 1.2
+- Body text: 1.4
+- Tight content: 1.3
+
+---
+
+## Spacing
+
+```css
+--spacing-sm: 12-16px    /* Item margins */
+--spacing-md: 18-24px    /* Box padding */
+--spacing-lg: 28-32px    /* Section gaps */
+--slide-padding: 36-40px /* All slides */
+```
+
+**Grid Gaps**: 12-16px (tight), 24-28px (normal)
+
+---
+
+## Components
+
+### Data Card (White)
+```css
+background: #FFFFFF;
+border-left: 4px solid #E85D75;
+padding: 24px;
+border-radius: 8px;
+box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+```
+
+### Info Box (Gray)
+```css
+background: #F5F5F5;
+padding: 18-24px;
+border-radius: 8px;
+/* Optional: border-left: 3px solid #E85D75; */
+```
+
+### Insight Box (Navy)
+```css
+background: #1A2B49;
+padding: 14-18px;
+border-radius: 8px;
+color: #FFFFFF;
+text-align: center;
+font-weight: 600;
+```
+
+### Lists
+```css
+ul { list-style: none; padding: 0; margin: 0; }
+li { 
+  padding-left: 18-20px; 
+  margin-bottom: 9-14px;
+  position: relative;
+}
+li:before { 
+  content: "•"; 
+  color: #2C7873; 
+  position: absolute; 
+  left: 0;
+  font-weight: 700;
+}
+```
+**Alternative bullet**: Use "✓" for benefits/investments
+
+### Inline Stats
+```html
+<span class="stat">35-61%</span>
+```
+```css
+.stat { color: #E85D75; font-weight: 700; }
+```
+
+---
+
+## HTML Structure Template
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+:root {
+  --color-navy: #1A2B49; --color-teal: #2C7873; --color-coral: #E85D75;
+  --color-warm-gray: #F5F5F5; --color-dark-gray: #333333;
+  --font-family: 'Inter', sans-serif;
+  --font-size-h1: 42px; --font-size-h3: 22px; --font-size-body: 17px;
+  --spacing-md: 24px; --spacing-lg: 32px; --slide-padding: 40px;
+}
+body { font-family: var(--font-family); margin: 0; padding: 0; 
+       width: 960px; height: 540px; background: white; }
+h1 { font-size: var(--font-size-h1); color: var(--color-navy); 
+     font-weight: 700; margin: 0 0 var(--spacing-md) 0; }
+.slide-container { padding: var(--slide-padding); }
+/* Add component styles here */
+  </style>
+</head>
+<body>
+  <div class="slide-container">
+    <h1>Slide Title</h1>
+    <!-- Content here -->
+  </div>
+</body>
+</html>
+```
+
+---
+
+## Critical Rules
+
+1. **All text must be in `<p>`, `<h1-h6>`, `<ul>`, or `<ol>` tags** (html2pptx requirement)
+2. **Backgrounds/borders only on `<div>`**, not text elements
+3. **Coral = numbers only** (creates scanning pattern)
+4. **Navy backgrounds = emphasis boxes only** (bottom of slides)
+5. **Minimum 36px slide padding** (0.5" from edges)
+6. **Border-left: 3-4px coral** (for emphasis boxes only)
+7. **Border-radius: 6-8px** (all boxes)
+8. **Never use default list styling** (always custom with li:before)
+
+---
+
+## Scaling for Dense Content
+
+| Element | Normal | Tight | Critical |
+|---------|--------|-------|----------|
+| H1 | 42px | 38px | 36px |
+| H3 | 22px | 18-19px | 17-18px |
+| Body | 17px | 14-15px | 13-14px |
+| Padding | 40px | 36px | 32px |
+
+**Rule**: Scale all elements proportionally. Don't go below Critical.
+
+---
+
+## Quality Checklist
+
+- [ ] Title: 42px, navy, 700
+- [ ] Numbers: coral, 700
+- [ ] Body: dark gray, 400
+- [ ] Boxes: warm gray background
+- [ ] Custom bullets: teal via li:before
+- [ ] Padding: 36-40px all edges
+- [ ] Text in proper tags (no bare divs)
+- [ ] Grid gaps consistent
+- [ ] No overflow (check thumbnail)
+
+---
+
+## Anti-Patterns
+
+❌ Coral on non-numbers  
+❌ Multiple accent colors  
+❌ Icons/illustrations  
+❌ Centered body text  
+❌ Default HTML styling  
+❌ <36px edge padding  
+❌ Text in unwrapped divs  
+❌ Mixed font families  
+
+
+
+## Copy-Paste CSS Block
+
+```css
+:root {
+  --color-navy: #1A2B49; --color-teal: #2C7873; --color-coral: #E85D75;
+  --color-warm-gray: #F5F5F5; --color-dark-gray: #333333; --color-white: #FFFFFF;
+  --font-family: 'Inter', sans-serif;
+  --font-size-h1: 42px; --font-size-h3: 22px; --font-size-body: 17px;
+  --spacing-md: 24px; --spacing-lg: 32px; --slide-padding: 40px;
+}
+body { font-family: var(--font-family); margin: 0; padding: 0; width: 960px; height: 540px; background: white; }
+* { box-sizing: border-box; }
+h1 { font-size: var(--font-size-h1); color: var(--color-navy); font-weight: 700; margin: 0 0 var(--spacing-md) 0; }
+h3 { font-size: var(--font-size-h3); color: var(--color-navy); font-weight: 700; margin-bottom: 12px; }
+p { margin: 0; font-size: var(--font-size-body); color: var(--color-dark-gray); }
+ul { list-style: none; padding: 0; margin: 0; }
+li { font-size: var(--font-size-body); color: var(--color-dark-gray); margin-bottom: 12px; padding-left: 20px; position: relative; line-height: 1.4; }
+li:before { content: "•"; color: var(--color-teal); position: absolute; left: 0; font-weight: 700; }
+.stat { color: var(--color-coral); font-weight: 700; }
+.slide-container { padding: var(--slide-padding); }
+.box { background: var(--color-warm-gray); padding: var(--spacing-md); border-radius: 8px; }
+.insight-wrap { background: var(--color-navy); padding: 18px; border-radius: 8px; }
+```

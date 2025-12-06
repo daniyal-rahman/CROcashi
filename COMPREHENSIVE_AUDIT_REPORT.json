@@ -1,0 +1,421 @@
+{
+  "timestamp": "2025-11-10T19:04:56.887929",
+  "sources": {
+    "total_scripts": 82,
+    "registered": 82,
+    "active": 37,
+    "inactive": 45,
+    "unregistered": 0,
+    "active_list": [
+      "clinicaltrials_gov",
+      "fda_drugs",
+      "sec_edgar",
+      "pubmed",
+      "patentsview",
+      "openfda",
+      "california_warn",
+      "nih_reporter",
+      "mfds_korea",
+      "nsf_awards",
+      "uspto_public_pair",
+      "fda_orphan",
+      "fda_breakthrough",
+      "ema_guidelines",
+      "ema_prime",
+      "anvisa_brazil",
+      "ema_epar",
+      "fierce_layoff_tracker",
+      "who_ictrp",
+      "federal_warn",
+      "health_canada",
+      "fda_orange_book",
+      "fda_expanded_access",
+      "fda_faers",
+      "fda_clinical_hold",
+      "hsa_singapore",
+      "fda_eua",
+      "who_outbreak_news",
+      "mhra_uk",
+      "fda_purple_book",
+      "biospace_layoff_tracker",
+      "fda_warning_letters",
+      "fda_guidance",
+      "vaers",
+      "ich_guidelines",
+      "tga_australia",
+      "cdsco_india"
+    ],
+    "inactive_list": [
+      "youtube_biotech",
+      "alphavantage",
+      "arxiv",
+      "asco_abstracts",
+      "barda",
+      "biogrid",
+      "biorxiv",
+      "calcbench",
+      "chembl",
+      "chemrxiv",
+      "clingen",
+      "clinvar",
+      "darpa",
+      "disgenet",
+      "dod_contracts",
+      "ema_trials",
+      "europe_pmc",
+      "google_news",
+      "illinois_warn",
+      "massachusetts_warn",
+      "medrxiv",
+      "motley_fool",
+      "new_jersey_warn",
+      "new_york_warn",
+      "nice_uk",
+      "omim",
+      "openfigi",
+      "opentargets",
+      "orphanet",
+      "pennsylvania_warn",
+      "pmc",
+      "pubchem",
+      "pubtator",
+      "reactome",
+      "reddit_biotech",
+      "rss_news",
+      "sbir",
+      "seeking_alpha",
+      "semantic_scholar",
+      "string_db",
+      "swissmedic",
+      "texas_warn",
+      "uniprot",
+      "wayback_machine",
+      "xtalks_layoff"
+    ],
+    "unregistered_list": [],
+    "with_staging_data": 22,
+    "with_processing_logs": 5,
+    "staging_sources": [
+      "anvisa_brazil",
+      "biospace_layoff_tracker",
+      "california_warn",
+      "cdsco_india",
+      "clinicaltrials_gov",
+      "ema_epar",
+      "ema_guidelines",
+      "ema_prime",
+      "ema_trials",
+      "fda_drugs",
+      "fda_eua",
+      "fda_faers",
+      "fda_guidance",
+      "fda_orphan",
+      "fda_warning_letters",
+      "health_canada",
+      "hsa_singapore",
+      "mfds_korea",
+      "nih_reporter",
+      "openfda",
+      "pubmed",
+      "sec_edgar"
+    ],
+    "processing_sources": [
+      "california_warn",
+      "fda_eua",
+      "fda_guidance",
+      "fda_orphan",
+      "fda_warning_letters"
+    ],
+    "missing_processors": [
+      "clinicaltrials_gov",
+      "sec_edgar",
+      "california_warn"
+    ]
+  },
+  "data_quality": {
+    "staging": {
+      "total": 2110,
+      "processed": 409,
+      "unprocessed": 1701,
+      "processing_rate": 19.38388625592417,
+      "by_source": [
+        {
+          "source": "fda_eua",
+          "total": 100,
+          "processed": 22,
+          "rate": 22.0
+        },
+        {
+          "source": "nih_reporter",
+          "total": 90,
+          "processed": 0,
+          "rate": 0.0
+        },
+        {
+          "source": "fda_guidance",
+          "total": 84,
+          "processed": 16,
+          "rate": 19.047619047619047
+        },
+        {
+          "source": "california_warn",
+          "total": 8,
+          "processed": 8,
+          "rate": 100.0
+        },
+        {
+          "source": "fda_orphan",
+          "total": 4,
+          "processed": 1,
+          "rate": 25.0
+        }
+      ]
+    },
+    "entities": {
+      "companies": 331,
+      "drugs": 865,
+      "diseases": 1479,
+      "trials": 1017,
+      "publications": 100,
+      "institutions": 887,
+      "filings": 49,
+      "patents": 0
+    },
+    "empty_tables": [
+      "company_ownership_history",
+      "conference_presentations",
+      "conferences",
+      "data_quality_metrics",
+      "disease_names",
+      "drug_chemical_identity",
+      "drug_combinations",
+      "drug_mechanisms",
+      "drug_names",
+      "drug_ownership_history",
+      "drug_targets",
+      "entity_match_confidence",
+      "entity_matches",
+      "entity_matching_rules",
+      "entity_merges",
+      "filing_drugs",
+      "matching_review_queue",
+      "mechanisms",
+      "patent_companies",
+      "patent_drugs",
+      "patents",
+      "presentation_companies",
+      "presentation_drugs",
+      "presentation_trials",
+      "publication_companies",
+      "publication_drugs",
+      "publication_trials",
+      "targets",
+      "trial_funding"
+    ],
+    "empty_table_count": 29,
+    "processing": {
+      "total_logs": 226,
+      "failed_logs": 0,
+      "failure_rate": 0.0,
+      "recent_activity": [
+        {
+          "source": "fda_guidance",
+          "count": 130,
+          "last_run": "2025-11-09"
+        },
+        {
+          "source": "fda_eua",
+          "count": 67,
+          "last_run": "2025-11-09"
+        },
+        {
+          "source": "california_warn",
+          "count": 25,
+          "last_run": "2025-11-09"
+        },
+        {
+          "source": "fda_orphan",
+          "count": 3,
+          "last_run": "2025-11-09"
+        },
+        {
+          "source": "fda_warning_letters",
+          "count": 1,
+          "last_run": "2025-11-09"
+        }
+      ]
+    },
+    "issues": []
+  },
+  "relationships": {
+    "counts": {
+      "trial_sponsors": 1748,
+      "trial_drugs": 1228,
+      "trial_diseases": 2085,
+      "publication_trials": 0,
+      "publication_drugs": 0,
+      "publication_companies": 0,
+      "filing_companies": 49,
+      "filing_drugs": 0,
+      "company_drugs": 739,
+      "patent_drugs": 0,
+      "patent_companies": 0
+    },
+    "coverage": {
+      "trials_with_sponsors": {
+        "count": 1748,
+        "total": 1017,
+        "rate": 171.8780727630285
+      },
+      "trials_with_drugs": {
+        "count": 1228,
+        "total": 1017,
+        "rate": 120.7472959685349
+      },
+      "trials_with_diseases": {
+        "count": 2085,
+        "total": 1017,
+        "rate": 205.0147492625369
+      },
+      "publications_with_trials": {
+        "count": 0,
+        "total": 100,
+        "rate": 0.0
+      },
+      "publications_with_drugs": {
+        "count": 0,
+        "total": 100,
+        "rate": 0.0
+      },
+      "filings_with_drugs": {
+        "count": 0,
+        "total": 49,
+        "rate": 0.0
+      }
+    }
+  },
+  "bugs": [
+    {
+      "type": "active_source_no_data",
+      "sources": [
+        "patentsview",
+        "nsf_awards",
+        "uspto_public_pair",
+        "fda_breakthrough",
+        "fierce_layoff_tracker",
+        "who_ictrp",
+        "federal_warn",
+        "fda_orange_book",
+        "fda_expanded_access",
+        "fda_clinical_hold",
+        "who_outbreak_news",
+        "mhra_uk",
+        "fda_purple_book",
+        "vaers",
+        "ich_guidelines",
+        "tga_australia"
+      ],
+      "message": "Active sources with no data: patentsview, nsf_awards, uspto_public_pair, fda_breakthrough, fierce_layoff_tracker, who_ictrp, federal_warn, fda_orange_book, fda_expanded_access, fda_clinical_hold, who_outbreak_news, mhra_uk, fda_purple_book, vaers, ich_guidelines, tga_australia"
+    },
+    {
+      "type": "empty_relationship_table",
+      "table": "publication_trials",
+      "message": "0 publication-trial relationships despite 100 publications and 1017 trials"
+    },
+    {
+      "type": "empty_relationship_table",
+      "table": "publication_drugs",
+      "message": "0 publication-drug relationships despite 100 publications"
+    },
+    {
+      "type": "empty_relationship_table",
+      "table": "filing_drugs",
+      "message": "0 filing-drug relationships despite 49 filings"
+    },
+    {
+      "type": "critical_empty_tables",
+      "tables": [
+        "publication_trials",
+        "publication_drugs",
+        "filing_drugs",
+        "patents",
+        "patent_drugs"
+      ],
+      "message": "Critical tables are empty: publication_trials, publication_drugs, filing_drugs, patents, patent_drugs"
+    },
+    {
+      "type": "zero_publication_trial_coverage",
+      "message": "0% of publications linked to trials (expected 5-20%)"
+    },
+    {
+      "type": "zero_publication_drug_coverage",
+      "message": "0% of publications linked to drugs (expected 30-50%)"
+    },
+    {
+      "type": "missing_processors",
+      "sources": [
+        "clinicaltrials_gov",
+        "sec_edgar",
+        "california_warn"
+      ],
+      "message": "Active sources without processors: clinicaltrials_gov, sec_edgar, california_warn"
+    }
+  ],
+  "warnings": [
+    {
+      "type": "unprocessed_staging",
+      "count": 1701,
+      "message": "1701 unprocessed staging records"
+    },
+    {
+      "type": "low_publication_count",
+      "message": "Only 100 publications for 1017 trials (ratio: 0.10)"
+    }
+  ],
+  "summary": {
+    "total_sources_claimed": 82,
+    "active_sources": 37,
+    "sources_with_data": 22,
+    "total_entities": 4728,
+    "total_relationships": 5849,
+    "empty_tables": 29,
+    "bugs_found": 8,
+    "warnings": 2,
+    "critical_issues": [
+      {
+        "type": "empty_relationship_table",
+        "table": "publication_trials",
+        "message": "0 publication-trial relationships despite 100 publications and 1017 trials"
+      },
+      {
+        "type": "empty_relationship_table",
+        "table": "publication_drugs",
+        "message": "0 publication-drug relationships despite 100 publications"
+      },
+      {
+        "type": "empty_relationship_table",
+        "table": "filing_drugs",
+        "message": "0 filing-drug relationships despite 49 filings"
+      },
+      {
+        "type": "critical_empty_tables",
+        "tables": [
+          "publication_trials",
+          "publication_drugs",
+          "filing_drugs",
+          "patents",
+          "patent_drugs"
+        ],
+        "message": "Critical tables are empty: publication_trials, publication_drugs, filing_drugs, patents, patent_drugs"
+      },
+      {
+        "type": "zero_publication_trial_coverage",
+        "message": "0% of publications linked to trials (expected 5-20%)"
+      },
+      {
+        "type": "zero_publication_drug_coverage",
+        "message": "0% of publications linked to drugs (expected 30-50%)"
+      }
+    ]
+  }
+}

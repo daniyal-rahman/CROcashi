@@ -142,6 +142,7 @@ data/duckdb/
 *.db
 *.sqlite
 *.sqlite3
+tests/logs/
 
 # Local storage
 data/local/
