@@ -568,26 +568,27 @@ class ClinicalTrialsProcessor(BaseProcessor):
     def _parse_phase(phase_str: str) -> int:
         """
         Parse phase string to numeric value.
-        
+
         Args:
-            phase_str: Phase string (e.g., "Phase 2", "Phase 1/Phase 2")
-            
+            phase_str: Phase string (e.g., "Phase 2", "PHASE2", "Phase 1/Phase 2")
+
         Returns:
             Numeric phase (1, 2, 3, 4) or 0 if unparseable
         """
         if not phase_str:
             return 0
-        
+
         phase_str = phase_str.lower()
-        
-        if 'phase 4' in phase_str or 'phase iv' in phase_str:
+
+        # Handle both "phase 4" and "phase4" formats
+        if 'phase 4' in phase_str or 'phase4' in phase_str or 'phase iv' in phase_str:
             return 4
-        elif 'phase 3' in phase_str or 'phase iii' in phase_str:
+        elif 'phase 3' in phase_str or 'phase3' in phase_str or 'phase iii' in phase_str:
             return 3
-        elif 'phase 2' in phase_str or 'phase ii' in phase_str:
+        elif 'phase 2' in phase_str or 'phase2' in phase_str or 'phase ii' in phase_str:
             return 2
-        elif 'phase 1' in phase_str or 'phase i' in phase_str:
+        elif 'phase 1' in phase_str or 'phase1' in phase_str or 'phase i' in phase_str:
             return 1
-        
+
         return 0
 

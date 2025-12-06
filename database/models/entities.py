@@ -7,9 +7,10 @@ from typing import List, Optional
 
 from sqlalchemy import (
     ARRAY, Boolean, CheckConstraint, Column, Date, ForeignKey,
-    Integer, Numeric, String, Text, UniqueConstraint, func
+    Integer, Numeric, String, Text, UniqueConstraint, and_, func, select
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 
 from database.models.base import BaseModel
@@ -119,6 +120,41 @@ class Company(BaseModel):
         ),
         {'comment': 'Companies table with ownership hierarchy'}
     )
+
+    @hybrid_property
+    def current_ticker_symbol(self) -> Optional[str]:
+        """
+        Get the current primary ticker for this company.
+
+        Looks up the CompanyTicker table for the active primary ticker.
+        Falls back to the legacy `ticker` field if no CompanyTicker exists.
+
+        Returns:
+            Current ticker symbol or None
+        """
+        # Check if tickers relationship is loaded
+        if hasattr(self, 'tickers') and self.tickers:
+            for t in self.tickers:
+                if t.is_primary and t.valid_until is None and t.deleted_at is None:
+                    return t.ticker
+        # Fallback to legacy ticker field
+        return self.ticker
+
+    @current_ticker_symbol.expression
+    def current_ticker_symbol(cls):
+        """SQL expression for current ticker lookup."""
+        from database.models.market import CompanyTicker
+        return (
+            select(CompanyTicker.ticker)
+            .where(and_(
+                CompanyTicker.company_id == cls.company_id,
+                CompanyTicker.is_primary == True,
+                CompanyTicker.valid_until.is_(None),
+                CompanyTicker.deleted_at.is_(None)
+            ))
+            .correlate(cls)
+            .scalar_subquery()
+        )
 
 
 class Institution(BaseModel):

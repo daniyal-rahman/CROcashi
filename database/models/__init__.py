@@ -45,6 +45,14 @@ from database.models.events import Event
 # Staging models
 from database.models.staging import StagingRawData
 
+# Market data models
+from database.models.market import CompanyTicker, StockPrice
+
+# Catalyst and backtesting models
+from database.models.catalysts import (
+    HistoricalCatalyst, CatalystFlagCache, FDAApplication, FDASubmission
+)
+
 __all__ = [
     # Base
     'Base',
@@ -116,5 +124,15 @@ __all__ = [
     
     # Staging
     'StagingRawData',
+
+    # Market data
+    'CompanyTicker',
+    'StockPrice',
+
+    # Catalysts and backtesting
+    'HistoricalCatalyst',
+    'CatalystFlagCache',
+    'FDAApplication',
+    'FDASubmission',
 ]
 

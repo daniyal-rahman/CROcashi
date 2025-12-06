@@ -9,8 +9,9 @@ Extracts:
 - Drug-indication relationships
 """
 import logging
+import re
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -247,79 +248,308 @@ class OpenFDAProcessor(BaseProcessor):
         
         return companies
     
+    # Common disease synonyms/abbreviations for normalization
+    DISEASE_SYNONYMS = {
+        'htn': 'hypertension',
+        'dm': 'diabetes mellitus',
+        't2dm': 'type 2 diabetes mellitus',
+        't1dm': 'type 1 diabetes mellitus',
+        'niddm': 'type 2 diabetes mellitus',
+        'iddm': 'type 1 diabetes mellitus',
+        'mi': 'myocardial infarction',
+        'cad': 'coronary artery disease',
+        'chf': 'congestive heart failure',
+        'copd': 'chronic obstructive pulmonary disease',
+        'uti': 'urinary tract infection',
+        'uri': 'upper respiratory infection',
+        'gerd': 'gastroesophageal reflux disease',
+        'ra': 'rheumatoid arthritis',
+        'oa': 'osteoarthritis',
+        'ms': 'multiple sclerosis',
+        'als': 'amyotrophic lateral sclerosis',
+        'hiv': 'human immunodeficiency virus infection',
+        'aids': 'acquired immunodeficiency syndrome',
+        'tb': 'tuberculosis',
+        'dvt': 'deep vein thrombosis',
+        'pe': 'pulmonary embolism',
+        'afib': 'atrial fibrillation',
+        'nsclc': 'non-small cell lung cancer',
+        'sclc': 'small cell lung cancer',
+        'cml': 'chronic myeloid leukemia',
+        'aml': 'acute myeloid leukemia',
+        'all': 'acute lymphoblastic leukemia',
+        'cll': 'chronic lymphocytic leukemia',
+        'hcc': 'hepatocellular carcinoma',
+        'rcc': 'renal cell carcinoma',
+        'bph': 'benign prostatic hyperplasia',
+        'ibs': 'irritable bowel syndrome',
+        'ibd': 'inflammatory bowel disease',
+        'ckd': 'chronic kidney disease',
+        'esrd': 'end-stage renal disease',
+        'nash': 'nonalcoholic steatohepatitis',
+        'nafld': 'nonalcoholic fatty liver disease',
+        'pcos': 'polycystic ovary syndrome',
+        'adhd': 'attention deficit hyperactivity disorder',
+        'ptsd': 'post-traumatic stress disorder',
+        'ocd': 'obsessive-compulsive disorder',
+        'gad': 'generalized anxiety disorder',
+        'mdd': 'major depressive disorder',
+    }
+
+    # Words that indicate the text is NOT a disease name
+    NON_DISEASE_WORDS = {
+        'indicated', 'indication', 'indications', 'treatment', 'use', 'uses',
+        'used', 'using', 'therapy', 'management', 'prevention', 'prophylaxis',
+        'relief', 'control', 'reduction', 'maintenance', 'adjunct', 'adjunctive',
+        'supplement', 'supplemental', 'combination', 'monotherapy', 'adults',
+        'children', 'pediatric', 'patients', 'persons', 'individuals', 'people',
+        'temporarily', 'symptomatic', 'symptoms', 'associated', 'due', 'caused',
+        'following', 'including', 'such', 'other', 'various', 'certain', 'some',
+        'acute', 'chronic', 'mild', 'moderate', 'severe', 'serious', 'life-threatening',
+        'handwashing', 'decrease', 'bacteria', 'skin', 'hands', 'antiseptic',
+        'pain', 'and', 'or',  # Filter out generic symptom phrases
+    }
+
     def _extract_indications(self, raw_data: Dict[str, Any]) -> List[ExtractedEntity]:
         """Extract disease entities from indications_and_usage field."""
         diseases = []
-        
+        seen_diseases: Set[str] = set()  # Track to avoid duplicates
+
+        # Collect all indication texts
+        indication_texts = []
+
         # Try to get indications from openfda wrapper first
         openfda = raw_data.get('openfda', {})
         if isinstance(openfda, dict):
             indication_list = openfda.get('indication_and_usage', [])
-            if isinstance(indication_list, list) and len(indication_list) > 0:
-                # Process all indications (not just first) to capture multiple diseases
-                for indication_text in indication_list:
-                    if isinstance(indication_text, str):
-                        disease = self._parse_indication_text(indication_text, raw_data)
-                        if disease:
-                            diseases.append(disease)
-        
-        # Fallback to top-level indications_and_usage field
-        if not diseases:
-            indications = raw_data.get('indications_and_usage', [])
-            if isinstance(indications, list) and len(indications) > 0:
-                # Process all indications to capture multiple diseases
-                for indication_text in indications:
-                    if isinstance(indication_text, str):
-                        disease = self._parse_indication_text(indication_text, raw_data)
-                        if disease:
-                            diseases.append(disease)
-        
+            if isinstance(indication_list, list):
+                for text in indication_list:
+                    if isinstance(text, str) and text.strip():
+                        indication_texts.append(text)
+
+        # Also check top-level indications_and_usage field
+        indications = raw_data.get('indications_and_usage', [])
+        if isinstance(indications, list):
+            for text in indications:
+                if isinstance(text, str) and text.strip():
+                    indication_texts.append(text)
+
+        # Process all indication texts and extract disease names
+        for indication_text in indication_texts:
+            extracted = self._extract_diseases_from_text(indication_text, raw_data)
+            for disease in extracted:
+                # Deduplicate by normalized name
+                normalized = disease.name.lower()
+                if normalized not in seen_diseases:
+                    seen_diseases.add(normalized)
+                    diseases.append(disease)
+
         return diseases
-    
-    def _parse_indication_text(self, text: str, raw_data: Dict[str, Any]) -> Optional[ExtractedEntity]:
-        """
-        Parse indication text to extract disease name.
-        
-        This is a simple implementation - in production, you might want
-        more sophisticated NLP or entity extraction.
-        """
+
+    def _clean_indication_text(self, text: str) -> str:
+        """Remove boilerplate prefixes from indication text."""
+        if not text:
+            return ''
+
+        # Remove common boilerplate prefixes
+        prefixes_to_remove = [
+            r'^INDICATIONS?\s*(AND\s*USAGE)?:?\s*',
+            r'^Uses?\s*:?\s*',
+            r'^1\s+INDICATIONS?\s*(AND\s*USAGE)?:?\s*',
+            r'^\d+(\.\d+)?\s+',  # Remove leading section numbers like "1.1 "
+            r'^•\s*',  # Remove bullet points
+        ]
+
+        result = text.strip()
+        for pattern in prefixes_to_remove:
+            result = re.sub(pattern, '', result, flags=re.IGNORECASE)
+
+        return result.strip()
+
+    def _extract_diseases_from_text(self, text: str, raw_data: Dict[str, Any]) -> List[ExtractedEntity]:
+        """Extract actual disease names from indication text using pattern matching."""
         if not text or not isinstance(text, str):
-            return None
-        
-        # Simple extraction: look for common patterns
-        # This is a placeholder - real implementation would use NLP
-        text = text.strip()
-        if len(text) < 3:
-            return None
-        
-        # Use first sentence or first 100 chars as disease name
-        # This is very basic - real implementation should extract actual disease names
-        disease_name = text.split('.')[0].strip()
-        if len(disease_name) > 200:
-            disease_name = disease_name[:200]
-        
-        if not disease_name:
-            return None
-        
-        # Basic normalization (strip and title case)
-        disease_name = disease_name.strip()
-        if not disease_name:
-            return None
-        
-        disease = ExtractedEntity(
-            entity_type=EntityType.DISEASE,
-            name=disease_name,
-            identifiers={},
-            context={
-                'source': 'openfda_indication',
-                'extraction_method': 'simple_text_parsing'
-            },
-            source_name=self.SOURCE_NAME,
-            source_identifier=self.get_source_identifier(raw_data),
-            raw_data={'indication_text': text[:500]}  # Store first 500 chars
-        )
-        
-        return disease
+            return []
+
+        diseases = []
+        cleaned_text = self._clean_indication_text(text)
+
+        if len(cleaned_text) < 3:
+            return []
+
+        # Patterns to extract disease names
+        # These patterns look for common indication phrases followed by disease names
+        extraction_patterns = [
+            # "treatment of [DISEASE]"
+            r'treatment\s+of\s+(?:the\s+)?([A-Za-z][A-Za-z\s\-\']+?)(?:\s+in\s+|\s+with\s+|\s+for\s+|\s+associated\s+|,|\.|;|$)',
+            # "indicated for [DISEASE]"
+            r'indicated\s+for\s+(?:the\s+)?(?:treatment\s+of\s+)?(?:the\s+)?([A-Za-z][A-Za-z\s\-\']+?)(?:\s+in\s+|\s+with\s+|\s+for\s+|,|\.|;|$)',
+            # "used to treat [DISEASE]"
+            r'used\s+to\s+treat\s+([A-Za-z][A-Za-z\s\-\']+?)(?:\s+in\s+|\s+with\s+|\s+for\s+|,|\.|;|$)',
+            # "used for [DISEASE]"
+            r'used\s+for\s+(?:the\s+)?(?:treatment\s+of\s+)?(?:the\s+)?([A-Za-z][A-Za-z\s\-\']+?)(?:\s+in\s+|\s+with\s+|\s+for\s+|,|\.|;|$)',
+            # "prevention of [DISEASE]"
+            r'prevention\s+of\s+([A-Za-z][A-Za-z\s\-\']+?)(?:\s+in\s+|\s+with\s+|\s+for\s+|,|\.|;|$)',
+            # "prophylaxis of [DISEASE]"
+            r'prophylaxis\s+of\s+([A-Za-z][A-Za-z\s\-\']+?)(?:\s+in\s+|\s+with\s+|\s+for\s+|,|\.|;|$)',
+            # "management of [DISEASE]"
+            r'management\s+of\s+([A-Za-z][A-Za-z\s\-\']+?)(?:\s+in\s+|\s+with\s+|\s+for\s+|,|\.|;|$)',
+            # "relief of [DISEASE/SYMPTOMS]"
+            r'relief\s+of\s+([A-Za-z][A-Za-z\s\-\']+?)(?:\s+in\s+|\s+with\s+|\s+for\s+|,|\.|;|$)',
+            # "patients with [DISEASE]"
+            r'patients\s+with\s+([A-Za-z][A-Za-z\s\-\']+?)(?:\s+who\s+|\s+that\s+|\s+and\s+|,|\.|;|$)',
+            # Direct disease name patterns (capitalized multi-word disease names)
+            r'\b((?:Type\s+[12]\s+)?Diabetes(?:\s+Mellitus)?)\b',
+            r'\b(Hypertension)\b',
+            r'\b(Heart\s+Failure)\b',
+            r'\b(Coronary\s+Artery\s+Disease)\b',
+            r'\b(Atrial\s+Fibrillation)\b',
+            r'\b(Chronic\s+Obstructive\s+Pulmonary\s+Disease)\b',
+            r'\b(Rheumatoid\s+Arthritis)\b',
+            r'\b(Osteoarthritis)\b',
+            r'\b(Major\s+Depressive\s+Disorder)\b',
+            r'\b(Generalized\s+Anxiety\s+Disorder)\b',
+            r'\b(Schizophrenia)\b',
+            r'\b(Bipolar\s+Disorder)\b',
+            r'\b(Epilepsy)\b',
+            r'\b(Parkinson(?:\'s)?\s+Disease)\b',
+            r'\b(Alzheimer(?:\'s)?\s+Disease)\b',
+            r'\b(Multiple\s+Sclerosis)\b',
+            r'\b(Hepatitis\s+[ABC])\b',
+            r'\b(HIV(?:\s+Infection)?)\b',
+            r'\b(Tuberculosis)\b',
+            r'\b(Pneumonia)\b',
+            r'\b(Asthma)\b',
+            r'\b(Psoriasis)\b',
+            r'\b(Eczema)\b',
+            r'\b(Acne)\b',
+            r'\b(Migraine)\b',
+            r'\b(Glaucoma)\b',
+            r'\b(Hyperlipidemia)\b',
+            r'\b(Hypercholesterolemia)\b',
+            r'\b(Hypothyroidism)\b',
+            r'\b(Hyperthyroidism)\b',
+            r'\b(Osteoporosis)\b',
+            r'\b(Gout)\b',
+            r'\b(Anemia)\b',
+            r'\b(Leukemia)\b',
+            r'\b(Lymphoma)\b',
+            r'\b(Melanoma)\b',
+            r'\b((?:Breast|Lung|Prostate|Colon|Colorectal|Ovarian|Pancreatic)\s+Cancer)\b',
+            # Additional common conditions
+            r'\b((?:Seasonal|Perennial|Allergic)\s+(?:Allergic\s+)?Rhinitis)\b',
+            r'\b(Conjunctivitis)\b',
+            r'\b(Sinusitis)\b',
+            r'\b(Bronchitis)\b',
+            r'\b(Urticaria)\b',
+            r'\b(Dermatitis)\b',
+            r'\b(Neuropathy)\b',
+            r'\b(Neuropathic\s+Pain)\b',
+            r'\b(Chronic\s+Pain)\b',
+            r'\b(Insomnia)\b',
+            r'\b(Anxiety)\b',
+            r'\b(Depression)\b',
+            r'\b(Nausea)\b',
+            r'\b(Vomiting)\b',
+            r'\b(Constipation)\b',
+            r'\b(Diarrhea)\b',
+            r'\b(Gastritis)\b',
+            r'\b(Ulcer(?:s)?)\b',
+            r'\b(Edema)\b',
+            r'\b(Thrombosis)\b',
+            r'\b(Embolism)\b',
+            r'\b(Stroke)\b',
+            r'\b(Seizure(?:s)?)\b',
+            r'\b(Infection(?:s)?)\b',
+            r'\b(Inflammation)\b',
+            r'\b(Arthralgia)\b',
+            r'\b(Myalgia)\b',
+            r'\b(Fibromyalgia)\b',
+            # "associated with [DISEASE]" pattern
+            r'associated\s+with\s+([A-Za-z][A-Za-z\s\-\']+?)(?:\s+in\s+|\s+and\s+|,|\.|;|$)',
+            # "symptoms of [DISEASE]" pattern
+            r'symptoms\s+(?:of|due\s+to)\s+([A-Za-z][A-Za-z\s\-\']+?)(?:\s+in\s+|\s+and\s+|,|\.|;|$)',
+        ]
+
+        extracted_names: Set[str] = set()
+
+        for pattern in extraction_patterns:
+            matches = re.findall(pattern, cleaned_text, re.IGNORECASE)
+            for match in matches:
+                disease_name = self._normalize_disease_name(match)
+                if disease_name and self._is_valid_disease_name(disease_name):
+                    extracted_names.add(disease_name)
+
+        # Create entities for each extracted disease
+        for disease_name in extracted_names:
+            disease = ExtractedEntity(
+                entity_type=EntityType.DISEASE,
+                name=disease_name,
+                identifiers={},
+                context={
+                    'source': 'openfda_indication',
+                    'extraction_method': 'pattern_matching'
+                },
+                source_name=self.SOURCE_NAME,
+                source_identifier=self.get_source_identifier(raw_data),
+                raw_data={'indication_text': text[:500]}  # Store first 500 chars
+            )
+            diseases.append(disease)
+
+        return diseases
+
+    def _normalize_disease_name(self, name: str) -> str:
+        """Normalize a disease name for consistency."""
+        if not name:
+            return ''
+
+        # Strip and normalize whitespace
+        name = ' '.join(name.split())
+
+        # Check if it's a known abbreviation
+        name_lower = name.lower()
+        if name_lower in self.DISEASE_SYNONYMS:
+            name = self.DISEASE_SYNONYMS[name_lower]
+
+        # Title case the name
+        name = name.title()
+
+        # Fix common title case issues
+        name = name.replace("'S ", "'s ")  # Parkinson'S -> Parkinson's
+        name = re.sub(r'\bHiv\b', 'HIV', name)
+        name = re.sub(r'\bAids\b', 'AIDS', name)
+        name = re.sub(r'\bCopd\b', 'COPD', name)
+
+        return name.strip()
+
+    def _is_valid_disease_name(self, name: str) -> bool:
+        """Check if extracted text is a valid disease name."""
+        if not name or len(name) < 3:
+            return False
+
+        # Check if name is too long (likely a sentence, not a disease name)
+        if len(name) > 100:
+            return False
+
+        # Check if it contains too many words (likely not a disease name)
+        words = name.split()
+        if len(words) > 8:
+            return False
+
+        # Check if it's mostly non-disease words
+        name_lower = name.lower()
+        name_words = set(name_lower.split())
+        non_disease_overlap = name_words.intersection(self.NON_DISEASE_WORDS)
+
+        # If more than half the words are non-disease words, reject
+        if len(non_disease_overlap) > len(name_words) / 2:
+            return False
+
+        # Reject if it starts with common non-disease patterns
+        if re.match(r'^(this|the|for|to|in|as|is|are|was|were|be|been|being)\s', name_lower):
+            return False
+
+        return True
     
     def _make_drug_entity(self, raw_data: Dict[str, Any]) -> ExtractedEntity:
         """Helper to create drug entity stub for relationships."""

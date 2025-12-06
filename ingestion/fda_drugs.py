@@ -1,3 +1,25 @@
+"""
+FDA Drugs@FDA bulk data file parser.
+
+NOTE: The web scraping functionality (download_all, list_download_links) is DEPRECATED.
+The FDA website structure has changed and the scraper no longer finds download links.
+
+RECOMMENDED ALTERNATIVES:
+1. Use the OpenFDA API via `fda_applications_loader.py` (already working)
+   - Provides the same FDA application/submission data
+   - More reliable than web scraping
+   - Already loaded 5,027 applications and 31,047 submissions
+
+2. Manual download:
+   - Visit https://www.fda.gov/drugs/drug-approvals-and-databases/drugsfda-data-files
+   - Download files manually
+   - Place in data/raw/fda_drugs/
+   - Run: python -m ingestion.fda_drugs (without --download)
+
+The CSV/ZIP parsing functions (parse_csv_file, parse_zip_file, ingest_fda_drugs)
+still work for manually downloaded files.
+"""
+import warnings
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 import csv
@@ -29,7 +51,23 @@ def list_download_links(page_url: str = PAGE_URL) -> List[str]:
 
 
 def download_all(save_dir: Optional[Path] = None) -> List[Path]:
+    """
+    DEPRECATED: FDA website structure has changed, this no longer finds download links.
+
+    Use fda_applications_loader.py instead, or download files manually.
+    """
+    warnings.warn(
+        "download_all is deprecated: FDA website structure changed. "
+        "Use fda_applications_loader.py instead, or download files manually from "
+        "https://www.fda.gov/drugs/drug-approvals-and-databases/drugsfda-data-files",
+        DeprecationWarning,
+        stacklevel=2
+    )
     links = list_download_links()
+    if not links:
+        print("WARNING: No download links found. FDA website structure may have changed.")
+        print("Use fda_applications_loader.py instead, or download files manually.")
+        return []
     out_dir = Path("data/raw/fda_drugs") if save_dir is None else Path(save_dir)
     ensure_dir(out_dir)
     client = HttpClient(requests_per_second=1.0)
